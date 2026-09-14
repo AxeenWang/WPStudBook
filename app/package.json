@@ -14,7 +14,9 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "idb": "8.0.3",
     "react": "19.3.0",
+    "react-aria-components": "1.21.1",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
@@ -25,6 +27,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "eslint": "10.10.0",
     "eslint-plugin-react-hooks": "7.1.1",
+    "fake-indexeddb": "6.2.5",
     "prettier": "3.9.6",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.0",

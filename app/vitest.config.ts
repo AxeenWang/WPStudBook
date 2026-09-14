@@ -15,6 +15,7 @@ export default defineConfig({
           name: 'integration',
           include: ['tests/integration/**/*.test.ts'],
           environment: 'node',
+          setupFiles: ['fake-indexeddb/auto'],
         },
       },
     ],
