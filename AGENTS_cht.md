@@ -20,6 +20,14 @@ CodeLab-Governance: optional
 - 預設分支：`main`
 - Agent 暫存區 `.codex-tmp/` 與 `.claude-tmp/` 已被 Git 忽略，絕不可 commit。
 
+## Repository 版面
+
+- Repository 根目錄只放專案規則（`AGENTS.md`、`AGENTS_cht.md`、`CLAUDE.md`）、`.gitignore`、`.github/`（GitHub 規定必須放在根目錄）、`docs/`、`.references/` 與 Agent 暫存區。
+- 所有程式碼、工具設定、依賴與建置或測試產出都放在 `app/`，包括 `package.json`、lockfile、工具設定檔、`src/`、`tests/`、`scripts/`、`node_modules/`、`dist/`、`test-results/` 與 `playwright-report/`。
+- npm、建置、程式檢查與測試指令都在 `app/` 內執行。絕不可在根目錄執行 `npm install` 或建立工具設定。
+- 未經使用者明確同意，不得新增根目錄檔案或資料夾。
+- 資料夾名稱不得重複上層資料夾的意思，例如 `source/src` 或 `app/src/app`。目錄細節與模組分層見 `docs/設計決策.md` 第 4 節。
+
 ## 參考資料（`.references/`）
 
 - `.references/` 存放使用者手動加入、供 Agent 參考的資料，例如遊戲匯出樣本、試算表與截圖。

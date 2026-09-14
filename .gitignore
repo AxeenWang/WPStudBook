@@ -4,3 +4,10 @@
 
 # User-supplied reference materials (local only)
 .references/
+
+# Build and test outputs
+node_modules/
+dist/
+test-results/
+playwright-report/
+tests/fixtures/generated/

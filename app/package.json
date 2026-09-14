@@ -1,0 +1,44 @@
+{
+  "name": "wpstudbook",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "vite build && node scripts/verify-dist.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit --project integration",
+    "e2e": "playwright test --grep-invert @references",
+    "test:e2e": "npm run build && npm run e2e",
+    "test:references": "vitest run --project references && npm run build && playwright test --grep @references",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "scenarios": "node scripts/scenarios.ts",
+    "check": "npm run lint && npm run typecheck && npm test && npm run test:e2e"
+  },
+  "dependencies": {
+    "idb": "8.0.3",
+    "react": "19.3.0",
+    "react-aria-components": "1.21.1",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.13.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "eslint": "10.10.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "fake-indexeddb": "6.2.5",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0",
+    "vite": "8.3.0",
+    "vite-plugin-singlefile": "2.3.3",
+    "vitest": "5.0.0"
+  }
+}
