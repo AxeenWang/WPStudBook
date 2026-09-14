@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  check:
+    name: 檢查與建置
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: 確認標籤與 package.json 版本一致
+        shell: bash
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$expected" != "$GITHUB_REF_NAME" ]; then
+            echo "標籤 $GITHUB_REF_NAME 與 package.json 版本 $expected 不一致" >&2
+            exit 1
+          fi
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: WPStudBook-html
+          path: app/dist/WPStudBook.html
+          if-no-files-found: error
+
+  e2e:
+    name: 端到端（${{ matrix.browser }}）
+    needs: check
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [msedge, chrome]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: WPStudBook-html
+          path: app/dist
+      - run: npm run e2e
+        env:
+          E2E_BROWSERS: ${{ matrix.browser }}
+
+  publish:
+    name: 建立 GitHub Release
+    needs: e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: WPStudBook-html
+          path: app/dist
+      - name: 發布並附上 WPStudBook.html
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/WPStudBook.html
+          --repo "$GITHUB_REPOSITORY"
+          --title "WPStudBook $GITHUB_REF_NAME"
+          --generate-notes
+          --verify-tag
