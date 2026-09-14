@@ -10,6 +10,8 @@
     "build": "vite build && node scripts/verify-dist.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit --project integration",
+    "e2e": "playwright test --grep-invert @references",
+    "test:e2e": "npm run build && npm run e2e",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write ."
   },
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
     "@types/node": "24.13.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
