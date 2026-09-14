@@ -14,7 +14,9 @@
     "test:e2e": "npm run build && npm run e2e",
     "test:references": "vitest run --project references && npm run build && playwright test --grep @references",
     "lint": "eslint . && prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "scenarios": "node scripts/scenarios.ts",
+    "check": "npm run lint && npm run typecheck && npm test && npm run test:e2e"
   },
   "dependencies": {
     "idb": "8.0.3",
