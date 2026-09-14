@@ -12,6 +12,7 @@
     "test": "vitest run --project unit --project integration",
     "e2e": "playwright test --grep-invert @references",
     "test:e2e": "npm run build && npm run e2e",
+    "test:references": "vitest run --project references && npm run build && playwright test --grep @references",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write ."
   },

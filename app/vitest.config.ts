@@ -18,6 +18,13 @@ export default defineConfig({
           setupFiles: ['fake-indexeddb/auto'],
         },
       },
+      {
+        test: {
+          name: 'references',
+          include: ['tests/references/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
     ],
   },
 });
