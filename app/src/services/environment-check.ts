@@ -40,7 +40,8 @@ function toHex(buffer: ArrayBuffer): string {
 }
 
 function checkSecureContext(): CheckResult {
-  return Reflect.get(globalThis, 'isSecureContext') ? PASSED : failed('isSecureContext 不是 true');
+  const secure: unknown = Reflect.get(globalThis, 'isSecureContext');
+  return secure === true ? PASSED : failed('isSecureContext 不是 true');
 }
 
 function checkRandomUuid(): CheckResult {
