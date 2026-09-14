@@ -1,3 +1,5 @@
+// The @ts-check pragma is intentionally omitted here: eslint-plugin-react-hooks 7.1.1's
+// types are not assignable to ESLint 10's Plugin type (restore once upstream fixes it).
 import js from '@eslint/js';
 import { defineConfig } from 'eslint/config';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -29,7 +31,7 @@ export default defineConfig(
     },
   },
   {
-    files: ['src/ui/**/*.tsx', 'src/main.tsx'],
+    files: ['src/ui/**/*.{ts,tsx}', 'src/main.tsx'],
     plugins: { 'react-hooks': reactHooks },
     rules: {
       'react-hooks/rules-of-hooks': 'error',
