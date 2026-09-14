@@ -42,7 +42,7 @@ jobs:
           fi
           code_changed=true
           if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ]; then
-            if changed=$(git diff --name-only "$base" "${{ github.sha }}"); then
+            if changed=$(git -c core.quotepath=false diff --name-only "$base" "${{ github.sha }}"); then
               if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -Ev '^docs/|\.md$' > /dev/null; then
                 code_changed=false
               fi
