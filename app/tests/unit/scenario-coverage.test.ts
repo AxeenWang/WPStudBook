@@ -29,6 +29,16 @@ describe('情境覆蓋', () => {
     expect([...extractTaggedIds(source)]).toEqual(['TEST-01', 'TEST-02']);
   });
 
+  it('只計算字串開頭的標籤，不計算註解與字串中間的標籤', () => {
+    const source = [
+      "it('[TEST-01] 標題', () => {});",
+      'test(`[TEST-02] 標題`, () => {});',
+      '// 參考 [TEST-03]',
+      "const note = '見 [TEST-04]';",
+    ].join('\n');
+    expect([...extractTaggedIds(source)]).toEqual(['TEST-01', 'TEST-02']);
+  });
+
   it('列出沒有任何測試標籤的情境', () => {
     expect(findUncoveredScenarios(['ID-01', 'ID-02', 'LINE-14'], new Set(['ID-01']))).toEqual([
       'ID-02',

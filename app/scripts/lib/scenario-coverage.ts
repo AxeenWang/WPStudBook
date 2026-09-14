@@ -1,5 +1,5 @@
 const SCENARIO_ID = /\*\*([A-Z]+-\d{2})\*\*/g;
-const TEST_TAG = /\[([A-Z]+-\d{2})\]/g;
+const TEST_TAG = /['"`]\[([A-Z]+-\d{2})\]/g;
 
 export function extractScenarioIds(specMarkdown: string): string[] {
   const afterChapter15 = specMarkdown.split(/^## 15\. /m)[1] ?? '';
