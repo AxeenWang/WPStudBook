@@ -20,6 +20,14 @@ Change the marker to `CodeLab-Governance: required` when failed managed-mode ver
 - Default branch: `main`
 - Agent temp areas `.codex-tmp/` and `.claude-tmp/` are ignored by Git and must never be committed.
 
+## Repository Layout
+
+- The repository root holds only the project rules (`AGENTS.md`, `AGENTS_cht.md`, `CLAUDE.md`), `.gitignore`, `.github/` (GitHub requires it at the root), `docs/`, `.references/`, and the agent temp areas.
+- All application code, tool configuration, dependencies, and build or test outputs live under `app/`. This includes `package.json`, the lockfile, tool configuration files, `src/`, `tests/`, `scripts/`, `node_modules/`, `dist/`, `test-results/`, and `playwright-report/`.
+- Run npm, build, lint, and test commands from `app/`. Never run `npm install` or create tool configuration at the repository root.
+- Do not add a new top-level file or directory without explicit user approval.
+- Do not give a directory a name that repeats the meaning of its parent, such as `source/src` or `app/src/app`. Directory details and module layers are in `docs/設計決策.md` section 4.
+
 ## Reference Materials (`.references/`)
 
 - `.references/` holds reference material that the user adds manually, such as game export samples, spreadsheets, and screenshots, for agents to consult.
