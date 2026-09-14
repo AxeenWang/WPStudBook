@@ -1,0 +1,6 @@
+# Agent temp areas
+.codex-tmp/
+.claude-tmp/
+
+# User-supplied reference materials (local only)
+.references/
