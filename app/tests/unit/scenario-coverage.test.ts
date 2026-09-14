@@ -25,8 +25,8 @@ describe('情境覆蓋', () => {
 
   it('從測試原始碼取出方括號標籤', () => {
     const source =
-      "it('[ID-01] 同一匹馬', () => {});\ntest('[LINE-14] 配對距離', async () => {});\n";
-    expect([...extractTaggedIds(source)]).toEqual(['ID-01', 'LINE-14']);
+      "it('[TEST-01] 同一匹馬', () => {});\ntest('[TEST-02] 配對距離', async () => {});\n";
+    expect([...extractTaggedIds(source)]).toEqual(['TEST-01', 'TEST-02']);
   });
 
   it('列出沒有任何測試標籤的情境', () => {
