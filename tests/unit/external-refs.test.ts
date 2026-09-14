@@ -39,4 +39,24 @@ describe('findExternalReferences', () => {
   it('沒有引號的屬性也能偵測', () => {
     expect(findExternalReferences('<img src=logo.png>')).toEqual([{ kind: 'attribute', value: 'logo.png' }]);
   });
+
+  it('srcset 前段是 data: URL 時，仍需偵測後段的外部網址', () => {
+    const html = '<img srcset="data:image/png;base64,AAAA 1x, https://cdn.example.com/b.png 2x">';
+    expect(findExternalReferences(html)).toEqual([
+      { kind: 'attribute', value: 'https://cdn.example.com/b.png' },
+    ]);
+  });
+
+  it('srcset 全部候選網址皆為 data: 時不回報', () => {
+    const html = '<img srcset="data:image/png;base64,AAAA 1x, data:image/png;base64,BBBB 2x">';
+    expect(findExternalReferences(html)).toEqual([]);
+  });
+
+  it('srcset 逗號後沒有空白時，仍能個別偵測每個候選網址', () => {
+    const html = '<img srcset="a.png 1x,b.png 2x">';
+    expect(findExternalReferences(html)).toEqual([
+      { kind: 'attribute', value: 'a.png' },
+      { kind: 'attribute', value: 'b.png' },
+    ]);
+  });
 });
