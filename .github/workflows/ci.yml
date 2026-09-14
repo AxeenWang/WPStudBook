@@ -40,13 +40,17 @@ jobs:
           else
             base="${{ github.event.before }}"
           fi
-          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            echo "code_changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$base" "${{ github.sha }}" | grep -Ev '^docs/|\.md$' > /dev/null; then
-            echo "code_changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "code_changed=false" >> "$GITHUB_OUTPUT"
+          code_changed=true
+          if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ]; then
+            if changed=$(git diff --name-only "$base" "${{ github.sha }}"); then
+              if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -Ev '^docs/|\.md$' > /dev/null; then
+                code_changed=false
+              fi
+            else
+              echo "無法比對 $base，視為有程式變更並執行端到端測試"
+            fi
           fi
+          echo "code_changed=$code_changed" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck

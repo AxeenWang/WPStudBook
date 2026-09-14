@@ -72,6 +72,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      # 必須在下一步之前執行：此 job 沒有 checkout，這一步會建立 working-directory: app 所需的 app/dist
       - uses: actions/download-artifact@v8
         with:
           name: WPStudBook-html
