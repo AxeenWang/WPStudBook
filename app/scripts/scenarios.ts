@@ -13,6 +13,10 @@ function listTestFiles(directory: string): string[] {
 }
 
 const scenarioIds = extractScenarioIds(readFileSync('../docs/需求規格.md', 'utf8'));
+if (scenarioIds.length === 0) {
+  console.error('找不到規格第 15 章的情境代號，請確認 ../docs/需求規格.md 的章節標題');
+  process.exit(1);
+}
 const taggedIds = new Set<string>();
 for (const file of listTestFiles('tests')) {
   for (const id of extractTaggedIds(readFileSync(file, 'utf8'))) {
