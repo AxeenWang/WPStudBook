@@ -11,7 +11,9 @@ describe('findExternalReferences', () => {
 
   it('script 的 src 指向檔案時回報', () => {
     const html = '<script type="module" src="/assets/index.js"></script>';
-    expect(findExternalReferences(html)).toEqual([{ kind: 'attribute', value: '/assets/index.js' }]);
+    expect(findExternalReferences(html)).toEqual([
+      { kind: 'attribute', value: '/assets/index.js' },
+    ]);
   });
 
   it('外部樣式表連結回報', () => {
@@ -32,12 +34,15 @@ describe('findExternalReferences', () => {
   });
 
   it('錨點、data 與 blob 網址不算外部載入', () => {
-    const html = '<a href="#top">頂端</a><img src="data:image/png;base64,AAAA"><a href="blob:abc">檔案</a>';
+    const html =
+      '<a href="#top">頂端</a><img src="data:image/png;base64,AAAA"><a href="blob:abc">檔案</a>';
     expect(findExternalReferences(html)).toEqual([]);
   });
 
   it('沒有引號的屬性也能偵測', () => {
-    expect(findExternalReferences('<img src=logo.png>')).toEqual([{ kind: 'attribute', value: 'logo.png' }]);
+    expect(findExternalReferences('<img src=logo.png>')).toEqual([
+      { kind: 'attribute', value: 'logo.png' },
+    ]);
   });
 
   it('srcset 前段是 data: URL 時，仍需偵測後段的外部網址', () => {

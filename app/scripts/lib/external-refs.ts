@@ -30,13 +30,13 @@ function parseSrcsetCandidates(value: string): string[] {
   let pos = 0;
 
   while (pos < length) {
-    while (pos < length && /[\s,]/.test(value[pos]!)) {
+    while (pos < length && /[\s,]/.test(value.charAt(pos))) {
       pos++;
     }
     if (pos >= length) break;
 
     const urlStart = pos;
-    while (pos < length && !/\s/.test(value[pos]!)) {
+    while (pos < length && !/\s/.test(value.charAt(pos))) {
       pos++;
     }
     const rawUrl = value.slice(urlStart, pos);
@@ -47,7 +47,7 @@ function parseSrcsetCandidates(value: string): string[] {
     }
     urls.push(rawUrl);
 
-    while (pos < length && /\s/.test(value[pos]!)) {
+    while (pos < length && /\s/.test(value.charAt(pos))) {
       pos++;
     }
     while (pos < length && value[pos] !== ',') {
