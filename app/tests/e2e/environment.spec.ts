@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { APP_URL } from './helpers.ts';
+import { createGameViaUi, openApp } from './helpers.ts';
 
 const CHECK_KEYS = [
   'secureContext',
@@ -11,7 +11,9 @@ const CHECK_KEYS = [
 ] as const;
 
 test.describe('file:// 環境條件（設計決策 7.5 節）', () => {
-  test('所有環境檢查都通過，且沒有發出任何網路請求', async ({ page }) => {
+  test('[BLD-02][BLD-04] 環境檢查全部通過，建立資料與重新整理的過程沒有任何網路請求', async ({
+    page,
+  }) => {
     const externalRequests: string[] = [];
     page.on('request', (request) => {
       const url = request.url();
@@ -20,7 +22,7 @@ test.describe('file:// 環境條件（設計決策 7.5 節）', () => {
       }
     });
 
-    await page.goto(APP_URL);
+    await openApp(page);
     await expect(page.getByRole('heading', { name: 'WPStudBook' })).toBeVisible();
     for (const key of CHECK_KEYS) {
       await expect(page.getByTestId(`env-${key}-reason`), `環境檢查 ${key} 的失敗原因`).toHaveText(
@@ -28,23 +30,22 @@ test.describe('file:// 環境條件（設計決策 7.5 節）', () => {
       );
       await expect(page.getByTestId(`env-${key}`)).toHaveText('通過');
     }
+    await createGameViaUi(page, '網路檢查局');
+    await page.reload();
+    await expect(page.getByTestId('status-game')).toHaveText('網路檢查局');
     expect(externalRequests).toEqual([]);
   });
 
-  test('重新整理後 IndexedDB 資料仍在', async ({ page }) => {
-    await page.goto(APP_URL);
-    const probeCount = page.getByTestId('probe-count');
-    await expect(probeCount).toHaveText('1');
-    await page.reload();
-    await expect(probeCount).toHaveText('2');
-  });
-
-  test('React Aria 按鈕可用鍵盤操作，重新檢查會再寫入一次', async ({ page }) => {
-    await page.goto(APP_URL);
-    const probeCount = page.getByTestId('probe-count');
-    await expect(probeCount).toHaveText('1');
-    await page.getByRole('button', { name: '重新檢查' }).focus();
+  test('建立遊戲局表單可只用鍵盤完成', async ({ page }) => {
+    await openApp(page);
+    await page.getByLabel('遊戲局名稱').focus();
+    await page.keyboard.type('鍵盤局');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('1970');
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
-    await expect(probeCount).toHaveText('2');
+    await expect(page.getByTestId('status-game')).toHaveText('鍵盤局');
+    await expect(page.getByTestId('status-year')).toHaveText('1970 年');
   });
 });

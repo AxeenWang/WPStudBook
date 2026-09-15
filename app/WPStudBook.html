@@ -4,6 +4,92 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WPStudBook</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, 'Segoe UI', 'Noto Sans TC', sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        margin: 0;
+      }
+      .app {
+        max-width: 72rem;
+        margin: 0 auto;
+        padding: 1rem;
+        overflow-wrap: anywhere;
+      }
+      .status-bar dl {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.5rem;
+        margin: 0;
+      }
+      .status-bar dt,
+      .notice {
+        font-size: 0.875rem;
+        color: #64758a;
+      }
+      .status-bar dd {
+        margin: 0;
+      }
+      section {
+        margin-block: 1.5rem;
+      }
+      .table-scroll {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.25rem 0.5rem;
+        border-bottom: 1px solid #d5dbe3;
+      }
+      .actions,
+      .dialog-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .dialog-actions {
+        justify-content: flex-end;
+        margin-top: 1rem;
+      }
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: rgb(0 0 0 / 40%);
+      }
+      .modal {
+        width: 100%;
+        max-width: 32rem;
+        border-radius: 0.5rem;
+        background: #fff;
+      }
+      .dialog {
+        padding: 1rem;
+        outline: none;
+      }
+      .danger-zone {
+        padding: 1rem;
+        border: 1px solid #c62828;
+        border-radius: 0.5rem;
+      }
+      [role='alert'] {
+        color: #b00020;
+      }
+      :focus-visible {
+        outline: 2px solid #1f6feb;
+        outline-offset: 2px;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

@@ -11,12 +11,9 @@ describe('runEnvironmentCheck（有 IndexedDB）', () => {
     vi.unstubAllGlobals();
   });
 
-  it('IndexedDB 可用時回報通過並帶出探測次數，失敗清單只剩安全環境', async () => {
-    const first = await runEnvironmentCheck();
-    expect(first.indexedDb).toBe(true);
-    expect(first.probeCount).toBe(1);
-    expect(first.failures).toEqual({ secureContext: 'isSecureContext 不是 true' });
-    const second = await runEnvironmentCheck();
-    expect(second.probeCount).toBe(2);
+  it('IndexedDB 可用時回報通過，失敗清單只剩安全環境', async () => {
+    const report = await runEnvironmentCheck();
+    expect(report.indexedDb).toBe(true);
+    expect(report.failures).toEqual({ secureContext: 'isSecureContext 不是 true' });
   });
 });

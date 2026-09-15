@@ -74,3 +74,9 @@ export async function openAppDatabase(options: OpenDatabaseOptions = {}): Promis
     });
   }
 }
+
+/** 環境檢查用：開啟正式資料庫後立即關閉。 */
+export async function probeAppDatabase(): Promise<void> {
+  const database = await openAppDatabase();
+  database.close();
+}
