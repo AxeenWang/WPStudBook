@@ -60,8 +60,8 @@ function gameIndex(fields: readonly string[], unique = false): IndexDefinition {
   return { name: fields.join('+'), keyPath: ['gameId', ...fields], unique, multiEntry: false };
 }
 
-/** 目前版本的資料表定義（設計決策 5.2 節）。結構改版時，先把舊版升級步驟需要的定義凍結成常數再修改這裡。 */
-export const STORE_DEFINITIONS: Readonly<Record<StoreName, StoreDefinition>> = {
+/** 第 1 版的資料表定義；已發布版本的常數不得修改，結構改版時新增新版常數並改指向它。 */
+export const VERSION_1_STORE_DEFINITIONS: Readonly<Record<StoreName, StoreDefinition>> = {
   games: { keyPath: 'id', indexes: [] },
   archives: { keyPath: 'id', indexes: [] },
   appMeta: { keyPath: 'key', indexes: [] },
@@ -115,6 +115,10 @@ export const STORE_DEFINITIONS: Readonly<Record<StoreName, StoreDefinition>> = {
   checkpointData: { keyPath: GAME_KEY, indexes: [] },
 };
 
+/** 目前版本的定義；結構改版時新增新版常數並改指向它，已發布版本的常數不得修改。 */
+export const STORE_DEFINITIONS: Readonly<Record<StoreName, StoreDefinition>> =
+  VERSION_1_STORE_DEFINITIONS;
+
 export type UpgradeTransaction = IDBPTransaction<unknown, string[], 'versionchange'>;
 
 export type SchemaUpgrade = (database: IDBPDatabase, transaction: UpgradeTransaction) => void;
@@ -125,7 +129,7 @@ function toKeyPath(keyPath: string | readonly string[]): string | string[] {
 
 export function createVersion1Stores(database: IDBPDatabase): void {
   for (const storeName of ALL_STORES) {
-    const definition = STORE_DEFINITIONS[storeName];
+    const definition = VERSION_1_STORE_DEFINITIONS[storeName];
     const store = database.createObjectStore(storeName, { keyPath: toKeyPath(definition.keyPath) });
     for (const item of definition.indexes) {
       store.createIndex(item.name, toKeyPath(item.keyPath), {
