@@ -265,8 +265,15 @@ function valueAtPath(record: StoredRecord, path: string): unknown {
   return current;
 }
 
+/** IndexedDB 也會為陣列鍵建索引，因此陣列值只要每個元素都是可索引值就一併檢查。 */
 function isIndexedValue(value: unknown): boolean {
-  return typeof value === 'string' || (typeof value === 'number' && !Number.isNaN(value));
+  if (typeof value === 'string') {
+    return true;
+  }
+  if (typeof value === 'number') {
+    return !Number.isNaN(value);
+  }
+  return Array.isArray(value) && value.every(isIndexedValue);
 }
 
 /** IndexedDB 不為缺少索引欄位的紀錄建索引，所以只比對索引欄位齊全的紀錄（設計決策 5.1 節）。 */
