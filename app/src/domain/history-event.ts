@@ -36,7 +36,15 @@ export type HistoryEventType =
   /** 姊妹接替狀態變更（正式保留、已被取代）；subjectId 為母馬 id。 */
   | 'successionChanged'
   /** 母馬世代成立；subjectId 為系位置 id。 */
-  | 'lineGenerationEstablished';
+  | 'lineGenerationEstablished'
+  /** 自家產駒成為種牡馬（需求規格 9.7），含種牡馬馬番号；subjectId 為馬匹 id。 */
+  | 'becameStallion'
+  /** 現任任期狀態變更或被更換，保存前後值；subjectId 為馬匹 id。 */
+  | 'stallionDutyChanged'
+  /** 預定後繼指定、就緒狀態、確認產駒或結束，保存前後值；subjectId 為系位置 id。 */
+  | 'plannedSuccessorChanged'
+  /** 總合評價與爆發力新增或更正，保存前後值；subjectId 為母馬 id。 */
+  | 'matingRatingRecorded';
 
 export type HistoryEventSource = 'user' | 'migration';
 

@@ -112,9 +112,9 @@ describe('validateCollections', () => {
     const result = validateCollections(
       collections({
         horses: [horse('h1')],
-        matingRatings: [
-          { id: 'r1', stallionId: 'h1', mareId: 'h1', gameYear: [1968, 5] },
-          { id: 'r2', stallionId: 'h1', mareId: 'h1', gameYear: [1968, 5] },
+        stallionYearly: [
+          { id: 'y1', horseId: 'h1', gameYear: [1968, 5] },
+          { id: 'y2', horseId: 'h1', gameYear: [1968, 5] },
         ],
       }),
     );

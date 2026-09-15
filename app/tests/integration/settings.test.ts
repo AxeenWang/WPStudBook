@@ -40,6 +40,7 @@ describe('遊戲局提醒設定', () => {
     await addMarketMare(context, MARE);
     expect(await loadReminderSettings(context)).toEqual({
       highAgeReminderAge: 18,
+      stallionAgeReminderAge: 26,
       vitalityThreshold: undefined,
     });
     expect((await loadMareHerd(context)).cards[0]?.highAge).toBe(true);
@@ -47,9 +48,10 @@ describe('遊戲局提醒設定', () => {
     expect(
       await updateReminderSettings(context, {
         highAgeReminderAge: 19,
+        stallionAgeReminderAge: 26,
         vitalityThreshold: undefined,
       }),
-    ).toEqual({ highAgeReminderAge: 19, vitalityThreshold: undefined });
+    ).toEqual({ highAgeReminderAge: 19, stallionAgeReminderAge: 26, vitalityThreshold: undefined });
 
     expect((await loadMareHerd(context)).cards[0]?.highAge).toBe(false);
     expect(await readGameSettings(context.database, game.id)).toEqual({
@@ -63,8 +65,8 @@ describe('遊戲局提醒設定', () => {
     expect(events.find((event) => event.type === 'settingsChanged')).toMatchObject({
       subjectId: 'game',
       gameYear: 1968,
-      before: { highAgeReminderAge: 18 },
-      after: { highAgeReminderAge: 19 },
+      before: { highAgeReminderAge: 18, stallionAgeReminderAge: 26 },
+      after: { highAgeReminderAge: 19, stallionAgeReminderAge: 26 },
     });
   });
 
@@ -97,7 +99,11 @@ describe('遊戲局提醒設定', () => {
       'テストゾウキョウ',
     ]);
 
-    await updateReminderSettings(context, { highAgeReminderAge: 18, vitalityThreshold: 50 });
+    await updateReminderSettings(context, {
+      highAgeReminderAge: 18,
+      stallionAgeReminderAge: 26,
+      vitalityThreshold: 50,
+    });
 
     expect(await namesInOrder()).toEqual([
       'テストロクジュウ',
@@ -114,7 +120,11 @@ describe('遊戲局提醒設定', () => {
     const planned = await setYearPlan(context, { mareId: low.id, plan: 'designated' });
     expect(planned.yearPlan).toEqual({ plan: 'designated', gameYear: 1968 });
 
-    await updateReminderSettings(context, { highAgeReminderAge: 18, vitalityThreshold: undefined });
+    await updateReminderSettings(context, {
+      highAgeReminderAge: 18,
+      stallionAgeReminderAge: 26,
+      vitalityThreshold: undefined,
+    });
     expect((await loadMareHerd(context)).cards.some((item) => item.belowThreshold)).toBe(false);
   });
 
@@ -123,19 +133,29 @@ describe('遊戲局提醒設定', () => {
     const game = await createGame(context, { name: '設定局', startYear: 1968 });
 
     await expect(
-      updateReminderSettings(context, { highAgeReminderAge: 0, vitalityThreshold: 101 }),
+      updateReminderSettings(context, {
+        highAgeReminderAge: 0,
+        stallionAgeReminderAge: 100,
+        vitalityThreshold: 101,
+      }),
     ).rejects.toMatchObject({
       code: 'invalidInput',
-      message: '高齡提醒年齡必須是 1～99 的整數；活力建議門檻必須是 0～100 的整數，或留空不使用',
+      message:
+        '高齡提醒年齡必須是 1～99 的整數；種牡馬提醒年齡必須是 1～99 的整數；活力建議門檻必須是 0～100 的整數，或留空不使用',
     });
     await expect(
       updateReminderSettings(context, {
         highAgeReminderAge: undefined,
+        stallionAgeReminderAge: 26,
         vitalityThreshold: undefined,
       }),
     ).rejects.toMatchObject({ code: 'invalidInput' });
     await expect(
-      updateReminderSettings(context, { highAgeReminderAge: 18, vitalityThreshold: undefined }),
+      updateReminderSettings(context, {
+        highAgeReminderAge: 18,
+        stallionAgeReminderAge: 26,
+        vitalityThreshold: undefined,
+      }),
     ).rejects.toMatchObject({ code: 'invalidInput', message: '設定沒有變更' });
     expect(await readRecords(context.database, game.id, 'events')).toEqual([]);
   });
@@ -163,7 +183,11 @@ describe('遊戲局提醒設定', () => {
       });
     };
 
-    await updateReminderSettings(context, { highAgeReminderAge: 18, vitalityThreshold: 0 });
+    await updateReminderSettings(context, {
+      highAgeReminderAge: 18,
+      stallionAgeReminderAge: 26,
+      vitalityThreshold: 0,
+    });
 
     expect(concurrentWrite).toBeDefined();
     await concurrentWrite;

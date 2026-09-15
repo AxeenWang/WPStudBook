@@ -12,7 +12,19 @@ import {
   isPlainRecord,
   withGameId,
   withoutGameId,
+  type ReadableStore,
 } from './records.ts';
+
+/** 交易內讀取指定系位置；尚未開啟時為 undefined。 */
+export async function readLineAt(
+  objectStore: (name: 'lines') => ReadableStore,
+  gameId: string,
+  position: number,
+): Promise<Line | undefined> {
+  const value: unknown = await objectStore('lines').index('position').get([gameId, position]);
+  // 本機資料由本程式寫入；備份匯入的系位置由 validateCollections 驗證。
+  return isPlainRecord(value) ? (withoutGameId(value) as unknown as Line) : undefined;
+}
 
 export async function listLines(database: AppDatabase, gameId: string): Promise<Line[]> {
   const values: unknown[] = await database.getAll('lines', gameKeyRange(gameId));

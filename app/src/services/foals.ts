@@ -28,6 +28,7 @@ import { MIN_GAME_YEAR, type Game } from '../domain/game.ts';
 import type { HistoryEvent } from '../domain/history-event.ts';
 import {
   horseDisplayName,
+  isStallionHorse,
   nameForTracking,
   type Horse,
   type HorseAlias,
@@ -392,7 +393,7 @@ function officialNameValue(horse: Horse): JsonObject {
 
 /**
  * 補登、取代或清空正式馬名（需求規格 9.4、BRD-08、BRD-10）：只改馬匹的名稱欄位，識別、母馬、出生年、
- * 能力與牧場處置不變。被取代的正式馬名保留為別名，清空後回退顯示追蹤名。已轉入母馬群者馬名唯讀（6.4）。
+ * 能力與牧場處置不變。被取代的正式馬名保留為別名，清空後回退顯示追蹤名。已轉入母馬群或成為種牡馬者馬名唯讀（6.4）。
  */
 export async function nameFoal(context: ServiceContext, input: FoalNameInput): Promise<Horse> {
   const game = await requireCurrentGame(context);
@@ -409,6 +410,12 @@ export async function nameFoal(context: ServiceContext, input: FoalNameInput): P
           throw new ServiceError(
             'invalidInput',
             '繁殖牝馬馬名唯讀，已轉入母馬群的母駒不能修改正式馬名',
+          );
+        }
+        if (isStallionHorse(horse)) {
+          throw new ServiceError(
+            'invalidInput',
+            '種牡馬馬名唯讀，已成為種牡馬的產駒不能修改正式馬名',
           );
         }
         const previous = horse.officialName;
@@ -554,6 +561,8 @@ export interface FoalCard {
   readonly note: string | undefined;
   /** 已轉入為繁殖牝馬。 */
   readonly isMare: boolean;
+  /** 已成為種牡馬（需求規格 9.7）。 */
+  readonly isStallion: boolean;
 }
 
 export interface FoalCardSource {
@@ -605,6 +614,7 @@ export function buildFoalCard(source: FoalCardSource): FoalCard {
     kodashi: foal.kodashi,
     note: foal.note,
     isMare: source.isMare,
+    isStallion: isStallionHorse(horse),
   };
 }
 
