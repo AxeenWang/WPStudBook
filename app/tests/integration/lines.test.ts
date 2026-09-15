@@ -183,18 +183,17 @@ describe('開啟第 1 系', () => {
     ]);
   });
 
-  it('馬名只有 (外)、[地] 前綴時拒絕，不寫入任何資料', async () => {
+  it('馬名只有 (外)、[地] 前綴（含中間空白）時拒絕，不寫入任何資料', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
-    const input: OpenFirstLineInput = {
-      ...INPUT,
-      founder: { ...INPUT.founder, fullName: '(外)[地]' },
-    };
 
-    expect((await checkOpenFirstLine(context, input)).issues).toEqual([
-      '馬名不能只有 (外)、[地] 前綴',
-    ]);
-    await expect(openFirstLine(context, input)).rejects.toMatchObject({ code: 'invalidInput' });
+    for (const fullName of ['(外)[地]', '(外) [地]', '[地] ']) {
+      const input: OpenFirstLineInput = { ...INPUT, founder: { ...INPUT.founder, fullName } };
+      expect((await checkOpenFirstLine(context, input)).issues, fullName).toEqual([
+        '馬名不能只有 (外)、[地] 前綴',
+      ]);
+      await expect(openFirstLine(context, input)).rejects.toMatchObject({ code: 'invalidInput' });
+    }
     const counts = await countGameRecords(context.database, game.id);
     expect([
       counts.lines,

@@ -30,4 +30,12 @@ describe('基本馬名', () => {
     expect(toBaseName('テスト(外)ウマ')).toBe('テスト(外)ウマ');
     expect(toBaseName('テストウマ')).toBe('テストウマ');
   });
+
+  it('前綴前後的空白一併去除；只有前綴與空白時為空字串；沒有前綴的馬名不修剪', () => {
+    expect(toBaseName('(外) テストウマ')).toBe('テストウマ');
+    expect(toBaseName(' (外) [地] テストウマ')).toBe('テストウマ');
+    expect(toBaseName('(外) [地]')).toBe('');
+    expect(toBaseName(' テストウマ ')).toBe(' テストウマ ');
+    expect(toBaseName('(外)テスト ウマ')).toBe('テスト ウマ');
+  });
 });
