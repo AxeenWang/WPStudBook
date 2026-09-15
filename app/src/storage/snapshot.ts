@@ -92,8 +92,9 @@ export async function updateLastBackup(
   const transaction = database.transaction('games', 'readwrite');
   await completeTransaction(transaction, async () => {
     const value: unknown = await transaction.store.get(gameId);
-    if (isGame(value)) {
-      await transaction.store.put({ ...value, lastBackup });
+    if (!isGame(value)) {
+      throw new Error(`找不到遊戲局 ${gameId}，無法記錄最近備份`);
     }
+    await transaction.store.put({ ...value, lastBackup });
   });
 }

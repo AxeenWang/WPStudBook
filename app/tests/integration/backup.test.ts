@@ -16,6 +16,7 @@ import type { BackupMigration } from '../../src/storage/backup/migrations.ts';
 import { countGameRecords, readGameSettings } from '../../src/storage/games.ts';
 import { readRecords, type StoredRecord } from '../../src/storage/records.ts';
 import { RECORD_COLLECTIONS } from '../../src/storage/schema.ts';
+import { updateLastBackup } from '../../src/storage/snapshot.ts';
 import {
   SYNTHETIC_RECORDS,
   SYNTHETIC_SETTINGS,
@@ -93,6 +94,19 @@ describe('備份匯出與還原', () => {
       sizeBytes: file.bytes.length,
       recordCount: 16,
     });
+  });
+
+  it('找不到遊戲局時記錄最近備份失敗，不建立任何資料', async () => {
+    const context = await openContext();
+    await expect(
+      updateLastBackup(context.database, 'missing-game', {
+        fileName: 'x.json.gz',
+        exportedAt: '2026-09-15T00:00:00.000Z',
+        sizeBytes: 1,
+        recordCount: 0,
+      }),
+    ).rejects.toThrow('找不到遊戲局');
+    expect(await context.database.count('games')).toBe(0);
   });
 
   it('[DATA-02][DATA-03] JSON.GZ 還原為新遊戲局：筆數、識別、父母關聯、別名、狀態、年度紀錄與特殊值一致', async () => {
