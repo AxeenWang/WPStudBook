@@ -57,7 +57,7 @@ function differs(a: string | undefined, b: string | undefined): boolean {
  * 1. 能力番号與出生年都相同：同一匹馬；馬名或父母不符時為衝突。
  * 2. 否則以名稱輔助：馬名相符且出生年相同或任一方未填的既有紀錄，唯一一筆且沒有能力番号時補入；
  *    已有不同能力番号時為衝突；多筆時交給使用者。
- * 3. 其他情況（含能力番号相同、出生年不同的回收番号）建立新馬。
+ * 3. 能力番号相同、出生年不同的回收番号不視為同一匹馬；沒有其他相符時建立新馬（名稱輔助仍可能補入既有紀錄）。
  */
 export function matchHorseIdentity(
   candidate: IdentityCandidate,
