@@ -14,7 +14,9 @@ import { convertFoalToMare } from '../../services/succession.ts';
 import { Feedback, useAction } from '../actions.tsx';
 import { SelectField } from '../fields.tsx';
 import { SITE_LABELS, SUCCESSION_LABELS, formatMareGroup } from '../mares/labels.ts';
+import { PedigreeView } from '../pedigree/PedigreeView.tsx';
 import { useServices } from '../ServicesContext.tsx';
+import { HorseStallionActions } from '../stallions/HorseStallionActions.tsx';
 import { FoalDetailsFields } from './FoalDetailsFields.tsx';
 import { DISPOSITION_LABELS } from './labels.ts';
 
@@ -162,17 +164,20 @@ function ConvertForm({
   );
 }
 
-/** 產駒管理（需求規格 8.4、9.3、9.4）：補名、更正資料，以及非自由配種母駒的手動轉入。 */
+/** 產駒管理（需求規格 7.7、8.4、9.3、9.4、10.4）：補名、更正資料、母駒轉入、公駒的種牡馬操作與血緣表。 */
 export function FoalPanel({ card }: { readonly card: FoalCard }) {
   // 轉入成功後產駒變成母馬，表單仍保留到面板收合，讓結果訊息留在畫面上。
   const [converted, setConverted] = useState(false);
   const convertible =
     converted ||
     (card.sex === 'female' && !card.freeBred && !card.isMare && card.disposition !== 'sold');
+  const [showPedigree, setShowPedigree] = useState(false);
   return (
     <div className="foal-panel">
       {card.isMare ? (
         <p className="notice">已轉入母馬群，繁殖牝馬馬名唯讀。</p>
+      ) : card.isStallion ? (
+        <p className="notice">已成為種牡馬，種牡馬馬名唯讀。</p>
       ) : (
         <NameForm card={card} />
       )}
@@ -185,7 +190,17 @@ export function FoalPanel({ card }: { readonly card: FoalCard }) {
           }}
         />
       )}
+      {card.sex === 'male' && <HorseStallionActions card={card} />}
       {card.freeBred && <p className="notice">自由配種產駒不能成為八系後繼。</p>}
+      <Button
+        aria-expanded={showPedigree}
+        onPress={() => {
+          setShowPedigree(!showPedigree);
+        }}
+      >
+        {showPedigree ? '收合血緣表' : '血緣表'}
+      </Button>
+      {showPedigree && <PedigreeView horseId={card.id} />}
     </div>
   );
 }

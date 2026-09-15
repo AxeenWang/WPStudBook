@@ -56,7 +56,7 @@ describe('自家種牡馬接任與更換現任（需求規格 7.7、9.6）', () 
       dutyStatus: 'replaced',
       endYear: 1970,
       changeReason: 'brotherBetter',
-      successorName: undefined,
+      successorName: 'テストヒンバ1970',
     });
     const elder = await getHorse(context.database, stud.gameId, stud.elderId);
     expect(elder).toMatchObject({

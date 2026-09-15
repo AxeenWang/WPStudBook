@@ -16,6 +16,7 @@ import { FoalForm } from '../foals/FoalForm.tsx';
 import { BREEDING_TYPE_LABELS, conceptionText, lineageText } from '../foals/labels.ts';
 import { OptionalIntegerField, SelectField } from '../fields.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
+import { MatingRatings } from './MatingRatings.tsx';
 
 const TYPE_CHOICES = BREEDING_TYPE_OPTIONS.map((type) => ({
   value: type,
@@ -204,7 +205,7 @@ function RowItem({ row, mareId }: { readonly row: BreedingRow; readonly mareId: 
   );
 }
 
-/** 配種頁籤（需求規格 9.1、13.4）：年度繁殖紀錄（新到舊）與登記表單；受胎後預定隔年 4 月 1 週出生。 */
+/** 配種頁籤（需求規格 9.1、9.2、13.4）：年度繁殖紀錄（新到舊）與登記表單、配種評價；受胎後預定隔年 4 月 1 週出生。 */
 export function MareBreeding({ mareId }: { readonly mareId: string }) {
   const load = useCallback(
     (serviceContext: ServiceContext) => loadMareBreedings(serviceContext, mareId),
@@ -226,6 +227,7 @@ export function MareBreeding({ mareId }: { readonly mareId: string }) {
         </ol>
       )}
       <BreedingForm key={data.currentYear} mareId={mareId} data={data} />
+      <MatingRatings mareId={mareId} />
     </>
   );
 }

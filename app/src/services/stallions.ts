@@ -1136,6 +1136,11 @@ export interface StallionOverview {
   readonly lines: readonly LineStallions[];
 }
 
+function successorNameOf(book: StallionBook, successorId: string | undefined): string | undefined {
+  const successor = successorId === undefined ? undefined : book.horses.get(successorId);
+  return successor === undefined ? successorId : displayName(book, successor);
+}
+
 function birthLabel(
   book: StallionBook,
   damId: string,
@@ -1198,10 +1203,7 @@ export async function loadStallionOverview(context: ServiceContext): Promise<Sta
             startYear: duty.startYear,
             endYear: duty.endYear,
             changeReason: duty.changeReason,
-            successorName:
-              duty.successorId === undefined
-                ? undefined
-                : nameOf(book.horses.get(duty.successorId)),
+            successorName: successorNameOf(book, duty.successorId),
             age,
             reminder: isOnDuty(duty) && reachesStallionReminderAge(age, reminderAge),
             brotherCount: horse === undefined ? 1 : stallionBrothers(book, horse, lineage).length,

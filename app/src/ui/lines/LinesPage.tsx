@@ -2,6 +2,7 @@ import type { Game } from '../../domain/game.ts';
 import { lineColorLabel, listLineSlots, type LineSlot } from '../../services/lines.ts';
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery } from '../ServicesContext.tsx';
+import { StallionsSection } from '../stallions/StallionsSection.tsx';
 import { OpenFirstLineForm } from './OpenFirstLineForm.tsx';
 
 function LineCard({ slot }: { readonly slot: LineSlot }) {
@@ -67,6 +68,7 @@ function LinesView() {
         ))}
       </ul>
       {!firstLineOpened && <OpenFirstLineForm />}
+      <StallionsSection />
     </section>
   );
 }
