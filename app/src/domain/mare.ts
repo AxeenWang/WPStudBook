@@ -80,7 +80,10 @@ export const MAX_GENERATION = 9999;
 export type MarketGroupIssue = 'positionInvalid' | 'generationInvalid' | 'starterOnlyFirstLine';
 
 /** 市場母馬入群的系與代數：代數 0 只能是第 1 系起點母馬群。 */
-export function checkMarketGroup(position: number, generation: number): MarketGroupIssue | undefined {
+export function checkMarketGroup(
+  position: number,
+  generation: number,
+): MarketGroupIssue | undefined {
   if (!isLinePosition(position)) {
     return 'positionInvalid';
   }

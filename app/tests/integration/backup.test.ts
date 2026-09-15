@@ -193,7 +193,18 @@ describe('備份匯出與還原', () => {
       appVersion: document.appVersion,
       exportedAt: document.exportedAt,
       game: document.game,
-      collections: { ...document.collections, mares: [{ id: 'missing-horse' }] },
+      collections: {
+        ...document.collections,
+        mares: [
+          {
+            id: 'missing-horse',
+            group: { kind: 'unassigned' },
+            origin: 'other',
+            status: 'producing',
+            site: 32,
+          },
+        ],
+      },
     });
     const rejectedFiles = [
       file.bytes.slice(0, Math.floor(file.bytes.length / 2)),

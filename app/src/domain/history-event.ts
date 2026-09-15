@@ -14,7 +14,17 @@ export type HistoryEventType =
   /** 開啟系位置；subjectId 為系位置 id。 */
   | 'lineOpened'
   /** 種牡馬開始任期；subjectId 為馬匹 id。 */
-  | 'stallionDutyStarted';
+  | 'stallionDutyStarted'
+  /** 繁殖牝馬加入母馬群；subjectId 為馬匹 id。 */
+  | 'mareAdded'
+  /** 賣出繁殖牝馬；subjectId 為馬匹 id。 */
+  | 'mareSold'
+  /** 據點變更（轉場），含時點；subjectId 為馬匹 id。 */
+  | 'mareTransferred'
+  /** 年度資料人工更正，保存前後值；subjectId 為馬匹 id。 */
+  | 'mareYearlyChanged'
+  /** 遊戲局設定變更；subjectId 為 game。 */
+  | 'settingsChanged';
 
 export type HistoryEventSource = 'user' | 'migration';
 

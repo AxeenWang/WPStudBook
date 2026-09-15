@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 import { createGameViaUi, openApp } from './helpers.ts';
 
 test.describe('原始資料匯出', () => {
-  test('本機資料不符合資料契約時備份失敗，可以匯出標示不能還原的原始資料；匯出失敗時可以重試', async ({ page }) => {
+  test('本機資料不符合資料契約時備份失敗，可以匯出標示不能還原的原始資料；匯出失敗時可以重試', async ({
+    page,
+  }) => {
     await openApp(page);
     await createGameViaUi(page, '救援局');
 

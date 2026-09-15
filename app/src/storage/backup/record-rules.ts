@@ -2,6 +2,16 @@ import type { DutyStatus, StallionRole } from '../../domain/stallion-duty.ts';
 import type { HistoryEventSource, HistoryEventType } from '../../domain/history-event.ts';
 import type { AliasKind, LifeStage, RecordSource, Sex } from '../../domain/horse.ts';
 import type { ImportType } from '../../domain/import-type.ts';
+import type {
+  AssignedGroupKind,
+  LeftReason,
+  MareOrigin,
+  MareSite,
+  MareStatus,
+  Succession,
+  YearPlan,
+} from '../../domain/mare.ts';
+import type { Vitality } from '../../domain/mare-yearly.ts';
 import { isPlainRecord, type StoredRecord } from '../records.ts';
 import type { RecordCollection } from '../schema.ts';
 
@@ -54,8 +64,55 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   horseCreated: true,
   lineOpened: true,
   stallionDutyStarted: true,
+  mareAdded: true,
+  mareSold: true,
+  mareTransferred: true,
+  mareYearlyChanged: true,
+  settingsChanged: true,
 });
 const EVENT_SOURCES = enumSet<HistoryEventSource>({ user: true, migration: true });
+const MARE_GROUP_KINDS = enumSet<AssignedGroupKind | 'unassigned'>({
+  own: true,
+  substitute: true,
+  starter: true,
+  unassigned: true,
+});
+const MARE_ORIGINS = enumSet<MareOrigin>({
+  marketFound: true,
+  marketReplenish: true,
+  marketMixed: true,
+  marketRecovery: true,
+  ownRetired: true,
+  other: true,
+});
+const MARE_STATUSES = enumSet<MareStatus>({ producing: true, left: true });
+const LEFT_REASONS = enumSet<LeftReason>({ sold: true, retired: true });
+const SUCCESSIONS = enumSet<Succession>({
+  provisional: true,
+  sisterCandidate: true,
+  confirmed: true,
+  replaced: true,
+  sold: true,
+});
+const YEAR_PLANS = enumSet<YearPlan>({
+  undecided: true,
+  designated: true,
+  free: true,
+  waitVitality: true,
+  rest: true,
+});
+const VITALITY_STATES = enumSet<Vitality['state']>({
+  notApplicable: true,
+  pending: true,
+  confirmed: true,
+});
+/** 以型別確保與 domain 的據點一致；鍵是數字，比對時轉成字串。 */
+const MARE_SITE_FLAGS: Readonly<Record<MareSite, true>> = {
+  32: true,
+  33: true,
+  34: true,
+  35: true,
+};
 
 const LINE_COLOR = /^#[0-9a-f]{6}$/;
 
@@ -191,6 +248,85 @@ function checkStallionDuty(record: StoredRecord): string | undefined {
   ]);
 }
 
+function checkMareGroup(group: unknown): string | undefined {
+  if (!isPlainRecord(group) || !isOneOf(MARE_GROUP_KINDS, group.kind)) {
+    return 'group.kind 必須是 own、substitute、starter 或 unassigned';
+  }
+  if (group.kind === 'unassigned') {
+    return undefined;
+  }
+  if (!isIntegerIn(group.position, 1, 8)) {
+    return 'group.position 必須是 1～8 的整數';
+  }
+  if (group.kind === 'starter') {
+    return group.position === 1 && group.generation === 0
+      ? undefined
+      : '起點母馬群必須是第 1 系、代數 0';
+  }
+  return isIntegerIn(group.generation, 1, 9999)
+    ? undefined
+    : 'group.generation 必須是 1 以上的整數';
+}
+
+function isMareSiteValue(value: unknown): boolean {
+  return isInteger(value) && String(value) in MARE_SITE_FLAGS;
+}
+
+function isYearPlanValue(value: unknown): boolean {
+  return isPlainRecord(value) && isOneOf(YEAR_PLANS, value.plan) && isYear(value.gameYear);
+}
+
+function checkMare(record: StoredRecord): string | undefined {
+  const groupProblem = checkMareGroup(record.group);
+  const left = record.status === 'left';
+  return firstProblem([
+    [groupProblem === undefined, groupProblem ?? ''],
+    [isOneOf(MARE_ORIGINS, record.origin), 'origin 不是有效的來源'],
+    [optional(record, 'originNote', isNonEmptyString), 'originNote 必須是非空字串'],
+    [isOneOf(MARE_STATUSES, record.status), 'status 必須是 producing 或 left'],
+    left
+      ? [isOneOf(LEFT_REASONS, record.leftReason), 'leftReason 必須是 sold 或 retired']
+      : [!('leftReason' in record), '生產中的母馬不可有 leftReason'],
+    [isMareSiteValue(record.site), 'site 必須是 32～35 的整數'],
+    [
+      optional(record, 'succession', (value) => isOneOf(SUCCESSIONS, value)),
+      'succession 不是有效的姊妹接替狀態',
+    ],
+    [optional(record, 'yearPlan', isYearPlanValue), 'yearPlan 必須含有效的 plan 與 gameYear'],
+  ]);
+}
+
+function isVitality(value: unknown): boolean {
+  if (!isPlainRecord(value) || !isOneOf(VITALITY_STATES, value.state)) {
+    return false;
+  }
+  return (
+    value.state !== 'confirmed' ||
+    (isIntegerIn(value.value, 0, 100) && typeof value.boosted === 'boolean')
+  );
+}
+
+function checkMareYearly(record: StoredRecord): string | undefined {
+  return firstProblem([
+    [isNonEmptyString(record.horseId), 'horseId 必須是非空字串'],
+    [isYear(record.gameYear), 'gameYear 必須是 1000～9999 的整數'],
+    [optional(record, 'vitalityMay', isVitality), 'vitalityMay 不是有效的活力'],
+    [optional(record, 'vitalityJuly', isVitality), 'vitalityJuly 不是有效的活力'],
+    [
+      optional(record, 'kodashi', (value) => isIntegerIn(value, 0, 15)),
+      'kodashi 必須是 0～15 的整數',
+    ],
+    [
+      optional(record, 'breedingYears', (value) => isIntegerIn(value, 0, 99)),
+      'breedingYears 必須是 0～99 的整數',
+    ],
+    [
+      optional(record, 'breedingCount', (value) => isIntegerIn(value, 0, 99)),
+      'breedingCount 必須是 0～99 的整數',
+    ],
+  ]);
+}
+
 function isTiming(value: unknown): boolean {
   return isPlainRecord(value) && isIntegerIn(value.month, 1, 12) && isIntegerIn(value.week, 1, 5);
 }
@@ -216,5 +352,7 @@ export const RECORD_RULES: Readonly<Partial<Record<RecordCollection, RecordRule>
   lines: checkLine,
   systemMap: checkSystemMapEntry,
   stallionDuties: checkStallionDuty,
+  mares: checkMare,
+  mareYearly: checkMareYearly,
   events: checkEvent,
 };

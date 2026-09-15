@@ -194,7 +194,18 @@ describe('decodeBackup', () => {
       },
     });
     const dangling = await documentWith({
-      collections: { ...validCollections(), mares: [{ id: 'missing-horse' }] },
+      collections: {
+        ...validCollections(),
+        mares: [
+          {
+            id: 'missing-horse',
+            group: { kind: 'unassigned' },
+            origin: 'other',
+            status: 'producing',
+            site: 32,
+          },
+        ],
+      },
     });
     expect(failure(await decodeBackup(jsonBytes(duplicated), OPTIONS))).toEqual({
       stage: 'relations',
