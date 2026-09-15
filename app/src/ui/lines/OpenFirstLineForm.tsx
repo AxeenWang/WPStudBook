@@ -75,20 +75,27 @@ export function OpenFirstLineForm() {
   };
 
   const submit = async () => {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
     try {
       const check = await checkOpenFirstLine(context, currentInput());
       if (check.issues.length > 0) {
         setError(check.issues.join('；'));
+        setBusy(false);
         return;
       }
       setError(undefined);
       if (check.warnings.length > 0) {
         setWarnings(check.warnings);
+        setBusy(false);
         return;
       }
       await open(undefined);
     } catch (caught) {
       setError(errorMessage(caught));
+      setBusy(false);
     }
   };
 
