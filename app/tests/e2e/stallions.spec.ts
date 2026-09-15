@@ -85,7 +85,10 @@ test.describe('種牡馬', () => {
     const elder = await foalPanel(page, 'オオトリモナーコス1969');
     const assign = elder.getByRole('form', { name: '接任現任' });
     await assign.getByRole('button', { name: '接任現任' }).click();
-    await expect(assign.getByRole('status')).toHaveText('已接任第 1 系 1 代現任');
+    await expect(elder.getByRole('region', { name: '種牡馬' }).getByRole('status')).toHaveText(
+      '已接任第 1 系 1 代現任',
+    );
+    await expect(assign).toHaveCount(0);
     await expect(elder.getByTestId('horse-stallion-status')).toHaveText(
       '已成為種牡馬・第 1 系 1 代現任（在崗）',
     );
@@ -97,7 +100,9 @@ test.describe('種牡馬', () => {
     const register = younger.getByRole('form', { name: '登記成為種牡馬' });
     await register.getByLabel('種牡馬馬番号（選填，例如 0x0000）').fill('0x0102');
     await register.getByRole('button', { name: '登記成為種牡馬' }).click();
-    await expect(register.getByRole('status')).toHaveText('已登記「テストヒンバ1970」成為種牡馬');
+    await expect(younger.getByRole('region', { name: '種牡馬' }).getByRole('status')).toHaveText(
+      '已登記「テストヒンバ1970」成為種牡馬',
+    );
 
     await gotoPage(page, '八系');
     const card = stallionCard(page);

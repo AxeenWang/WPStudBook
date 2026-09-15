@@ -11,7 +11,7 @@ import {
   setPlannedSuccessor,
   type HorseStallionStatus,
 } from '../../services/stallions.ts';
-import { Feedback, useAction } from '../actions.tsx';
+import { Feedback, useAction, type ActionState } from '../actions.tsx';
 import { SelectField } from '../fields.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 import { DUTY_STATUS_LABELS, READINESS_LABELS } from './labels.ts';
@@ -51,9 +51,14 @@ function StallionNoField({
   );
 }
 
-function RegisterForm({ card }: { readonly card: FoalCard }) {
+interface FormProps {
+  readonly card: FoalCard;
+  readonly action: ActionState;
+}
+
+function RegisterForm({ card, action }: FormProps) {
   const { context } = useServices();
-  const { busy, message, error, run } = useAction();
+  const { busy, run } = action;
   const headingId = useId();
   const [stallionNo, setStallionNo] = useState('');
   return (
@@ -70,7 +75,6 @@ function RegisterForm({ card }: { readonly card: FoalCard }) {
       <h6 id={headingId}>登記成為種牡馬</h6>
       <p>只記錄去向與馬番号，不影響八系任務；登記後馬名唯讀，請先補登正式馬名。</p>
       <StallionNoField value={stallionNo} onChange={setStallionNo} />
-      <Feedback message={message} error={error} />
       <Button type="submit" isPending={busy}>
         登記成為種牡馬
       </Button>
@@ -78,9 +82,9 @@ function RegisterForm({ card }: { readonly card: FoalCard }) {
   );
 }
 
-function AssignForm({ card }: { readonly card: FoalCard }) {
+function AssignForm({ card, action }: FormProps) {
   const { context } = useServices();
-  const { busy, message, error, run } = useAction();
+  const { busy, run } = action;
   const headingId = useId();
   const [stallionNo, setStallionNo] = useState('');
   return (
@@ -97,7 +101,6 @@ function AssignForm({ card }: { readonly card: FoalCard }) {
       <h6 id={headingId}>接任現任</h6>
       <p>接任前會再次核對父母、系與代數；該代已有在崗現任時，請到八系頁更換現任或比較兄弟。</p>
       <StallionNoField value={stallionNo} onChange={setStallionNo} />
-      <Feedback message={message} error={error} />
       <Button type="submit" isPending={busy}>
         接任現任
       </Button>
@@ -105,9 +108,9 @@ function AssignForm({ card }: { readonly card: FoalCard }) {
   );
 }
 
-function PlannedForm({ card, position }: { readonly card: FoalCard; readonly position: number }) {
+function PlannedForm({ card, action, position }: FormProps & { readonly position: number }) {
   const { context } = useServices();
-  const { busy, message, error, run } = useAction();
+  const { busy, run } = action;
   const headingId = useId();
   const [readiness, setReadiness] = useState<PlannedReadiness>('racing');
   return (
@@ -132,7 +135,6 @@ function PlannedForm({ card, position }: { readonly card: FoalCard; readonly pos
           }
         }}
       />
-      <Feedback message={message} error={error} />
       <Button type="submit" isPending={busy}>
         設為預定後繼
       </Button>
@@ -147,6 +149,7 @@ export function HorseStallionActions({ card }: { readonly card: FoalCard }) {
     [card.id],
   );
   const { data, error } = useServiceQuery(load);
+  const action = useAction();
   if (data === undefined) {
     return error === undefined ? <p role="status">載入中…</p> : <p role="alert">{error}</p>;
   }
@@ -157,10 +160,11 @@ export function HorseStallionActions({ card }: { readonly card: FoalCard }) {
     <section aria-label="種牡馬" className="field-group">
       <h5>種牡馬</h5>
       <p data-testid="horse-stallion-status">{statusText(data)}</p>
-      {!data.isStallion && <RegisterForm card={card} />}
-      {eligible && !onDuty && <AssignForm card={card} />}
+      <Feedback message={action.message} error={action.error} />
+      {!data.isStallion && <RegisterForm card={card} action={action} />}
+      {eligible && !onDuty && <AssignForm card={card} action={action} />}
       {eligible && !onDuty && data.planned === undefined && (
-        <PlannedForm card={card} position={lineage.position} />
+        <PlannedForm card={card} action={action} position={lineage.position} />
       )}
       {!eligible && <p className="notice">自由配種產駒只能登記去向，不能成為八系後繼。</p>}
     </section>

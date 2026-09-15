@@ -16,7 +16,7 @@ import {
   type PlannedSuccessorView,
   type SettableDutyStatus,
 } from '../../services/stallions.ts';
-import { Feedback, useAction } from '../actions.tsx';
+import { Feedback, useAction, type ActionState } from '../actions.tsx';
 import { OptionalIntegerField, SelectField, type SelectOption } from '../fields.tsx';
 import { SEX_LABELS } from '../foals/labels.ts';
 import { PedigreeView } from '../pedigree/PedigreeView.tsx';
@@ -218,9 +218,15 @@ function CurrentItem({
   );
 }
 
-function AssignForm({ line }: { readonly line: LineStallions }) {
+interface LineFormProps {
+  readonly line: LineStallions;
+  /** 由系卡片持有：送出後這個表單可能消失（例如沒有可選的公駒），訊息仍要留在畫面上。 */
+  readonly action: ActionState;
+}
+
+function AssignForm({ line, action }: LineFormProps) {
   const { context } = useServices();
-  const { busy, message, error, run } = useAction();
+  const { busy, run } = action;
   const headingId = useId();
   const [horseId, setHorseId] = useState<string>();
   const [stallionNo, setStallionNo] = useState('');
@@ -251,7 +257,6 @@ function AssignForm({ line }: { readonly line: LineStallions }) {
         onChange={setHorseId}
       />
       <StallionNoField value={stallionNo} onChange={setStallionNo} />
-      <Feedback message={message} error={error} />
       <Button type="submit" isPending={busy}>
         接任現任
       </Button>
@@ -262,12 +267,14 @@ function AssignForm({ line }: { readonly line: LineStallions }) {
 function PlannedBlock({
   planned,
   position,
+  action,
 }: {
   readonly planned: PlannedSuccessorView;
   readonly position: number;
+  readonly action: ActionState;
 }) {
   const { context } = useServices();
-  const { busy, message, error, run } = useAction();
+  const { busy, run } = action;
   const [readiness, setReadiness] = useState<PlannedReadiness>(
     planned.readiness === 'retiredPendingAssignment' ? 'retiredPendingAssignment' : 'racing',
   );
@@ -339,14 +346,13 @@ function PlannedBlock({
           取消預定後繼
         </Button>
       </div>
-      <Feedback message={message} error={error} />
     </div>
   );
 }
 
-function PlannedForm({ line }: { readonly line: LineStallions }) {
+function PlannedForm({ line, action }: LineFormProps) {
   const { context } = useServices();
-  const { busy, message, error, run } = useAction();
+  const { busy, run } = action;
   const headingId = useId();
   const choices = [
     ...line.successorOptions.map((option) => ({
@@ -399,7 +405,6 @@ function PlannedForm({ line }: { readonly line: LineStallions }) {
           }}
         />
       )}
-      <Feedback message={message} error={error} />
       <Button type="submit" isPending={busy}>
         指定預定後繼
       </Button>
@@ -415,9 +420,13 @@ function LineStallionsCard({
   readonly currentYear: number;
 }) {
   const title = `第 ${String(line.position)} 系種牡馬`;
+  const action = useAction();
   return (
     <article aria-label={title} className="stallion-card">
       <h3>{title}</h3>
+      <div data-testid="line-stallion-feedback">
+        <Feedback message={action.message} error={action.error} />
+      </div>
       {line.reminders.length > 0 && (
         <ul aria-label="提醒" className="reminders">
           {line.reminders.map((reminder) => (
@@ -437,15 +446,15 @@ function LineStallionsCard({
           ))}
         </ul>
       )}
-      {line.successorOptions.length > 0 && <AssignForm line={line} />}
+      {line.successorOptions.length > 0 && <AssignForm line={line} action={action} />}
       <h4>預定後繼</h4>
       {line.planned === undefined ? (
         <p>尚未指定。</p>
       ) : (
-        <PlannedBlock planned={line.planned} position={line.position} />
+        <PlannedBlock planned={line.planned} position={line.position} action={action} />
       )}
       {(line.successorOptions.length > 0 || line.breedingOptions.length > 0) && (
-        <PlannedForm line={line} />
+        <PlannedForm line={line} action={action} />
       )}
     </article>
   );
