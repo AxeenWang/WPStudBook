@@ -145,7 +145,10 @@ describe('年度資料', () => {
       currentVitality('producing', yearly(1968, { vitalityMay: may, vitalityJuly: july })),
     ).toEqual({ vitality: july, month: 7 });
     expect(
-      currentVitality('producing', yearly(1968, { vitalityMay: may, vitalityJuly: { state: 'pending' } })),
+      currentVitality(
+        'producing',
+        yearly(1968, { vitalityMay: may, vitalityJuly: { state: 'pending' } }),
+      ),
     ).toEqual({ vitality: may, month: 5 });
     expect(currentVitality('producing', undefined)).toEqual({
       vitality: { state: 'pending' },
