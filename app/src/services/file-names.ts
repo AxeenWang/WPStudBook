@@ -8,7 +8,9 @@ export interface BackupFileNameInput {
   readonly compressed: boolean;
 }
 
-export function backupFileName(input: BackupFileNameInput): string {
+export type RawExportFileNameInput = Omit<BackupFileNameInput, 'compressed'>;
+
+function fileNameStem(input: RawExportFileNameInput): string {
   const cleaned = input.gameName
     .replace(INVALID_FILE_CHARACTERS, '_')
     .replace(TRAILING_DOTS_AND_SPACES, '');
@@ -18,6 +20,14 @@ export function backupFileName(input: BackupFileNameInput): string {
     .replaceAll('-', '')
     .replaceAll(':', '')
     .replace('T', '-');
-  const extension = input.compressed ? 'json.gz' : 'json';
-  return `WPStudBook_${safeName}_${String(input.currentYear)}年_${stamp}.${extension}`;
+  return `WPStudBook_${safeName}_${String(input.currentYear)}年_${stamp}`;
+}
+
+export function backupFileName(input: BackupFileNameInput): string {
+  return `${fileNameStem(input)}.${input.compressed ? 'json.gz' : 'json'}`;
+}
+
+/** 原始資料匯出（設計決策 5.4 節）：檔名標示不能還原。 */
+export function rawExportFileName(input: RawExportFileNameInput): string {
+  return `${fileNameStem(input)}_原始資料_不能還原.json`;
 }

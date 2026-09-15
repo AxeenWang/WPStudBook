@@ -3,12 +3,14 @@ import { Button, FileTrigger, Input, Label, TextField } from 'react-aria-compone
 import type { Game } from '../../domain/game.ts';
 import {
   exportBackup,
+  exportRawGameData,
   previewBackupFile,
   recordDeliveredBackup,
   restoreBackupAsNewGame,
   type BackupPreview,
   type BackupSummary,
 } from '../../services/backup.ts';
+import { ServiceError } from '../../services/errors.ts';
 import { ConfirmDialog } from '../dialogs.tsx';
 import { downloadFile } from '../download.ts';
 import { errorMessage, formatBytes, formatCount, formatDateTime } from '../format.ts';
@@ -24,6 +26,8 @@ interface PendingRestore {
 interface Problem {
   readonly title: string;
   readonly details: readonly string[];
+  /** 本機資料不符合資料契約時，提供原始資料匯出（設計決策 5.4 節）。 */
+  readonly offerRawExport?: boolean | undefined;
 }
 
 function BackupSummaryList({
@@ -94,10 +98,28 @@ export function BackupSection({ currentGame }: { readonly currentGame: Game | un
         });
       }
     } catch (caught) {
-      setProblem({ title: '備份失敗', details: errorMessage(caught).split('\n') });
+      setProblem({
+        title: '備份失敗',
+        details: errorMessage(caught).split('\n'),
+        offerRawExport: caught instanceof ServiceError && caught.code === 'backupRejected',
+      });
     } finally {
       setBusy(false);
       notifyChanged();
+    }
+  };
+
+  const downloadRaw = async () => {
+    setBusy(true);
+    try {
+      const file = await exportRawGameData(context);
+      downloadFile(file);
+      setProblem(undefined);
+      setMessage(`已匯出原始資料「${file.fileName}」；這個檔案不能還原，請保留下來以便排查問題`);
+    } catch (caught) {
+      setProblem({ title: '原始資料匯出失敗', details: [errorMessage(caught)] });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -183,6 +205,21 @@ export function BackupSection({ currentGame }: { readonly currentGame: Game | un
               <li key={index}>{detail}</li>
             ))}
           </ul>
+          {problem.offerRawExport === true && (
+            <>
+              <p>
+                無法產生可還原的備份。可以先匯出原始資料保存下來；原始資料不能還原，只供保存與排查問題。
+              </p>
+              <Button
+                isDisabled={busy}
+                onPress={() => {
+                  void downloadRaw();
+                }}
+              >
+                匯出原始資料（不能還原）
+              </Button>
+            </>
+          )}
         </div>
       )}
       {pending !== undefined && (
