@@ -3,6 +3,7 @@ import type { HistoryEvent } from '../domain/history-event.ts';
 import type { BackupCollections } from './backup/document.ts';
 import type { AppDatabase } from './database.ts';
 import { CURRENT_GAME_KEY, isGame } from './games.ts';
+import { withHorseNameKeys } from './horses.ts';
 import {
   completeTransaction,
   gameKeyRange,
@@ -16,7 +17,17 @@ import {
   CHECKPOINT_STORES,
   RECORD_COLLECTIONS,
   type BackupCollection,
+  type RecordCollection,
 } from './schema.ts';
+
+/** 寫入各資料表的紀錄；horses 的備份內容不含 nameKeys，寫入時依名稱重建（設計決策 5.2 節）。 */
+function toStoredRecord(
+  gameId: string,
+  collection: RecordCollection,
+  record: object,
+): StoredRecord {
+  return collection === 'horses' ? withHorseNameKeys(gameId, record) : withGameId(gameId, record);
+}
 
 export type SnapshotCollections = Readonly<Record<BackupCollection, readonly StoredRecord[]>>;
 
@@ -78,7 +89,7 @@ export async function insertRestoredGame(
     ),
     ...RECORD_COLLECTIONS.flatMap((name) =>
       restored.collections[name].map((record) =>
-        transaction.objectStore(name).add(withGameId(gameId, record)),
+        transaction.objectStore(name).add(toStoredRecord(gameId, name, record)),
       ),
     ),
     ...restored.extraEvents.map((event) =>
@@ -140,7 +151,7 @@ export async function replaceGameData(
     ),
     ...RECORD_COLLECTIONS.flatMap((name) =>
       replacement.collections[name].map((record) =>
-        transaction.objectStore(name).add(withGameId(gameId, record)),
+        transaction.objectStore(name).add(toStoredRecord(gameId, name, record)),
       ),
     ),
     ...replacement.extraEvents.map((event) =>

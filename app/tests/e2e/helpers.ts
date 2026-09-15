@@ -31,3 +31,11 @@ export async function changeYearViaUi(page: Page, year: number): Promise<void> {
     .click();
   await expect(page.getByTestId('status-year')).toHaveText(`${String(year)} 年`);
 }
+
+export async function gotoPage(page: Page, name: string): Promise<void> {
+  const button = page
+    .getByRole('navigation', { name: '主要頁面' })
+    .getByRole('button', { name, exact: true });
+  await button.click();
+  await expect(button).toHaveAttribute('aria-current', 'page');
+}

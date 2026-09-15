@@ -8,21 +8,50 @@ import {
 } from '../services/context.ts';
 import { DataManagementPage } from './data-management/DataManagementPage.tsx';
 import { errorMessage } from './format.ts';
+import { LinesPage } from './lines/LinesPage.tsx';
 import { ServicesProvider, useServiceQuery } from './ServicesContext.tsx';
 import { StatusBar } from './StatusBar.tsx';
+import { SystemMapPage } from './system-map/SystemMapPage.tsx';
 
 type Boot =
   | { readonly state: 'opening' }
   | { readonly state: 'ready'; readonly context: ServiceContext }
   | { readonly state: 'failed'; readonly message: string };
 
+type PageKey = 'lines' | 'systemMap' | 'data';
+
+const PAGES = [
+  ['lines', '八系'],
+  ['systemMap', '系統對照表'],
+  ['data', '資料管理'],
+] as const satisfies ReadonlyArray<readonly [PageKey, string]>;
+
 function AppShell() {
   const { data: status, error } = useServiceQuery(loadAppStatus);
+  // 總覽頁出現前預設顯示資料管理（建立遊戲局、備份與檢查點都在這裡）。
+  const [page, setPage] = useState<PageKey>('data');
+  const currentGame = status?.currentGame;
   return (
     <>
       <StatusBar status={status} error={error} />
+      <nav aria-label="主要頁面" className="main-nav">
+        {PAGES.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            aria-current={page === key ? 'page' : undefined}
+            onClick={() => {
+              setPage(key);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
       <main>
-        <DataManagementPage status={status} />
+        {page === 'lines' && <LinesPage currentGame={currentGame} />}
+        {page === 'systemMap' && <SystemMapPage currentGame={currentGame} />}
+        {page === 'data' && <DataManagementPage status={status} />}
       </main>
     </>
   );

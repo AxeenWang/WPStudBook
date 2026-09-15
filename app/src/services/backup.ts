@@ -13,7 +13,7 @@ import { sumRecordCounts } from '../storage/games.ts';
 import { insertRestoredGame, readGameSnapshot, updateLastBackup } from '../storage/snapshot.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
-import { backupFileName } from './file-names.ts';
+import { backupFileName, rawExportFileName } from './file-names.ts';
 import { requireCurrentGame } from './games.ts';
 
 export interface BackupSummary {
@@ -28,10 +28,14 @@ export interface BackupSummary {
   readonly compressed: boolean;
 }
 
-export interface BackupFile {
+/** 交給介面下載的檔案。 */
+export interface DownloadFile {
   readonly fileName: string;
   readonly mediaType: string;
   readonly bytes: Uint8Array<ArrayBuffer>;
+}
+
+export interface BackupFile extends DownloadFile {
   readonly summary: BackupSummary;
   /** 產生此備份的遊戲局。 */
   readonly gameId: string;
@@ -100,6 +104,40 @@ export async function exportBackup(context: ServiceContext): Promise<BackupFile>
   const game = await requireCurrentGame(context);
   const { file } = await encodeGameBackup(context, game.id);
   return file;
+}
+
+export const RAW_EXPORT_FORMAT = 'WPStudBook-raw-export';
+
+/**
+ * 原始資料匯出（設計決策 5.4 節）：本機資料不符合資料契約、無法產生備份時使用。
+ * 不驗證、不壓縮、不寫入資料庫；內容不能還原，匯入時以格式不符拒絕。
+ */
+export async function exportRawGameData(context: ServiceContext): Promise<DownloadFile> {
+  const game = await requireCurrentGame(context);
+  const snapshot = await readGameSnapshot(context.database, game.id);
+  if (snapshot === undefined) {
+    throw new ServiceError('gameNotFound', '找不到這個遊戲局');
+  }
+  const exportedAt = context.now().toISOString();
+  const content = {
+    format: RAW_EXPORT_FORMAT,
+    restorable: false,
+    notice: '此檔未通過資料契約驗證，不能還原，只供保存與除錯。',
+    schemaVersion: context.schemaVersion,
+    appVersion: context.appVersion,
+    exportedAt,
+    game: snapshot.game,
+    collections: snapshot.collections,
+  };
+  return {
+    fileName: rawExportFileName({
+      gameName: game.name,
+      currentYear: game.currentYear,
+      exportedAt,
+    }),
+    mediaType: 'application/json',
+    bytes: new TextEncoder().encode(JSON.stringify(content, null, 2)),
+  };
 }
 
 /** 交出備份檔後記錄「最近備份」；失敗時錯誤往外丟，但已交出的檔案不受影響。 */

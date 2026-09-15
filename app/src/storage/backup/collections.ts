@@ -8,6 +8,7 @@ import {
 } from '../schema.ts';
 import type { BackupCollections, BackupGameSummary } from './document.ts';
 import { findInvalidJsonValue } from './json-value.ts';
+import { RECORD_RULES } from './record-rules.ts';
 
 export type BackupIssueCode =
   | 'gzipUnsupported'
@@ -198,7 +199,12 @@ function checkRecord(
   if ('gameId' in record) {
     return `${label} 不可包含 gameId`;
   }
-  return findInvalidJsonValue(record, label);
+  const jsonProblem = findInvalidJsonValue(record, label);
+  if (jsonProblem !== undefined) {
+    return jsonProblem;
+  }
+  const ruleProblem = RECORD_RULES[collection]?.(record);
+  return ruleProblem === undefined ? undefined : `${label}：${ruleProblem}`;
 }
 
 function checkSettings(records: readonly unknown[]): BackupIssue[] {
