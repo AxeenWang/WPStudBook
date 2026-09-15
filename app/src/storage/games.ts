@@ -93,12 +93,10 @@ export async function countGameRecords(
   gameId: string,
 ): Promise<GameRecordCounts> {
   const transaction = database.transaction([...GAME_DATA_STORES], 'readonly');
-  const counts = await Promise.all(
-    GAME_DATA_STORES.map((name) =>
-      transaction.objectStore(name).count(name === 'gameSettings' ? gameId : gameKeyRange(gameId)),
-    ),
+  const countRequests = GAME_DATA_STORES.map((name) =>
+    transaction.objectStore(name).count(name === 'gameSettings' ? gameId : gameKeyRange(gameId)),
   );
-  await transaction.done;
+  const [counts] = await Promise.all([Promise.all(countRequests), transaction.done]);
   return Object.fromEntries(
     GAME_DATA_STORES.map((name, index) => [name, counts[index] ?? 0]),
   ) as GameRecordCounts;
