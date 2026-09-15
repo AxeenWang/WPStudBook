@@ -14,7 +14,7 @@ export const CURRENT_GAME_KEY = 'currentGameId';
 
 export type GameRecordCounts = Readonly<Record<GameDataStore, number>>;
 
-function isGame(value: unknown): value is Game {
+export function isGame(value: unknown): value is Game {
   return (
     isPlainRecord(value) &&
     typeof value.id === 'string' &&
