@@ -4,6 +4,7 @@ import type { Game } from '../../domain/game.ts';
 import {
   exportBackup,
   previewBackupFile,
+  recordDeliveredBackup,
   restoreBackupAsNewGame,
   type BackupPreview,
   type BackupSummary,
@@ -84,6 +85,14 @@ export function BackupSection({ currentGame }: { readonly currentGame: Game | un
       downloadFile(file);
       setExported(file.summary);
       setProblem(undefined);
+      try {
+        await recordDeliveredBackup(context, file);
+      } catch (caught) {
+        setProblem({
+          title: `備份檔已下載，但無法記錄最近備份：${errorMessage(caught)}`,
+          details: [],
+        });
+      }
     } catch (caught) {
       setProblem({ title: '備份失敗', details: errorMessage(caught).split('\n') });
     } finally {

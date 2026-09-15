@@ -33,6 +33,8 @@ export interface BackupFile {
   readonly mediaType: string;
   readonly bytes: Uint8Array<ArrayBuffer>;
   readonly summary: BackupSummary;
+  /** 產生此備份的遊戲局。 */
+  readonly gameId: string;
 }
 
 export function formatIssues(issues: readonly BackupIssue[]): string {
@@ -77,6 +79,7 @@ export async function encodeGameBackup(
       fileName,
       mediaType: encoded.compressed ? 'application/gzip' : 'application/json',
       bytes: encoded.bytes,
+      gameId,
       summary: {
         fileName,
         gameName: game.name,
@@ -92,17 +95,25 @@ export async function encodeGameBackup(
   };
 }
 
+/** 只產生備份檔，不寫入資料庫；下載失敗時使用者仍拿得到檔案（先交出檔案，再記錄最近備份）。 */
 export async function exportBackup(context: ServiceContext): Promise<BackupFile> {
   const game = await requireCurrentGame(context);
   const { file } = await encodeGameBackup(context, game.id);
+  return file;
+}
+
+/** 交出備份檔後記錄「最近備份」；失敗時錯誤往外丟，但已交出的檔案不受影響。 */
+export async function recordDeliveredBackup(
+  context: ServiceContext,
+  file: BackupFile,
+): Promise<void> {
   const lastBackup: LastBackup = {
     fileName: file.fileName,
     exportedAt: file.summary.exportedAt,
     sizeBytes: file.summary.sizeBytes,
     recordCount: file.summary.recordCount,
   };
-  await trackWrite(context, () => updateLastBackup(context.database, game.id, lastBackup));
-  return file;
+  await trackWrite(context, () => updateLastBackup(context.database, file.gameId, lastBackup));
 }
 
 export type BackupPreview =
