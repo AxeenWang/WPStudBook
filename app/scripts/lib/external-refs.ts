@@ -6,13 +6,13 @@ export interface ExternalReference {
 const SCRIPT_BLOCK = /<script\b([^>]*)>[\s\S]*?<\/script>/gi;
 const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 const STYLE_BLOCK = /<style\b([^>]*)>([\s\S]*?)<\/style>/gi;
-// 屬性名稱前必須是空白、引號或斜線，避免把 data-src 之類的自訂屬性當成 src。
+// 屬性名稱前必須是空白、引號、斜線或冒號，避免把 data-src 之類的自訂屬性當成 src；冒號用於支援 xlink:href 等命名空間屬性。
 const URL_ATTRIBUTE =
-  /(?<=[\s"'/])(src|href|srcset|imagesrcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
-const STYLE_ATTRIBUTE = /(?<=[\s"'/])style\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+  /(?<=[\s"'/:])(src|href|srcset|imagesrcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+const STYLE_ATTRIBUTE = /(?<=[\s"'/:])style\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 const META_TAG = /<meta\b[^>]*>/gi;
-const HTTP_EQUIV_REFRESH = /(?<=[\s"'/])http-equiv\s*=\s*["']?refresh\b/i;
-const CONTENT_ATTRIBUTE = /(?<=[\s"'/])content\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+const HTTP_EQUIV_REFRESH = /(?<=[\s"'/:])http-equiv\s*=\s*["']?refresh\b/i;
+const CONTENT_ATTRIBUTE = /(?<=[\s"'/:])content\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
 const REFRESH_URL = /(?:^|[;,\s])url\s*=\s*(['"]?)([^'"]*)\1/i;
 const CSS_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
 const CSS_IMPORT_STRING = /@import\s+(?:"([^"]+)"|'([^']+)')/gi;

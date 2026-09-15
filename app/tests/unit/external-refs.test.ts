@@ -109,4 +109,12 @@ describe('findExternalReferences', () => {
       '<!--<img src=old.png>--><p>內容</p>';
     expect(findExternalReferences(html)).toEqual([]);
   });
+
+  it('[BLD-02] SVG 的 xlink:href 指向外部時回報', () => {
+    const html =
+      '<svg><use xlink:href="https://cdn.example.com/icons.svg#a"></use><use xlink:href="#local"></use></svg>';
+    expect(findExternalReferences(html)).toEqual([
+      { kind: 'attribute', value: 'https://cdn.example.com/icons.svg#a' },
+    ]);
+  });
 });
