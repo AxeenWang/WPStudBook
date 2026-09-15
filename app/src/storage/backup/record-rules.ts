@@ -1,5 +1,7 @@
 import type { DutyStatus, StallionRole } from '../../domain/stallion-duty.ts';
 import type { HistoryEventSource, HistoryEventType } from '../../domain/history-event.ts';
+import type { BreedingType, Conception } from '../../domain/breeding.ts';
+import type { Aptitude, Disposition, SubParamGrade, SubParamKey } from '../../domain/foal.ts';
 import type { AliasKind, LifeStage, RecordSource, Sex } from '../../domain/horse.ts';
 import type { ImportType } from '../../domain/import-type.ts';
 import type {
@@ -69,6 +71,12 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   mareTransferred: true,
   mareYearlyChanged: true,
   settingsChanged: true,
+  breedingRecorded: true,
+  foalBorn: true,
+  foalChanged: true,
+  horseNamed: true,
+  successionChanged: true,
+  lineGenerationEstablished: true,
 });
 const EVENT_SOURCES = enumSet<HistoryEventSource>({ user: true, migration: true });
 const MARE_GROUP_KINDS = enumSet<AssignedGroupKind | 'unassigned'>({
@@ -105,6 +113,42 @@ const VITALITY_STATES = enumSet<Vitality['state']>({
   notApplicable: true,
   pending: true,
   confirmed: true,
+});
+const CONCEPTION_VALUES = enumSet<Conception>({
+  空胎: true,
+  受胎: true,
+  不受胎: true,
+  未確認: true,
+});
+const BREEDING_TYPE_VALUES = enumSet<BreedingType>({ designated: true, free: true });
+const DISPOSITION_VALUES = enumSet<Disposition>({ keep: true, forSale: true, sold: true });
+const APTITUDE_VALUES = enumSet<Aptitude>({ '◎': true, '○': true, '△': true, '×': true });
+const SUB_PARAM_KEY_VALUES = enumSet<SubParamKey>({
+  power: true,
+  quickness: true,
+  guts: true,
+  flexibility: true,
+  spirit: true,
+  wisdom: true,
+  health: true,
+});
+const SUB_PARAM_GRADE_VALUES = enumSet<SubParamGrade>({
+  G: true,
+  'G+': true,
+  F: true,
+  'F+': true,
+  E: true,
+  'E+': true,
+  D: true,
+  'D+': true,
+  C: true,
+  'C+': true,
+  B: true,
+  'B+': true,
+  A: true,
+  'A+': true,
+  S: true,
+  'S+': true,
 });
 /** 以型別確保與 domain 的據點一致；鍵是數字，比對時轉成字串。 */
 const MARE_SITE_FLAGS: Readonly<Record<MareSite, true>> = {
@@ -346,6 +390,79 @@ function checkEvent(record: StoredRecord): string | undefined {
   ]);
 }
 
+function checkBreeding(record: StoredRecord): string | undefined {
+  const { gameYear, expectedBirthYear } = record;
+  const conceived = record.conception === '受胎';
+  return firstProblem([
+    [isNonEmptyString(record.mareId), 'mareId 必須是非空字串'],
+    [isYear(gameYear), 'gameYear 必須是 1000～9999 的整數'],
+    [isOneOf(BREEDING_TYPE_VALUES, record.breedingType), 'breedingType 必須是 designated 或 free'],
+    [optional(record, 'stallionId', isNonEmptyString), 'stallionId 必須是非空字串'],
+    [optional(record, 'stallionName', isNonEmptyString), 'stallionName 必須是非空字串'],
+    [
+      optional(record, 'conception', (value) => isOneOf(CONCEPTION_VALUES, value)),
+      'conception 必須是 空胎、受胎、不受胎 或 未確認',
+    ],
+    conceived
+      ? [
+          isInteger(gameYear) && expectedBirthYear === gameYear + 1,
+          '受胎時 expectedBirthYear 必須是 gameYear 加 1',
+        ]
+      : [!('expectedBirthYear' in record), '未受胎時不可有 expectedBirthYear'],
+    [optional(record, 'foalId', isNonEmptyString), 'foalId 必須是非空字串'],
+    [!('foalId' in record) || conceived, '只有受胎的紀錄可以連結產駒'],
+  ]);
+}
+
+function isSubParams(value: unknown): boolean {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  const entries = Object.entries(value);
+  return (
+    entries.length > 0 &&
+    entries.every(
+      ([key, grade]) =>
+        isOneOf(SUB_PARAM_KEY_VALUES, key) && isOneOf(SUB_PARAM_GRADE_VALUES, grade),
+    )
+  );
+}
+
+function isLineage(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    isIntegerIn(value.position, 1, 8) &&
+    isIntegerIn(value.generation, 1, 9999)
+  );
+}
+
+function checkFoal(record: StoredRecord): string | undefined {
+  const { freeBred } = record;
+  const isAbility = (value: unknown) => isIntegerIn(value, 0, 999);
+  const isAptitude = (value: unknown) => isOneOf(APTITUDE_VALUES, value);
+  return firstProblem([
+    [isNonEmptyString(record.damId), 'damId 必須是非空字串'],
+    [isYear(record.birthYear), 'birthYear 必須是 1000～9999 的整數'],
+    [typeof freeBred === 'boolean', 'freeBred 必須是布林值'],
+    freeBred === true
+      ? [!('lineage' in record), '自由配種產駒不可有 lineage']
+      : [isLineage(record.lineage), 'lineage 必須含 1～8 的 position 與 1 以上的 generation'],
+    [isOneOf(DISPOSITION_VALUES, record.disposition), 'disposition 必須是 keep、forSale 或 sold'],
+    [freeBred !== true || record.disposition !== 'keep', '自由配種產駒不可保留'],
+    [optional(record, 'sp', isAbility), 'sp 必須是 0～999 的整數'],
+    [optional(record, 'st', isAbility), 'st 必須是 0～999 的整數'],
+    [optional(record, 'subParams', isSubParams), 'subParams 必須是有效的副能力等級'],
+    [optional(record, 'turf', isAptitude), 'turf 必須是 ◎、○、△ 或 ×'],
+    [optional(record, 'dirt', isAptitude), 'dirt 必須是 ◎、○、△ 或 ×'],
+    [optional(record, 'distanceText', isNonEmptyString), 'distanceText 必須是非空字串'],
+    [
+      optional(record, 'kodashi', (value) => isIntegerIn(value, 0, 15)),
+      'kodashi 必須是 0～15 的整數',
+    ],
+    [optional(record, 'note', isNonEmptyString), 'note 必須是非空字串'],
+  ]);
+}
+
 /** 各資料表的欄位規則（設計決策 5.4 節）；未列出的資料表只檢查通用規則。 */
 export const RECORD_RULES: Readonly<Partial<Record<RecordCollection, RecordRule>>> = {
   horses: checkHorse,
@@ -354,5 +471,7 @@ export const RECORD_RULES: Readonly<Partial<Record<RecordCollection, RecordRule>
   stallionDuties: checkStallionDuty,
   mares: checkMare,
   mareYearly: checkMareYearly,
+  breedings: checkBreeding,
+  foals: checkFoal,
   events: checkEvent,
 };

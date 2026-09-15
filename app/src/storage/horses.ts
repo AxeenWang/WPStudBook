@@ -36,7 +36,7 @@ export function withHorseNameKeys(gameId: string, horse: object): StoredRecord {
   return { ...withGameId(gameId, horse), nameKeys: horseNameKeys(gameId, horse) };
 }
 
-function toHorse(value: unknown): Horse | undefined {
+export function toHorse(value: unknown): Horse | undefined {
   if (!isPlainRecord(value)) {
     return undefined;
   }

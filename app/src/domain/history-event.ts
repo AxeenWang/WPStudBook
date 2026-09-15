@@ -24,7 +24,19 @@ export type HistoryEventType =
   /** 年度資料人工更正，保存前後值；subjectId 為馬匹 id。 */
   | 'mareYearlyChanged'
   /** 遊戲局設定變更；subjectId 為 game。 */
-  | 'settingsChanged';
+  | 'settingsChanged'
+  /** 年度繁殖紀錄登記或更正，保存前後值；subjectId 為母馬 id。 */
+  | 'breedingRecorded'
+  /** 產駒出生（手動登記）；subjectId 為產駒 id。 */
+  | 'foalBorn'
+  /** 產駒能力、適性、牧場處置或備註更正，保存前後值；subjectId 為產駒 id。 */
+  | 'foalChanged'
+  /** 正式馬名補登、取代或清空，保存前後值；subjectId 為馬匹 id。 */
+  | 'horseNamed'
+  /** 姊妹接替狀態變更（正式保留、已被取代）；subjectId 為母馬 id。 */
+  | 'successionChanged'
+  /** 母馬世代成立；subjectId 為系位置 id。 */
+  | 'lineGenerationEstablished';
 
 export type HistoryEventSource = 'user' | 'migration';
 

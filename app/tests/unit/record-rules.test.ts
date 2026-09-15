@@ -63,6 +63,15 @@ const MARE = {
   site: 32,
 };
 const MARE_YEARLY = { id: 'y1', horseId: 'h1', gameYear: 1968 };
+const BREEDING = { id: 'b1', mareId: 'h1', gameYear: 1968, breedingType: 'designated' };
+const FOAL = {
+  id: 'f1',
+  damId: 'h1',
+  birthYear: 1969,
+  lineage: { position: 1, generation: 1 },
+  freeBred: false,
+  disposition: 'keep',
+};
 
 describe('資料表欄位規則', () => {
   it('horses：能力番号 0、空字串牝系、階段馬番号與別名都是有效值', () => {
@@ -231,5 +240,71 @@ describe('資料表欄位規則', () => {
     ]) {
       expect(check('events', { ...EVENT, type }), type).toBeUndefined();
     }
+  });
+
+  it('[BRD-02][BRD-05] breedings：四種受胎狀態分別保存，受胎時預定隔年出生；沒有流產或其他狀態', () => {
+    for (const conception of ['空胎', '不受胎', '未確認']) {
+      expect(check('breedings', { ...BREEDING, conception })).toBeUndefined();
+    }
+    expect(
+      check('breedings', {
+        ...BREEDING,
+        stallionId: 's1',
+        conception: '受胎',
+        expectedBirthYear: 1969,
+        foalId: 'f1',
+      }),
+    ).toBeUndefined();
+    expect(
+      check('breedings', { ...BREEDING, breedingType: 'free', stallionName: 'ソトノタネウマ' }),
+    ).toBeUndefined();
+    expectProblems('breedings', BREEDING, [
+      [omit(BREEDING, 'mareId'), 'mareId'],
+      [{ ...BREEDING, gameYear: 999 }, 'gameYear'],
+      [{ ...BREEDING, breedingType: 'rotation' }, 'breedingType'],
+      [{ ...BREEDING, stallionName: '' }, 'stallionName'],
+      [{ ...BREEDING, conception: '流産' }, 'conception'],
+      [{ ...BREEDING, conception: '' }, 'conception'],
+      [{ ...BREEDING, conception: '受胎' }, 'expectedBirthYear'],
+      [{ ...BREEDING, conception: '受胎', expectedBirthYear: 1968 }, 'expectedBirthYear'],
+      [{ ...BREEDING, conception: '不受胎', expectedBirthYear: 1969 }, 'expectedBirthYear'],
+      [{ ...BREEDING, conception: '空胎', foalId: 'f1' }, '連結產駒'],
+    ]);
+  });
+
+  it('[BRD-13][BRD-15] foals：芝與ダート分開保存；自由配種產駒沒有系與代數且不可保留', () => {
+    expect(
+      check('foals', {
+        ...FOAL,
+        sp: 0,
+        st: 999,
+        subParams: { power: 'S+', health: 'G' },
+        turf: '◎',
+        dirt: '×',
+        distanceText: '1700～3100m',
+        kodashi: 0,
+        note: '備註',
+      }),
+    ).toBeUndefined();
+    expect(
+      check('foals', { ...omit(FOAL, 'lineage'), freeBred: true, disposition: 'sold' }),
+    ).toBeUndefined();
+    expectProblems('foals', FOAL, [
+      [omit(FOAL, 'damId'), 'damId'],
+      [{ ...FOAL, birthYear: '1969' }, 'birthYear'],
+      [omit(FOAL, 'lineage'), 'lineage'],
+      [{ ...FOAL, lineage: { position: 1, generation: 0 } }, 'lineage'],
+      [{ ...FOAL, freeBred: true }, 'lineage'],
+      [{ ...omit(FOAL, 'lineage'), freeBred: true }, '不可保留'],
+      [{ ...FOAL, disposition: 'retired' }, 'disposition'],
+      [{ ...FOAL, sp: 1000 }, 'sp'],
+      [{ ...FOAL, subParams: {} }, 'subParams'],
+      [{ ...FOAL, subParams: { speed: 'A' } }, 'subParams'],
+      [{ ...FOAL, subParams: { power: 'SS' } }, 'subParams'],
+      [{ ...FOAL, turf: 'o' }, 'turf'],
+      [{ ...FOAL, dirt: '◯' }, 'dirt'],
+      [{ ...FOAL, distanceText: '' }, 'distanceText'],
+      [{ ...FOAL, kodashi: 16 }, 'kodashi'],
+    ]);
   });
 });
