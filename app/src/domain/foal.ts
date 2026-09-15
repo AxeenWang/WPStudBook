@@ -131,14 +131,14 @@ export function trackingName(damName: string | undefined, birthYear: number): st
 }
 
 /**
- * 種牡馬所在的系與代數：有任期時取任期的系位置與代數，否則取他本身產駒紀錄的系與代數；
+ * 種牡馬所在的系與代數：有任期時取任期（現任優先）的系位置與代數，否則取他本身產駒紀錄的系與代數；
  * 市場馬沒有任期時為 undefined。
  */
 export function stallionLineage(
-  duties: readonly Pick<StallionDuty, 'position' | 'generation'>[],
+  duties: readonly Pick<StallionDuty, 'position' | 'generation' | 'role'>[],
   ownFoal: Pick<Foal, 'lineage'> | undefined,
 ): Lineage | undefined {
-  const duty = duties[0];
+  const duty = duties.find((item) => item.role === 'current') ?? duties[0];
   return duty === undefined
     ? ownFoal?.lineage
     : { position: duty.position, generation: duty.generation };

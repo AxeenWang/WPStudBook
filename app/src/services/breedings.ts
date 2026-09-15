@@ -19,6 +19,7 @@ import { getHorse, getHorsesByIds } from '../storage/horses.ts';
 import { getMare } from '../storage/mares.ts';
 import { listStallionDuties } from '../storage/stallion-duties.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
+import { loadHorseNames } from './horse-names.ts';
 import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
@@ -35,22 +36,24 @@ export interface StallionOption {
   readonly lineage: Lineage;
 }
 
-/** 配種表單的內部種牡馬選項：有任期的種牡馬（依系位置、代數與馬名排序）。 */
+/** 配種表單的內部種牡馬選項：擔任過現任的種牡馬（依系位置、代數與馬名排序）。 */
 export async function listStallionOptions(context: ServiceContext): Promise<StallionOption[]> {
   const game = await requireCurrentGame(context);
-  const duties = await listStallionDuties(context.database, game.id);
-  const horses = await getHorsesByIds(
+  const duties = (await listStallionDuties(context.database, game.id)).filter(
+    (duty) => duty.role === 'current',
+  );
+  const names = await loadHorseNames(
     context.database,
     game.id,
     duties.map((duty) => duty.horseId),
   );
   const options = new Map<string, StallionOption>();
   for (const duty of duties) {
-    const horse = horses.get(duty.horseId);
-    if (horse !== undefined && !options.has(horse.id)) {
-      options.set(horse.id, {
-        id: horse.id,
-        name: horse.fullName ?? horse.officialName ?? horse.baseName ?? horse.id,
+    const name = names.get(duty.horseId);
+    if (name !== undefined && !options.has(duty.horseId)) {
+      options.set(duty.horseId, {
+        id: duty.horseId,
+        name,
         lineage: { position: duty.position, generation: duty.generation },
       });
     }
@@ -269,15 +272,19 @@ export async function loadMareBreedings(
     listFoalsForDam(context.database, game.id, mareId),
   ]);
   const birthYears = new Set(foals.map((foal) => foal.birthYear));
-  const horses = await getHorsesByIds(context.database, game.id, [
-    ...records.flatMap((record) => (record.stallionId === undefined ? [] : [record.stallionId])),
-    ...records.flatMap((record) => (record.foalId === undefined ? [] : [record.foalId])),
-  ]);
+  const horses = await getHorsesByIds(
+    context.database,
+    game.id,
+    records.flatMap((record) => (record.foalId === undefined ? [] : [record.foalId])),
+  );
+  const stallionNames = await loadHorseNames(
+    context.database,
+    game.id,
+    records.flatMap((record) => (record.stallionId === undefined ? [] : [record.stallionId])),
+  );
   const mareHorse = await getHorse(context.database, game.id, mareId);
-  const nameOf = (id: string | undefined, fallback: string | undefined) => {
-    const horse = id === undefined ? undefined : horses.get(id);
-    return horse === undefined ? fallback : (horseDisplayName(horse, undefined) ?? fallback);
-  };
+  const nameOf = (id: string | undefined, fallback: string | undefined) =>
+    (id === undefined ? undefined : stallionNames.get(id)) ?? fallback;
   const rows = records
     .sort((a, b) => b.gameYear - a.gameYear)
     .map((record): BreedingRow => {

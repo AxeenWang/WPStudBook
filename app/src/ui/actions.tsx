@@ -27,6 +27,9 @@ export function useAction() {
   return { busy, message, error, run };
 }
 
+/** 表單送出後內容可能被卸載時，由不會卸載的上層持有並把 run 傳給表單，訊息才會留在畫面上。 */
+export type ActionState = ReturnType<typeof useAction>;
+
 export function Feedback({
   message,
   error,

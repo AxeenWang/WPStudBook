@@ -32,6 +32,7 @@ export function FoalSummary({ card }: { readonly card: FoalCard }) {
         <SexMarker sex={card.sex} /> {card.name}
         {card.freeBred && <span className="badge">自由配種</span>}
         {card.isMare && <span className="badge">已轉入母馬群</span>}
+        {card.isStallion && <span className="badge">已成為種牡馬</span>}
       </h4>
       <p>
         {card.birthYear} 年生・{card.age} 歲・父 {card.sireName ?? '未取得'}・

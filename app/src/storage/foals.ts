@@ -38,6 +38,23 @@ export async function getFoal(
   return toFoal(value);
 }
 
+/** 以單一唯讀交易讀出多筆產駒；找不到的 id 不列入。 */
+export async function getFoalsByIds(
+  database: AppDatabase,
+  gameId: string,
+  foalIds: readonly string[],
+): Promise<Map<string, Foal>> {
+  const transaction = database.transaction('foals', 'readonly');
+  const requests: Promise<unknown>[] = foalIds.map((id) => transaction.store.get([gameId, id]));
+  const [values] = await Promise.all([Promise.all(requests), transaction.done]);
+  return new Map(
+    values
+      .map(toFoal)
+      .filter((foal) => foal !== undefined)
+      .map((foal) => [foal.id, foal]),
+  );
+}
+
 /** 一匹母馬的全部產駒（出生年由小到大）。 */
 export async function listFoalsForDam(
   database: AppDatabase,

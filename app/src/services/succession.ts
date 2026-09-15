@@ -3,7 +3,7 @@ import type { Game } from '../domain/game.ts';
 import type { HistoryEvent } from '../domain/history-event.ts';
 import { horseDisplayName, nameForTracking } from '../domain/horse.ts';
 import { establishGeneration } from '../domain/line.ts';
-import { offspringLineage } from '../domain/lineage.ts';
+import { offspringLineage, type Lineage } from '../domain/lineage.ts';
 import {
   establishesGeneration,
   initialSuccession,
@@ -16,7 +16,7 @@ import {
   type MareStatus,
   type Succession,
 } from '../domain/mare.ts';
-import { getFoal } from '../storage/foals.ts';
+import { getFoal, type SireRecords } from '../storage/foals.ts';
 import { getHorse } from '../storage/horses.ts';
 import {
   insertOwnMare,
@@ -51,8 +51,35 @@ export interface ConvertCheck {
   readonly preview: ConvertPreview | undefined;
 }
 
-function lineageText(position: number, generation: number): string {
+export function lineageText(position: number, generation: number): string {
   return `第 ${String(position)} 系 ${String(generation)} 代`;
+}
+
+/** 由父馬的系與代數、母馬的代數推導產駒的系與代數（需求規格 8.2）；任一方查不到時為 undefined。 */
+export function deriveOffspringLineage(
+  sire: SireRecords | undefined,
+  dam: Mare | undefined,
+): Lineage | undefined {
+  const sireLineage = sire === undefined ? undefined : stallionLineage(sire.duties, sire.foal);
+  const damGeneration = dam === undefined ? undefined : mareGeneration(dam.group);
+  return sireLineage === undefined || damGeneration === undefined
+    ? undefined
+    : offspringLineage(sireLineage, damGeneration);
+}
+
+/** 進入母馬群或接任前再次核對（需求規格 9.6）：出生紀錄的系與代數必須與父母推導的結果相同。 */
+export function lineageMismatch(
+  recorded: Lineage,
+  sire: SireRecords | undefined,
+  dam: Mare | undefined,
+): string | undefined {
+  const expected = deriveOffspringLineage(sire, dam);
+  if (expected === undefined) {
+    return '無法核對父母、系與代數：找不到父馬的系位置或母馬的母馬群';
+  }
+  return expected.position === recorded.position && expected.generation === recorded.generation
+    ? undefined
+    : `出生紀錄的系與代數（${lineageText(recorded.position, recorded.generation)}）與父母推導的結果（${lineageText(expected.position, expected.generation)}）不符`;
 }
 
 /**
@@ -82,17 +109,9 @@ function planConversion(state: OwnMareState, input: ConvertFoalInput): ConvertCh
     issues.push('請選擇據點');
   }
   if (lineage !== undefined) {
-    const sireLineage = sire === undefined ? undefined : stallionLineage(sire.duties, sire.foal);
-    const damGeneration = dam === undefined ? undefined : mareGeneration(dam.group);
-    if (sireLineage === undefined || damGeneration === undefined) {
-      issues.push('無法核對父母、系與代數：找不到父馬的系位置或母馬的母馬群');
-    } else {
-      const expected = offspringLineage(sireLineage, damGeneration);
-      if (expected.position !== lineage.position || expected.generation !== lineage.generation) {
-        issues.push(
-          `出生紀錄的系與代數（${lineageText(lineage.position, lineage.generation)}）與父母推導的結果（${lineageText(expected.position, expected.generation)}）不符`,
-        );
-      }
+    const mismatch = lineageMismatch(lineage, sire, dam);
+    if (mismatch !== undefined) {
+      issues.push(mismatch);
     }
     if (line === undefined) {
       issues.push(`第 ${String(lineage.position)} 系尚未開啟`);
