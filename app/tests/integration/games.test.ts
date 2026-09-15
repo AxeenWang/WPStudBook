@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { HistoryEvent } from '../../src/domain/history-event.ts';
 import { loadAppStatus } from '../../src/services/app-status.ts';
+import { ServiceError } from '../../src/services/errors.ts';
 import { requestPersistentStorage } from '../../src/services/context.ts';
 import {
   changeCurrentYear,
@@ -182,9 +183,8 @@ describe('遊戲局服務', () => {
 
     const updated = await updateCurrentYear(context.database, {
       gameId: game.id,
-      currentYear: 1969,
       touch: YEAR_TOUCH,
-      event: YEAR_EVENT,
+      apply: () => ({ currentYear: 1969, event: YEAR_EVENT }),
     });
 
     const expected = { ...game, currentYear: 1969, ...YEAR_TOUCH, lastBackup };
@@ -199,14 +199,84 @@ describe('遊戲局服務', () => {
     await expect(
       updateCurrentYear(context.database, {
         gameId: 'missing',
-        currentYear: 1969,
         touch: YEAR_TOUCH,
-        event: YEAR_EVENT,
+        apply: () => ({ currentYear: 1969, event: YEAR_EVENT }),
       }),
     ).rejects.toThrow('找不到遊戲局 missing');
 
     expect(await context.database.get('games', 'missing')).toBeUndefined();
     expect(await readRecords(context.database, 'missing', 'events')).toEqual([]);
+  });
+
+  it('年份檢查與事件前值使用寫入交易內讀出的遊戲局；apply 丟出錯誤時整筆交易不寫入', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '第一局', startYear: 1968 });
+    // 服務在操作開始時讀到 1968 年；之後其他分頁已把目前遊戲年改為 1970 年。
+    await context.database.put('games', { ...game, currentYear: 1970 });
+
+    const seen: number[] = [];
+    const updated = await updateCurrentYear(context.database, {
+      gameId: game.id,
+      touch: YEAR_TOUCH,
+      apply: (stored) => {
+        seen.push(stored.currentYear);
+        return {
+          currentYear: 1971,
+          event: {
+            ...YEAR_EVENT,
+            gameYear: 1971,
+            before: { currentYear: stored.currentYear },
+            after: { currentYear: 1971 },
+          },
+        };
+      },
+    });
+    expect(seen).toEqual([1970]);
+    expect(updated).toMatchObject({ currentYear: 1971, ...YEAR_TOUCH });
+    expect((await readRecords(context.database, game.id, 'events'))[0]?.before).toEqual({
+      currentYear: 1970,
+    });
+
+    await expect(
+      updateCurrentYear(context.database, {
+        gameId: game.id,
+        touch: { updatedAt: '2026-09-15T02:00:00.000Z', appVersion: '9.9.9' },
+        apply: () => {
+          throw new ServiceError('invalidInput', '目前遊戲年已經是 1971 年');
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalidInput' });
+    expect(await getCurrentGame(context)).toMatchObject({ currentYear: 1971, ...YEAR_TOUCH });
+    expect(await readRecords(context.database, game.id, 'events')).toHaveLength(1);
+  });
+
+  it('[DATA-11] 操作開始後其他寫入把目前遊戲年改成目標年份時，交易內的檢查拒絕且不寫入事件', async () => {
+    let injectWrite: (() => void) | undefined;
+    const context = await openContext({
+      now: () => {
+        const inject = injectWrite;
+        injectWrite = undefined;
+        inject?.();
+        return new Date('2026-09-15T00:00:00.000Z');
+      },
+    });
+    const game = await createGame(context, { name: '第一局', startYear: 1968 });
+
+    let concurrentWrite: Promise<unknown> | undefined;
+    injectWrite = () => {
+      concurrentWrite = context.database.put('games', { ...game, currentYear: 1969 });
+    };
+
+    await expect(changeCurrentYear(context, 1969)).rejects.toMatchObject({
+      code: 'invalidInput',
+    });
+    expect(concurrentWrite).toBeDefined();
+    if (concurrentWrite) {
+      await concurrentWrite;
+    }
+    expect((await getCurrentGame(context))?.currentYear).toBe(1969);
+    expect((await getCurrentGame(context))?.updatedAt).toBe(game.updatedAt);
+    expect(await readRecords(context.database, game.id, 'events')).toEqual([]);
   });
 
   it('[DATA-10] 刪除前顯示筆數；局名不符時拒絕且資料不變', async () => {

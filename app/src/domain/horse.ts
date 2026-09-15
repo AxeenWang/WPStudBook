@@ -59,9 +59,13 @@ export function formatAbilityNo(value: number): string {
   return `0x${value.toString(16).toUpperCase().padStart(4, '0')}`;
 }
 
-const NAME_PREFIXES = /^(?:\(外\)|\[地\])+/u;
+/** 開頭連續的 `(外)`、`[地]` 前綴，連同前綴前後的空白。 */
+const NAME_PREFIXES = /^(?:\s*(?:\(外\)|\[地\]))+\s*/u;
 
-/** 基本馬名：去除開頭的 `(外)`、`[地]` 前綴（需求規格 6.4）。 */
+/**
+ * 基本馬名：去除開頭的 `(外)`、`[地]` 前綴與前綴前後的空白（需求規格 6.4）。
+ * 沒有前綴的馬名保持原文，不做全面修剪（需求規格 11.1）。
+ */
 export function toBaseName(fullName: string): string {
   return fullName.replace(NAME_PREFIXES, '');
 }

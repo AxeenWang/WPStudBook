@@ -81,3 +81,21 @@ export async function findHorsesByName(
   );
   return values.map(toHorse).filter((horse) => horse !== undefined);
 }
+/** 以單一唯讀交易讀出多匹馬；找不到的 id 不列入。 */
+export async function getHorsesByIds(
+  database: AppDatabase,
+  gameId: string,
+  horseIds: readonly string[],
+): Promise<Map<string, Horse>> {
+  const transaction = database.transaction('horses', 'readonly');
+  const requests: Promise<unknown>[] = horseIds.map((id) => transaction.store.get([gameId, id]));
+  const [values] = await Promise.all([Promise.all(requests), transaction.done]);
+  const horses = new Map<string, Horse>();
+  for (const value of values) {
+    const horse = toHorse(value);
+    if (horse !== undefined) {
+      horses.set(horse.id, horse);
+    }
+  }
+  return horses;
+}

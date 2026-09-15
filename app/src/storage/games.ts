@@ -101,11 +101,19 @@ export async function insertGame(database: AppDatabase, records: NewGameRecords)
   ]);
 }
 
+export interface CurrentYearChange {
+  readonly currentYear: number;
+  readonly event: HistoryEvent;
+}
+
 export interface CurrentYearUpdate {
   readonly gameId: string;
-  readonly currentYear: number;
   readonly touch: GameTouch;
-  readonly event: HistoryEvent;
+  /**
+   * 以寫入交易內讀出的遊戲局檢查並產生新的目前遊戲年與事件，不使用操作開始時讀到的舊紀錄。
+   * 只能做同步運算；丟出錯誤時整筆交易中止。
+   */
+  readonly apply: (stored: Game) => CurrentYearChange;
 }
 
 /** 以單一交易更新目前遊戲年與遊戲局更新時間並寫入事件；回傳寫入後的遊戲局紀錄。 */
@@ -117,10 +125,11 @@ export async function updateCurrentYear(
   const games = transaction.objectStore('games');
   return completeTransaction(transaction, async () => {
     const stored = await readGameForWrite(games, update.gameId);
-    const game: Game = { ...stored, currentYear: update.currentYear, ...update.touch };
+    const change = update.apply(stored);
+    const game: Game = { ...stored, currentYear: change.currentYear, ...update.touch };
     await Promise.all([
       games.put(game),
-      transaction.objectStore('events').add(withGameId(update.gameId, update.event)),
+      transaction.objectStore('events').add(withGameId(update.gameId, change.event)),
     ]);
     return game;
   });
@@ -184,4 +193,48 @@ export async function clearAllData(database: AppDatabase): Promise<void> {
     ...ALL_STORES.map((name) => transaction.objectStore(name).clear()),
     transaction.done,
   ]);
+}
+
+export interface GameSettingsWriteState {
+  readonly game: Game;
+  readonly settings: GameSettings;
+}
+
+export interface GameSettingsChange {
+  readonly settings: GameSettings;
+  readonly event: HistoryEvent;
+}
+
+export interface GameSettingsModification {
+  readonly gameId: string;
+  readonly touch: GameTouch;
+  /** 以寫入交易內讀出的遊戲局與設定產生新設定與事件；只能做同步運算，丟出錯誤時整筆交易中止。 */
+  readonly apply: (current: GameSettingsWriteState) => GameSettingsChange;
+}
+
+/** 修改遊戲局設定：單一交易讀出遊戲局與設定，寫回設定、事件與遊戲局更新時間。 */
+export async function modifyGameSettings(
+  database: AppDatabase,
+  modification: GameSettingsModification,
+): Promise<GameSettings> {
+  const { gameId } = modification;
+  const transaction = database.transaction(['games', 'gameSettings', 'events'], 'readwrite');
+  const games = transaction.objectStore('games');
+  const settingsStore = transaction.objectStore('gameSettings');
+  return completeTransaction(transaction, async () => {
+    const storedRequest: Promise<unknown> = settingsStore.get(gameId);
+    const [game, stored] = await Promise.all([readGameForWrite(games, gameId), storedRequest]);
+    if (!isPlainRecord(stored)) {
+      throw new Error(`找不到遊戲局 ${gameId} 的設定`);
+    }
+    // 本機設定由本程式寫入；備份匯入的設定由 validateCollections 驗證。
+    const settings = withoutGameId(stored) as unknown as GameSettings;
+    const change = modification.apply({ game, settings });
+    await Promise.all([
+      games.put({ ...game, ...modification.touch }),
+      settingsStore.put(withGameId(gameId, change.settings)),
+      transaction.objectStore('events').add(withGameId(gameId, change.event)),
+    ]);
+    return change.settings;
+  });
 }

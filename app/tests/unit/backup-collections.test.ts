@@ -22,6 +22,11 @@ function horse(id: string, extra: Record<string, unknown> = {}): Record<string, 
   return { id, sex: 'male', stageNumbers: [], aliases: [], ...extra };
 }
 
+/** 通過 mares 欄位規則的最小紀錄，用來測試關聯。 */
+function mare(id: string): Record<string, unknown> {
+  return { id, group: { kind: 'unassigned' }, origin: 'other', status: 'producing', site: 32 };
+}
+
 function issueCodes(result: ReturnType<typeof validateCollections>): string[] {
   return result.ok ? [] : result.issues.map((item) => item.code);
 }
@@ -39,7 +44,7 @@ describe('validateCollections', () => {
             abilityNo: 0,
           }),
         ],
-        mares: [{ id: 'foal', status: 'producing' }],
+        mares: [mare('foal')],
       }),
     );
     expect(result.ok).toBe(true);
@@ -107,9 +112,9 @@ describe('validateCollections', () => {
     const result = validateCollections(
       collections({
         horses: [horse('h1')],
-        mareYearly: [
-          { id: 'y1', horseId: 'h1', gameYear: [1968, 5] },
-          { id: 'y2', horseId: 'h1', gameYear: [1968, 5] },
+        matingRatings: [
+          { id: 'r1', stallionId: 'h1', mareId: 'h1', gameYear: [1968, 5] },
+          { id: 'r2', stallionId: 'h1', mareId: 'h1', gameYear: [1968, 5] },
         ],
       }),
     );
@@ -120,7 +125,7 @@ describe('validateCollections', () => {
     const result = validateCollections(
       collections({
         horses: [horse('h1', { sireId: 'missing' }), horse('h2', { sireName: '(外)ソトノチチ' })],
-        mares: [{ id: 'not-a-horse' }],
+        mares: [mare('not-a-horse')],
       }),
     );
     expect(issueCodes(result)).toEqual(['missingReference', 'missingReference']);

@@ -76,11 +76,11 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       id: 'horse-dam',
       group: { kind: 'starter', position: 1, generation: 0 },
       origin: 'marketFound',
+      originNote: '中文備註：第一行\n第二行',
       status: 'producing',
       site: 32,
       succession: 'confirmed',
-      yearPlan: 'designated',
-      note: '中文備註：第一行\n第二行',
+      yearPlan: { plan: 'designated', gameYear: 1968 },
     },
   ],
   stallionDuties: [

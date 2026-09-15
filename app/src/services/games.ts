@@ -143,27 +143,32 @@ export async function previewYearChange(
   };
 }
 
-/** 目前遊戲年只由使用者更新（需求規格 12.1、DATA-11）。 */
+/**
+ * 目前遊戲年只由使用者更新（需求規格 12.1、DATA-11）。操作開始時先檢查一次以便提早回報；
+ * 寫入交易內再以讀出的遊戲局檢查並產生事件前值，不以操作開始時的舊紀錄判斷。
+ */
 export async function changeCurrentYear(context: ServiceContext, toYear: number): Promise<Game> {
   const game = await requireCurrentGame(context);
   checkYearChange(game, toYear);
   const now = context.now().toISOString();
-  const event: HistoryEvent = {
-    id: context.newId(),
-    subjectId: GAME_SUBJECT_ID,
-    type: 'gameYearChanged',
-    gameYear: toYear,
-    before: { currentYear: game.currentYear },
-    after: { currentYear: toYear },
-    source: 'user',
-    occurredAt: now,
-  };
   return trackWrite(context, () =>
     updateCurrentYear(context.database, {
       gameId: game.id,
-      currentYear: toYear,
       touch: gameTouch(context, now),
-      event,
+      apply: (stored) => {
+        checkYearChange(stored, toYear);
+        const event: HistoryEvent = {
+          id: context.newId(),
+          subjectId: GAME_SUBJECT_ID,
+          type: 'gameYearChanged',
+          gameYear: toYear,
+          before: { currentYear: stored.currentYear },
+          after: { currentYear: toYear },
+          source: 'user',
+          occurredAt: now,
+        };
+        return { currentYear: toYear, event };
+      },
     }),
   );
 }

@@ -4,6 +4,7 @@ import { BackupSection } from './BackupSection.tsx';
 import { CheckpointSection } from './CheckpointSection.tsx';
 import { DangerZone } from './DangerZone.tsx';
 import { GameSection } from './GameSection.tsx';
+import { SettingsSection } from './SettingsSection.tsx';
 
 export function DataManagementPage({ status }: { readonly status: AppStatus | undefined }) {
   if (status === undefined) {
@@ -13,6 +14,7 @@ export function DataManagementPage({ status }: { readonly status: AppStatus | un
   return (
     <>
       <GameSection status={status} />
+      {currentGame !== undefined && <SettingsSection key={currentGame.id} />}
       <BackupSection currentGame={currentGame} />
       {currentGame !== undefined && <CheckpointSection key={currentGame.id} />}
       <EnvironmentPanel />

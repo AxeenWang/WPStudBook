@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 import { createGameViaUi, openApp } from './helpers.ts';
 
 test.describe('原始資料匯出', () => {
-  test('本機資料不符合資料契約時備份失敗，可以匯出標示不能還原的原始資料', async ({ page }) => {
+  test('本機資料不符合資料契約時備份失敗，可以匯出標示不能還原的原始資料；匯出失敗時可以重試', async ({
+    page,
+  }) => {
     await openApp(page);
     await createGameViaUi(page, '救援局');
 
@@ -55,6 +57,23 @@ test.describe('原始資料匯出', () => {
     const alert = section.getByRole('alert');
     await expect(alert).toContainText('備份失敗');
     const rawButton = alert.getByRole('button', { name: '匯出原始資料（不能還原）' });
+    await expect(rawButton).toBeVisible();
+
+    // 第一次建立下載網址時失敗，模擬原始資料匯出本身失敗。
+    await page.evaluate(() => {
+      const original = URL.createObjectURL.bind(URL);
+      let failed = false;
+      URL.createObjectURL = (object: Blob | MediaSource) => {
+        if (!failed) {
+          failed = true;
+          throw new Error('測試用：無法建立下載');
+        }
+        return original(object);
+      };
+    });
+    await rawButton.click();
+    await expect(alert).toContainText('原始資料匯出失敗');
+    await expect(alert).toContainText('測試用：無法建立下載');
     await expect(rawButton).toBeVisible();
 
     const downloadEvent = page.waitForEvent('download');
