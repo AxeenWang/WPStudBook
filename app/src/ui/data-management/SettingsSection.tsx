@@ -15,6 +15,16 @@ function ReminderForm({ initial }: { readonly initial: ReminderSettings }) {
     initial.highAgeReminderAge,
   );
   const [vitalityThreshold, setVitalityThreshold] = useState(initial.vitalityThreshold);
+  // 載入的設定改變時（例如回溯檢查點）重新帶入欄位，避免之後保存時把舊值寫回。
+  const [synced, setSynced] = useState(initial);
+  if (
+    synced.highAgeReminderAge !== initial.highAgeReminderAge ||
+    synced.vitalityThreshold !== initial.vitalityThreshold
+  ) {
+    setSynced(initial);
+    setHighAgeReminderAge(initial.highAgeReminderAge);
+    setVitalityThreshold(initial.vitalityThreshold);
+  }
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);

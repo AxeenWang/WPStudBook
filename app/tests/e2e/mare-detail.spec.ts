@@ -123,10 +123,14 @@ test.describe('母馬詳情欄', () => {
     const clearing = drawer.getByRole('form', { name: '今年年度資料' });
     await fillNumber(clearing, '5 月活力', '');
     await fillNumber(clearing, '7 月活力', '');
+    await fillNumber(clearing, '仔出（0～15）', '15');
     await clearing.getByRole('button', { name: '保存年度資料' }).click();
     await expect(clearing.getByRole('status')).toHaveText('已保存年度資料');
+    const yearlyTable = drawer.getByRole('table', { name: '年度資料（新到舊）' });
+    await expect(yearlyTable.getByRole('row', { name: /1968 年/ })).toContainText('15CE 擴充值');
     await page.keyboard.press('Escape');
     await expect(card.getByTestId('mare-vitality')).toHaveText('待更新');
+    await expect(card.getByTestId('mare-kodashi')).toHaveText('15（1968 年）CE 擴充值');
 
     const filters = region.getByRole('group', { name: '篩選' });
     await filters.getByLabel('今年計畫').selectOption({ label: '輪休' });
