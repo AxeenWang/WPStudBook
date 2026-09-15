@@ -1,4 +1,5 @@
 import type { AppDatabase } from '../../src/storage/database.ts';
+import { horseNameKeys } from '../../src/storage/horses.ts';
 import { putRecords, type StoredRecord } from '../../src/storage/records.ts';
 import { RECORD_COLLECTIONS, type RecordCollection } from '../../src/storage/schema.ts';
 
@@ -24,6 +25,8 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       subsystem: 'ネアルコ',
       parentSystem: 'ネアルコ',
       color: '#1f6feb',
+      branch: { targetGeneration: 1, openedYear: 1968 },
+      establishedGenerations: [{ generation: 1, gameYear: 1971 }],
     },
   ],
   systemMap: [
@@ -53,6 +56,7 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       baseName: 'テストヒンバ',
       sireSubsystem: 'マンノウォー',
       femaleLine: '',
+      stageNumbers: [],
       aliases: [{ kind: 'manual', name: 'テスト別名', gameYear: 1968 }],
     },
     {
@@ -63,6 +67,7 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       sireId: 'horse-sire',
       damId: 'horse-dam',
       sireSubsystem: 'ネアルコ',
+      stageNumbers: [],
       aliases: [],
     },
   ],
@@ -164,19 +169,19 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
   events: [
     {
       id: 'event-1',
-      subjectId: 'horse-dam',
-      type: 'siteChanged',
+      subjectId: 'map-1',
+      type: 'systemMapChanged',
       gameYear: 1968,
       timing: { month: 5, week: 1 },
-      before: { site: 32 },
-      after: { site: 33 },
+      before: { subsystem: 'マンノウォー', parentSystem: 'エクリプス' },
+      after: { subsystem: 'マンノウォー', parentSystem: 'マッチェム' },
       source: 'user',
       occurredAt: '2026-09-14T12:00:00.000Z',
     },
   ],
 };
 
-/** 寫入合成資料；horses 另加含 gameId 的 nameKeys，模擬階段 2 的索引欄位（備份時應被剔除）。 */
+/** 寫入合成資料；horses 另加含 gameId 的 nameKeys（備份時剔除，還原時重建）。 */
 export async function seedSyntheticGame(database: AppDatabase, gameId: string): Promise<void> {
   await database.put('gameSettings', { ...SYNTHETIC_SETTINGS, gameId });
   for (const collection of RECORD_COLLECTIONS) {
@@ -184,9 +189,16 @@ export async function seedSyntheticGame(database: AppDatabase, gameId: string): 
       collection === 'horses'
         ? SYNTHETIC_RECORDS.horses.map((horse) => ({
             ...horse,
-            nameKeys: [`${gameId}${typeof horse.fullName === 'string' ? horse.fullName : ''}`],
+            nameKeys: horseNameKeys(gameId, horse),
           }))
         : SYNTHETIC_RECORDS[collection];
     await putRecords(database, gameId, collection, records);
   }
+}
+
+/** 比對讀回的紀錄時去除 nameKeys；其他資料表的紀錄不變。 */
+export function stripNameKeys(records: readonly StoredRecord[]): StoredRecord[] {
+  return records.map((record) =>
+    Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'nameKeys')),
+  );
 }

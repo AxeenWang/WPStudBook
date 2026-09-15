@@ -22,6 +22,7 @@ import {
   SYNTHETIC_RECORDS,
   SYNTHETIC_SETTINGS,
   seedSyntheticGame,
+  stripNameKeys,
 } from '../fixtures/synthetic-game.ts';
 import { useServiceContexts } from './helpers.ts';
 import type { Game } from '../../src/domain/game.ts';
@@ -139,9 +140,15 @@ describe('備份匯出與還原', () => {
     expect(await readGameSettings(context.database, restored.id)).toEqual(SYNTHETIC_SETTINGS);
     for (const collection of RECORD_COLLECTIONS) {
       const records = await readRecords(context.database, restored.id, collection);
-      // horses 不含 nameKeys：備份時剔除，由階段 2 的寫入程式重建。
-      expect(sortById(records), collection).toStrictEqual(sortById(SYNTHETIC_RECORDS[collection]));
+      expect(sortById(stripNameKeys(records)), collection).toStrictEqual(
+        sortById(SYNTHETIC_RECORDS[collection]),
+      );
     }
+    // nameKeys 備份時剔除，還原時以新遊戲局的 id 重建。
+    const restoredHorses = await readRecords(context.database, restored.id, 'horses');
+    expect(restoredHorses.find((item) => item.id === 'horse-sire')?.nameKeys).toEqual([
+      `${restored.id}テストシュボバ`,
+    ]);
     expect(await readRecords(context.database, game.id, 'horses')).toHaveLength(3);
   });
 
@@ -215,7 +222,7 @@ describe('備份匯出與還原', () => {
       collections: {
         ...emptyCollections(),
         gameSettings: [SYNTHETIC_SETTINGS],
-        horses: [{ id: 'h1', name: 'テストウマ001' }],
+        horses: [{ id: 'h1', name: 'テストウマ001', sex: 'male', stageNumbers: [], aliases: [] }],
       },
     });
     const bytes = jsonBytes(oldDocument);
@@ -229,7 +236,14 @@ describe('備份匯出與還原', () => {
 
     expect(restored).toMatchObject({ id: 'id-0001', name: '遷移後的局', currentYear: 1970 });
     expect(await readRecords(context.database, restored.id, 'horses')).toEqual([
-      { id: 'h1', fullName: 'テストウマ001' },
+      {
+        id: 'h1',
+        fullName: 'テストウマ001',
+        sex: 'male',
+        stageNumbers: [],
+        aliases: [],
+        nameKeys: [`${restored.id}テストウマ001`],
+      },
     ]);
     expect(await readRecords(context.database, restored.id, 'events')).toEqual([
       {

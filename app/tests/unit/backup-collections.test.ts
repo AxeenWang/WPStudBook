@@ -18,6 +18,10 @@ function collections(overrides: Record<string, unknown>): Record<string, unknown
   return { ...emptyCollections(), gameSettings: [SETTINGS], ...overrides };
 }
 
+function horse(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { id, sex: 'male', stageNumbers: [], aliases: [], ...extra };
+}
+
 function issueCodes(result: ReturnType<typeof validateCollections>): string[] {
   return result.ok ? [] : result.issues.map((item) => item.code);
 }
@@ -27,22 +31,23 @@ describe('validateCollections', () => {
     const result = validateCollections(
       collections({
         horses: [
-          { id: 'sire', fullName: 'テストシュボバ', nameKeys: ['old-gameテストシュボバ'] },
-          { id: 'foal', sireId: 'sire', sireName: '(外)ソトノチチ', femaleLine: '', abilityNo: 0 },
+          horse('sire', { fullName: 'テストシュボバ', nameKeys: ['old-gameテストシュボバ'] }),
+          horse('foal', {
+            sireId: 'sire',
+            sireName: '(外)ソトノチチ',
+            femaleLine: '',
+            abilityNo: 0,
+          }),
         ],
         mares: [{ id: 'foal', status: 'producing' }],
       }),
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.collections.horses[0]).toEqual({ id: 'sire', fullName: 'テストシュボバ' });
-      expect(result.collections.horses[1]).toEqual({
-        id: 'foal',
-        sireId: 'sire',
-        sireName: '(外)ソトノチチ',
-        femaleLine: '',
-        abilityNo: 0,
-      });
+      expect(result.collections.horses[0]).toEqual(horse('sire', { fullName: 'テストシュボバ' }));
+      expect(result.collections.horses[1]).toEqual(
+        horse('foal', { sireId: 'sire', sireName: '(外)ソトノチチ', femaleLine: '', abilityNo: 0 }),
+      );
     }
   });
 
@@ -57,7 +62,7 @@ describe('validateCollections', () => {
   it('紀錄缺少 id、帶有 gameId 或含 null 時回報欄位錯誤', () => {
     const result = validateCollections(
       collections({
-        horses: [{ fullName: 'x' }, { id: 'h1', gameId: 'g1' }, { id: 'h2', sireName: null }],
+        horses: [{ fullName: 'x' }, horse('h1', { gameId: 'g1' }), horse('h2', { sireName: null })],
       }),
     );
     expect(issueCodes(result)).toEqual(['recordInvalid', 'recordInvalid', 'recordInvalid']);
@@ -79,7 +84,7 @@ describe('validateCollections', () => {
   });
 
   it('[DATA-04] 同一資料表有重複的 id 時回報識別錯誤', () => {
-    const result = validateCollections(collections({ horses: [{ id: 'h1' }, { id: 'h1' }] }));
+    const result = validateCollections(collections({ horses: [horse('h1'), horse('h1')] }));
     expect(result.ok ? undefined : result.stage).toBe('relations');
     expect(issueCodes(result)).toEqual(['duplicateId']);
   });
@@ -88,10 +93,10 @@ describe('validateCollections', () => {
     const result = validateCollections(
       collections({
         horses: [
-          { id: 'h1', abilityNo: 0, birthYear: 1965 },
-          { id: 'h2', abilityNo: 0, birthYear: 1965 },
-          { id: 'h3', birthYear: 1965 },
-          { id: 'h4', birthYear: 1965 },
+          horse('h1', { abilityNo: 0, birthYear: 1965 }),
+          horse('h2', { abilityNo: 0, birthYear: 1965 }),
+          horse('h3', { birthYear: 1965 }),
+          horse('h4', { birthYear: 1965 }),
         ],
       }),
     );
@@ -101,9 +106,10 @@ describe('validateCollections', () => {
   it('[DATA-04] 唯一索引欄位是陣列時也檢查重複', () => {
     const result = validateCollections(
       collections({
-        horses: [
-          { id: 'h1', abilityNo: [1, 2], birthYear: 1965 },
-          { id: 'h2', abilityNo: [1, 2], birthYear: 1965 },
+        horses: [horse('h1')],
+        mareYearly: [
+          { id: 'y1', horseId: 'h1', gameYear: [1968, 5] },
+          { id: 'y2', horseId: 'h1', gameYear: [1968, 5] },
         ],
       }),
     );
@@ -113,14 +119,21 @@ describe('validateCollections', () => {
   it('[DATA-04] 內部 id 參照不存在時回報缺少關聯；只有外部名稱時不檢查', () => {
     const result = validateCollections(
       collections({
-        horses: [
-          { id: 'h1', sireId: 'missing' },
-          { id: 'h2', sireName: '(外)ソトノチチ' },
-        ],
+        horses: [horse('h1', { sireId: 'missing' }), horse('h2', { sireName: '(外)ソトノチチ' })],
         mares: [{ id: 'not-a-horse' }],
       }),
     );
     expect(issueCodes(result)).toEqual(['missingReference', 'missingReference']);
+  });
+
+  it('欄位規則不符時回報 recordInvalid，指出資料表、位置、id 與問題', () => {
+    const result = validateCollections(
+      collections({ horses: [horse('h1'), horse('h2', { sex: 'unknown' })] }),
+    );
+    expect(result.ok ? undefined : result.stage).toBe('fields');
+    expect(result.ok ? [] : result.issues).toEqual([
+      { code: 'recordInvalid', message: 'horses[1]（id h2）：sex 必須是 male 或 female' },
+    ]);
   });
 
   it('錯誤最多回報 20 筆', () => {

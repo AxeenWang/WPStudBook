@@ -26,8 +26,24 @@ function validCollections(): BackupCollections {
     ...emptyCollections(),
     gameSettings: [SETTINGS],
     horses: [
-      { id: 'h1', fullName: 'テストウマ001', abilityNo: 0, birthYear: 1965 },
-      { id: 'h2', fullName: 'テストウマ002', damId: 'h1', birthYear: 1970 },
+      {
+        id: 'h1',
+        sex: 'female',
+        fullName: 'テストウマ001',
+        abilityNo: 0,
+        birthYear: 1965,
+        stageNumbers: [],
+        aliases: [],
+      },
+      {
+        id: 'h2',
+        sex: 'female',
+        fullName: 'テストウマ002',
+        damId: 'h1',
+        birthYear: 1970,
+        stageNumbers: [],
+        aliases: [],
+      },
     ],
   };
 }
@@ -160,8 +176,22 @@ describe('decodeBackup', () => {
   });
 
   it('[DATA-04] 重複識別與缺少關聯在識別與關聯階段拒絕', async () => {
+    const line = {
+      id: 'l1',
+      subsystem: 'ネアルコ',
+      parentSystem: 'ネアルコ',
+      color: '#c62828',
+      branch: { targetGeneration: 1, openedYear: 1968 },
+      establishedGenerations: [],
+    };
     const duplicated = await documentWith({
-      collections: { ...validCollections(), lines: [{ id: 'l1' }, { id: 'l1' }] },
+      collections: {
+        ...validCollections(),
+        lines: [
+          { ...line, position: 1 },
+          { ...line, position: 2 },
+        ],
+      },
     });
     const dangling = await documentWith({
       collections: { ...validCollections(), mares: [{ id: 'missing-horse' }] },
@@ -220,7 +250,17 @@ describe('結構版本遷移', () => {
     const old = await documentWith({
       collections: {
         ...validCollections(),
-        horses: [{ id: 'h1', name: 'テストウマ001', abilityNo: 0, birthYear: 1965 }],
+        horses: [
+          {
+            id: 'h1',
+            name: 'テストウマ001',
+            sex: 'male',
+            abilityNo: 0,
+            birthYear: 1965,
+            stageNumbers: [],
+            aliases: [],
+          },
+        ],
       },
     });
     const result = await decodeBackup(jsonBytes(old), {
@@ -234,7 +274,15 @@ describe('結構版本遷移', () => {
       expect(result.backup.sourceSha256).toBe(old.sha256);
       expect(document.schemaVersion).toBe(3);
       expect(document.collections.horses).toEqual([
-        { id: 'h1', fullName: 'テストウマ001', abilityNo: 0, birthYear: 1965 },
+        {
+          id: 'h1',
+          fullName: 'テストウマ001',
+          sex: 'male',
+          abilityNo: 0,
+          birthYear: 1965,
+          stageNumbers: [],
+          aliases: [],
+        },
       ]);
       expect(document.collections.gameSettings[0]?.display).toEqual({ theme: 'light' });
       expect(document.sha256).toBe(await computeBackupHash(document.game, document.collections));

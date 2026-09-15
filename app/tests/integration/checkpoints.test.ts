@@ -25,6 +25,7 @@ import {
   SYNTHETIC_RECORDS,
   SYNTHETIC_SETTINGS,
   seedSyntheticGame,
+  stripNameKeys,
 } from '../fixtures/synthetic-game.ts';
 import { useServiceContexts } from './helpers.ts';
 
@@ -47,7 +48,9 @@ describe('檢查點與回溯', () => {
   /** 建立回溯目標後，新增一匹馬、推進一年，再建立一個較晚的檢查點。 */
   async function changedAfterCheckpoint(context: ServiceContext, game: Game) {
     const target = (await createCheckpoint(context, { note: '回溯目標' })).checkpoint;
-    await putRecords(context.database, game.id, 'horses', [{ id: 'horse-new', fullName: '新馬' }]);
+    await putRecords(context.database, game.id, 'horses', [
+      { id: 'horse-new', sex: 'male', fullName: '新馬', stageNumbers: [], aliases: [] },
+    ]);
     await changeCurrentYear(context, 1969);
     const later = (await createCheckpoint(context)).checkpoint;
     return { target, later };
@@ -161,8 +164,14 @@ describe('檢查點與回溯', () => {
     expect(current?.lastBackup?.fileName).toBe(delivered[0]?.fileName);
     for (const collection of RECORD_COLLECTIONS) {
       const records = await readRecords(context.database, game.id, collection);
-      expect(sortById(records), collection).toStrictEqual(sortById(SYNTHETIC_RECORDS[collection]));
+      expect(sortById(stripNameKeys(records)), collection).toStrictEqual(
+        sortById(SYNTHETIC_RECORDS[collection]),
+      );
     }
+    const horses = await readRecords(context.database, game.id, 'horses');
+    expect(horses.find((item) => item.id === 'horse-sire')?.nameKeys).toEqual([
+      `${game.id}テストシュボバ`,
+    ]);
     expect((await listGameCheckpoints(context)).map((item) => item.id)).toEqual([target.id]);
     expect(await readCheckpointBytes(context.database, game.id, later.id)).toBeUndefined();
   });
@@ -244,10 +253,14 @@ describe('檢查點與回溯', () => {
     const target = (await createCheckpoint(context)).checkpoint;
     const other = await createGame(context, { name: '另一局', startYear: 1980 });
     await seedSyntheticGame(context.database, other.id);
-    await putRecords(context.database, other.id, 'horses', [{ id: 'horse-other' }]);
+    await putRecords(context.database, other.id, 'horses', [
+      { id: 'horse-other', sex: 'male', stageNumbers: [], aliases: [] },
+    ]);
     const otherCheckpoint = (await createCheckpoint(context)).checkpoint;
     await switchGame(context, game.id);
-    await putRecords(context.database, game.id, 'horses', [{ id: 'horse-new' }]);
+    await putRecords(context.database, game.id, 'horses', [
+      { id: 'horse-new', sex: 'male', stageNumbers: [], aliases: [] },
+    ]);
 
     await expect(
       rollbackToCheckpoint(context, otherCheckpoint.id, NO_DOWNLOAD),
