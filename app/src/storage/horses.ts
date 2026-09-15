@@ -3,7 +3,7 @@ import type { AppDatabase } from './database.ts';
 import { isPlainRecord, withGameId, withoutGameId, type StoredRecord } from './records.ts';
 
 /** nameKeys 的分隔字元（設計決策 5.2 節）。 */
-export const NAME_KEY_SEPARATOR = '';
+export const NAME_KEY_SEPARATOR = '\u001f';
 
 const NAME_FIELDS = ['fullName', 'baseName', 'officialName'] as const;
 

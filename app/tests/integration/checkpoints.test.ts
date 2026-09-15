@@ -170,7 +170,7 @@ describe('檢查點與回溯', () => {
     }
     const horses = await readRecords(context.database, game.id, 'horses');
     expect(horses.find((item) => item.id === 'horse-sire')?.nameKeys).toEqual([
-      `${game.id}テストシュボバ`,
+      `${game.id}\u001fテストシュボバ`,
     ]);
     expect((await listGameCheckpoints(context)).map((item) => item.id)).toEqual([target.id]);
     expect(await readCheckpointBytes(context.database, game.id, later.id)).toBeUndefined();

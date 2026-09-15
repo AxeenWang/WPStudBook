@@ -147,7 +147,7 @@ describe('備份匯出與還原', () => {
     // nameKeys 備份時剔除，還原時以新遊戲局的 id 重建。
     const restoredHorses = await readRecords(context.database, restored.id, 'horses');
     expect(restoredHorses.find((item) => item.id === 'horse-sire')?.nameKeys).toEqual([
-      `${restored.id}テストシュボバ`,
+      `${restored.id}\u001fテストシュボバ`,
     ]);
     expect(await readRecords(context.database, game.id, 'horses')).toHaveLength(3);
   });
@@ -242,7 +242,7 @@ describe('備份匯出與還原', () => {
         sex: 'male',
         stageNumbers: [],
         aliases: [],
-        nameKeys: [`${restored.id}テストウマ001`],
+        nameKeys: [`${restored.id}\u001fテストウマ001`],
       },
     ]);
     expect(await readRecords(context.database, restored.id, 'events')).toEqual([

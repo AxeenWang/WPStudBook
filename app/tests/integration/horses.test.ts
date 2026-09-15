@@ -29,13 +29,13 @@ describe('馬匹名稱索引', () => {
 
   it('nameKeys 收錄完整馬名、基本馬名、正式馬名與別名，去除重複與空字串', () => {
     expect(horseNameKeys('g1', HORSE)).toEqual([
-      'g1(外)テストウマ',
-      'g1テストウマ',
-      'g1キュウメイ',
+      'g1\u001f(外)テストウマ',
+      'g1\u001fテストウマ',
+      'g1\u001fキュウメイ',
     ]);
     expect(withHorseNameKeys('g1', { ...HORSE, nameKeys: ['old'] })).toMatchObject({
       gameId: 'g1',
-      nameKeys: ['g1(外)テストウマ', 'g1テストウマ', 'g1キュウメイ'],
+      nameKeys: ['g1\u001f(外)テストウマ', 'g1\u001fテストウマ', 'g1\u001fキュウメイ'],
     });
   });
 
