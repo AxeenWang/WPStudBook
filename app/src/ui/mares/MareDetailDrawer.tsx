@@ -14,6 +14,8 @@ import {
 import type { ServiceContext } from '../../services/context.ts';
 import { loadMareDetail, type MareDetail } from '../../services/mares.ts';
 import { useServiceQuery } from '../ServicesContext.tsx';
+import { MareBreeding } from './MareBreeding.tsx';
+import { MareFoals } from './MareFoals.tsx';
 import { MareHistory } from './MareHistory.tsx';
 import { MareSummary } from './MareSummary.tsx';
 
@@ -117,10 +119,10 @@ export function MareDetailDrawer({ mareId, tab, onTabChange, onClose }: MareDeta
                 <MareSummary detail={detail} />
               </TabPanel>
               <TabPanel id="breeding">
-                <p>配種紀錄的檢視在配種功能完成後提供。</p>
+                <MareBreeding mareId={mareId} />
               </TabPanel>
               <TabPanel id="foals">
-                <p>產駒時間軸在產駒功能完成後提供。</p>
+                <MareFoals mareId={mareId} />
               </TabPanel>
               <TabPanel id="pedigree">
                 <PedigreeBrief detail={detail} />

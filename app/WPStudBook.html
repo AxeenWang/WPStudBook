@@ -251,6 +251,69 @@
       [role='alert'] {
         color: #b00020;
       }
+      .field-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: end;
+        margin: 0.5rem 0;
+        padding: 0.5rem;
+        border: 1px solid #d5dbe3;
+        border-radius: 0.5rem;
+      }
+      .breeding-list,
+      .foal-timeline,
+      .sister-list,
+      .foal-list {
+        margin: 0.5rem 0;
+        padding: 0;
+        list-style: none;
+      }
+      .breeding-row,
+      .foal-timeline > li,
+      .sister-list > li,
+      .foal-row {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #d5dbe3;
+      }
+      .breeding-row p,
+      .sister-list p,
+      .foal-card p {
+        margin: 0.25rem 0;
+      }
+      .timeline-year,
+      .foal-name {
+        margin: 0.25rem 0;
+      }
+      .foal-timeline > li[data-kind='idle'],
+      .foal-timeline > li[data-kind='unregistered'] {
+        color: #64758a;
+      }
+      .foal-row-main {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.75rem;
+        align-items: baseline;
+      }
+      .foal-panel {
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        border: 1px solid #d5dbe3;
+        border-radius: 0.5rem;
+        background: #fff;
+      }
+      .sex-marker {
+        display: inline-block;
+        min-width: 1em;
+        font-weight: 700;
+        text-align: center;
+      }
+      .sex-male {
+        color: #1565c0;
+      }
+      .sex-female {
+        color: #c2185b;
+      }
       :focus-visible {
         outline: 2px solid #1f6feb;
         outline-offset: 2px;

@@ -6,6 +6,7 @@ import { formatGeneration } from '../format.ts';
 import {
   ORIGIN_LABELS,
   SITE_LABELS,
+  SUCCESSION_LABELS,
   YEAR_PLAN_LABELS,
   formatMareGroup,
   formatStatus,
@@ -112,8 +113,20 @@ export function MareCardItem({ card, vitalityThreshold, onOpen, onSell }: MareCa
             <dt>牝系</dt>
             <dd>{femaleLineText(card.femaleLine)}</dd>
           </div>
+          {card.succession !== undefined && (
+            <div>
+              <dt>接替狀態</dt>
+              <dd data-testid="mare-succession">{SUCCESSION_LABELS[card.succession]}</dd>
+            </div>
+          )}
         </dl>
         {card.highAge && <p className="notice">產駒素質可能下降，可考慮出售</p>}
+        {card.suggestSellMother && (
+          <p className="notice" data-testid="mare-sell-mother">
+            女兒已轉入且今年已生產，可考慮出售
+          </p>
+        )}
+        {card.hasUnnamedFoal && <p className="notice">有未命名產駒</p>}
         {card.belowThreshold && vitalityThreshold !== undefined && (
           <p className="notice">活力低於建議門檻 {vitalityThreshold}</p>
         )}

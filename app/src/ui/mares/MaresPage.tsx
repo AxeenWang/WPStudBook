@@ -5,6 +5,7 @@ import {
   DEFAULT_MARE_FILTER,
   defaultGeneration,
   generationTabs,
+  handoverGenerations,
   matchesMareFilter,
   paginate,
   sortMareCards,
@@ -32,9 +33,15 @@ const POSITION_CHOICES = MARE_POSITION_OPTIONS.map((position) => ({
   label: `第 ${String(position)} 系`,
 }));
 
+/** 使用者選擇的代數；交接中在每次載入時依目前資料換成相鄰兩代。 */
+interface GroupSelection {
+  readonly position: MareGroupView['position'];
+  readonly generation: number | 'all' | 'handover';
+}
+
 function MareHerdView() {
   const { data: herd, error } = useServiceQuery(loadMareHerd);
-  const [selection, setSelection] = useState<MareGroupView>();
+  const [selection, setSelection] = useState<GroupSelection>();
   const [options, setOptions] = useState<MareFilterOptions>(DEFAULT_MARE_FILTER);
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
@@ -47,9 +54,13 @@ function MareHerdView() {
     return error === undefined ? <p role="status">載入中…</p> : <p role="alert">{error}</p>;
   }
 
-  const view: MareGroupView = selection ?? {
-    position: 1,
-    generation: defaultGeneration(herd.cards, 1),
+  const position = selection?.position ?? 1;
+  const handover = handoverGenerations(herd.cards, position);
+  const selected = selection?.generation ?? defaultGeneration(herd.cards, position);
+  const view: MareGroupView = {
+    position,
+    generation:
+      selected === 'handover' ? (handover ?? defaultGeneration(herd.cards, position)) : selected,
   };
   const tabs = generationTabs(herd.cards, view.position);
   const shown = paginate(
@@ -59,12 +70,13 @@ function MareHerdView() {
     ),
     page,
   );
+  const { generation } = view;
   const producing =
-    view.generation === 'all'
-      ? undefined
-      : (tabs.find((tab) => tab.generation === view.generation)?.producing ?? 0);
+    typeof generation === 'number'
+      ? (tabs.find((tab) => tab.generation === generation)?.producing ?? 0)
+      : undefined;
 
-  const choose = (next: MareGroupView) => {
+  const choose = (next: GroupSelection) => {
     setSelection(next);
     setPage(1);
   };
@@ -97,31 +109,41 @@ function MareHerdView() {
           label="系"
           value={view.position}
           options={POSITION_CHOICES}
-          onChange={(position) => {
-            if (position !== undefined) {
-              choose({ position, generation: defaultGeneration(herd.cards, position) });
+          onChange={(next) => {
+            if (next !== undefined) {
+              choose({ position: next, generation: defaultGeneration(herd.cards, next) });
             }
           }}
         />
         <div role="group" aria-label="代數" className="actions">
           <ToggleButton
-            isSelected={view.generation === 'all'}
+            isSelected={selected === 'all'}
             onChange={() => {
               choose({ position: view.position, generation: 'all' });
             }}
           >
             全部代數
           </ToggleButton>
+          {handover !== undefined && (
+            <ToggleButton
+              isSelected={selected === 'handover'}
+              onChange={() => {
+                choose({ position: view.position, generation: 'handover' });
+              }}
+            >
+              交接中
+            </ToggleButton>
+          )}
           {tabs.map((tab) => (
             <ToggleButton
               key={tab.generation}
-              isSelected={view.generation === tab.generation}
+              isSelected={selected === tab.generation}
               onChange={() => {
                 choose({ position: view.position, generation: tab.generation });
               }}
             >
-              {formatGenerationTab(view.position, tab.generation)}（生產中 {tab.producing}・已離圈{' '}
-              {tab.left}）
+              {formatGenerationTab(view.position, tab.generation)}（生產中 {tab.producing}・待接替{' '}
+              {tab.pendingSuccession}・已離圈 {tab.left}）
             </ToggleButton>
           ))}
         </div>
