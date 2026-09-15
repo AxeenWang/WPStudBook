@@ -43,6 +43,17 @@ export async function readRecords(
   return values.filter(isPlainRecord).map(withoutGameId);
 }
 
+/** 交易內的資料表；只列出用到的請求，讓唯讀與讀寫交易都能傳入同一個讀取函式。 */
+export interface ReadableIndex {
+  get(query: IDBValidKey): Promise<unknown>;
+  getAll(query: IDBValidKey): Promise<unknown[]>;
+}
+
+export interface ReadableStore {
+  get(key: IDBValidKey): Promise<unknown>;
+  index(name: string): ReadableIndex;
+}
+
 interface CompletableTransaction {
   abort(): void;
   readonly done: Promise<void>;

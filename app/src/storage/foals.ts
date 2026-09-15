@@ -16,6 +16,7 @@ import {
   isPlainRecord,
   withGameId,
   withoutGameId,
+  type ReadableStore,
 } from './records.ts';
 
 export function toFoal(value: unknown): Foal | undefined {
@@ -54,17 +55,6 @@ export async function listFoalsForDam(
   return values.map(toFoal).filter((foal) => foal !== undefined);
 }
 
-/** 交易內的資料表；只列出用到的請求，讓唯讀與讀寫交易都能傳入。 */
-interface ReadableIndex {
-  get(query: IDBValidKey): Promise<unknown>;
-  getAll(query: IDBValidKey): Promise<unknown[]>;
-}
-
-interface ReadableStore {
-  get(key: IDBValidKey): Promise<unknown>;
-  index(name: string): ReadableIndex;
-}
-
 const BIRTH_STORES = ['mares', 'horses', 'foals', 'breedings', 'stallionDuties'] as const;
 
 type ObjectStoreOf = (name: (typeof BIRTH_STORES)[number]) => ReadableStore;
@@ -77,7 +67,7 @@ export interface SireRecords {
 }
 
 export async function readSireRecords(
-  objectStore: ObjectStoreOf,
+  objectStore: (name: 'horses' | 'stallionDuties' | 'foals') => ReadableStore,
   gameId: string,
   sireId: string,
 ): Promise<SireRecords> {

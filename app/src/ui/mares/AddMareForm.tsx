@@ -42,7 +42,7 @@ export function AddMareForm(props: AddMareFormProps) {
   const { context, notifyChanged } = useServices();
   const [position, setPosition] = useState<LinePosition>(props.initial.position);
   const [generation, setGeneration] = useState<number | undefined>(
-    props.initial.generation === 'all' ? undefined : props.initial.generation,
+    typeof props.initial.generation === 'number' ? props.initial.generation : undefined,
   );
   const [fullName, setFullName] = useState('');
   const [abilityNo, setAbilityNo] = useState('');

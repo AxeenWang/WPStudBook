@@ -71,6 +71,52 @@ export interface Mare {
   readonly yearPlan?: MareYearPlan;
 }
 
+/** 暫定保留、候選、正式保留都可列入任務；已被取代、已售出不列入（需求規格 8.9）。 */
+export function isActiveSuccession(succession: Succession | undefined): boolean {
+  return (
+    succession === 'provisional' || succession === 'sisterCandidate' || succession === 'confirmed'
+  );
+}
+
+/** 待接替：暫定保留或候選，姊妹取捨尚未決定正式保留。 */
+export function isPendingSuccession(succession: Succession | undefined): boolean {
+  return succession === 'provisional' || succession === 'sisterCandidate';
+}
+
+/** 自家母駒轉入時的接替狀態（需求規格 8.9）：姊妹不在圈內 → 暫定保留；已有姊妹在圈 → 候選。 */
+export function initialSuccession(sisters: readonly Mare[]): Succession {
+  return sisters.some(
+    (sister) => sister.status === 'producing' && isActiveSuccession(sister.succession),
+  )
+    ? 'sisterCandidate'
+    : 'provisional';
+}
+
+/** 某代第一匹自家母駒以暫定保留或正式保留轉入時，該代立即成立（需求規格 8.2、LINE-17）。 */
+export function establishesGeneration(succession: Succession): boolean {
+  return succession === 'provisional' || succession === 'confirmed';
+}
+
+/**
+ * 出售母親提醒（需求規格 8.5、MARE-23）：女兒已以暫定或正式保留轉入，且母親在目前遊戲年已生產時提示。
+ * 只提示，不影響任何操作。
+ */
+export function suggestsSellingMother(
+  mother: Mare,
+  daughters: readonly Mare[],
+  bornThisYear: boolean,
+): boolean {
+  return (
+    mother.status === 'producing' &&
+    bornThisYear &&
+    daughters.some(
+      (daughter) =>
+        daughter.status === 'producing' &&
+        (daughter.succession === 'provisional' || daughter.succession === 'confirmed'),
+    )
+  );
+}
+
 /** 母馬群的目標數，只是提醒（需求規格 7.5）。 */
 export const MARE_GROUP_TARGET = 5;
 

@@ -7,6 +7,7 @@ import {
   buildMareCard,
   defaultGeneration,
   generationTabs,
+  handoverGenerations,
   matchesMareFilter,
   paginate,
   sortMareCards,
@@ -35,6 +36,9 @@ function card(id: string, overrides: Partial<MareCard> = {}): MareCard {
     origin: 'marketFound',
     femaleLine: undefined,
     kodashi: undefined,
+    succession: undefined,
+    hasUnnamedFoal: false,
+    suggestSellMother: false,
     ...overrides,
   };
 }
@@ -125,6 +129,9 @@ describe('卡片資料', () => {
       origin: 'ownRetired',
       femaleLine: 'テストケイ',
       kodashi: { value: 12, gameYear: 1968 },
+      succession: undefined,
+      hasUnnamedFoal: false,
+      suggestSellMother: false,
     });
   });
 
@@ -295,11 +302,31 @@ describe('排序、分頁與代數按鈕', () => {
       card('other', { group: { kind: 'substitute', position: 2, generation: 1 } }),
     ];
     expect(generationTabs(cards, 1)).toEqual([
-      { generation: 0, producing: 1, left: 1 },
-      { generation: 2, producing: 0, left: 1 },
+      { generation: 0, producing: 1, pendingSuccession: 0, left: 1 },
+      { generation: 2, producing: 0, pendingSuccession: 0, left: 1 },
     ]);
     expect(defaultGeneration(cards, 1)).toBe(0);
     expect(defaultGeneration(cards, 3)).toBe('all');
     expect(defaultGeneration([cards[2] ?? card('x')], 1)).toBe(2);
+  });
+
+  it('[MARE-03] 交接中取該系都有生產中母馬的相鄰代數中最新的一組；待接替數只算生產中的暫定保留與候選', () => {
+    const own = (generation: number) => ({ kind: 'own', position: 1, generation }) as const;
+    const cards = [
+      card('g1', { group: own(1) }),
+      card('g2', { group: own(2), status: 'left', leftReason: 'sold' }),
+      card('g3', { group: own(3), succession: 'provisional' }),
+      card('g4a', { group: own(4), succession: 'sisterCandidate' }),
+      card('g4b', { group: own(4), succession: 'replaced' }),
+      card('g4c', { group: own(4), succession: 'sold', status: 'left', leftReason: 'sold' }),
+    ];
+    expect(handoverGenerations(cards, 1)).toEqual({ handover: [3, 4] });
+    expect(handoverGenerations(cards.slice(0, 3), 1)).toBeUndefined();
+    expect(generationTabs(cards, 1).find((tab) => tab.generation === 4)).toEqual({
+      generation: 4,
+      producing: 2,
+      pendingSuccession: 1,
+      left: 1,
+    });
   });
 });

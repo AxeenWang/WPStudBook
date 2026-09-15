@@ -6,6 +6,7 @@ import {
   ageInYear,
   effectiveYearPlan,
   isHighAge,
+  isPendingSuccession,
   mareGeneration,
   type LeftReason,
   type Mare,
@@ -13,6 +14,7 @@ import {
   type MareOrigin,
   type MareSite,
   type MareStatus,
+  type Succession,
   type YearPlan,
 } from '../domain/mare.ts';
 import {
@@ -47,6 +49,12 @@ export interface MareCard {
   readonly origin: MareOrigin;
   readonly femaleLine: string | undefined;
   readonly kodashi: YearValue | undefined;
+  /** 姊妹接替狀態：只有自家母駒轉入後才有（需求規格 8.9）。 */
+  readonly succession: Succession | undefined;
+  /** 有未售出且未命名的產駒（需求規格 13.3 篩選）。 */
+  readonly hasUnnamedFoal: boolean;
+  /** 出售母親提醒（需求規格 8.5、MARE-23）：只提示。 */
+  readonly suggestSellMother: boolean;
 }
 
 export interface MareCardSource {
@@ -57,6 +65,10 @@ export interface MareCardSource {
   readonly conception: Conception | undefined;
   readonly currentYear: number;
   readonly settings: Pick<GameSettings, 'highAgeReminderAge' | 'vitalityThreshold'>;
+  /** 沒有馬名的自家母馬顯示追蹤名。 */
+  readonly trackingName?: string | undefined;
+  readonly hasUnnamedFoal?: boolean | undefined;
+  readonly suggestSellMother?: boolean | undefined;
 }
 
 export function buildMareCard(source: MareCardSource): MareCard {
@@ -68,10 +80,16 @@ export function buildMareCard(source: MareCardSource): MareCard {
     horse?.baseName,
     horse?.officialName,
     ...(horse?.aliases ?? []).map((alias) => alias.name),
+    source.trackingName,
   ].filter((name): name is string => name !== undefined && name !== '');
   return {
     id: mare.id,
-    name: horse?.fullName ?? horse?.officialName ?? horse?.baseName ?? '（沒有馬名）',
+    name:
+      horse?.fullName ??
+      horse?.officialName ??
+      horse?.baseName ??
+      source.trackingName ??
+      '（沒有馬名）',
     searchNames: [...new Set(names)],
     group: mare.group,
     generation: mareGeneration(mare.group),
@@ -88,13 +106,21 @@ export function buildMareCard(source: MareCardSource): MareCard {
     origin: mare.origin,
     femaleLine: horse?.femaleLine,
     kodashi: latestYearlyValue(source.yearly, 'kodashi'),
+    succession: mare.succession,
+    hasUnnamedFoal: source.hasUnnamedFoal ?? false,
+    suggestSellMother: source.suggestSellMother ?? false,
   };
 }
 
-/** 清單單位：第 q 系 N 代母馬群，或同一系的全部代數（歷史檢視）。 */
+/** 交接中檢視的相鄰兩代（需求規格 13.3）。 */
+export interface HandoverGenerations {
+  readonly handover: readonly [number, number];
+}
+
+/** 清單單位：第 q 系 N 代母馬群、同一系的全部代數（歷史檢視），或交接中的相鄰兩代。 */
 export interface MareGroupView {
   readonly position: LinePosition;
-  readonly generation: number | 'all';
+  readonly generation: number | 'all' | HandoverGenerations;
 }
 
 export type MareStatusFilter = 'producing' | 'left' | 'all';
@@ -115,6 +141,7 @@ export interface MareFilterOptions {
   readonly femaleLineName: string;
   readonly kodashiMin: number | undefined;
   readonly kodashiMax: number | undefined;
+  readonly unnamedFoalOnly: boolean;
   readonly keyword: string;
 }
 
@@ -131,6 +158,7 @@ export const DEFAULT_MARE_FILTER: MareFilterOptions = {
   femaleLineName: '',
   kodashiMin: undefined,
   kodashiMax: undefined,
+  unnamedFoalOnly: false,
   keyword: '',
 };
 
@@ -157,6 +185,16 @@ function matchesFemaleLine(femaleLine: string | undefined, filter: FemaleLineFil
   return filter === 'none' ? femaleLine === '' : true;
 }
 
+function matchesGeneration(generation: number, view: MareGroupView): boolean {
+  const selected = view.generation;
+  if (selected === 'all') {
+    return true;
+  }
+  return typeof selected === 'number'
+    ? generation === selected
+    : selected.handover.includes(generation);
+}
+
 /** 系、代數與所有篩選條件取交集（需求規格 13.3、UI-07）。 */
 export function matchesMareFilter(
   card: MareCard,
@@ -171,7 +209,7 @@ export function matchesMareFilter(
   return (
     group.kind !== 'unassigned' &&
     group.position === view.position &&
-    (view.generation === 'all' || group.generation === view.generation) &&
+    matchesGeneration(group.generation, view) &&
     (options.status === 'all' || card.status === options.status) &&
     (options.site === undefined || card.site === options.site) &&
     inRange(confirmed?.value, options.vitalityMin, options.vitalityMax) &&
@@ -182,6 +220,7 @@ export function matchesMareFilter(
     matchesFemaleLine(card.femaleLine, options.femaleLine) &&
     (lineName === '' || card.femaleLine?.includes(lineName) === true) &&
     inRange(card.kodashi?.value, options.kodashiMin, options.kodashiMax) &&
+    (!options.unnamedFoalOnly || card.hasUnnamedFoal) &&
     (keyword === '' || card.searchNames.some((name) => name.includes(keyword)))
   );
 }
@@ -248,23 +287,28 @@ export function paginate<T>(
 export interface GenerationTab {
   readonly generation: number;
   readonly producing: number;
+  /** 生產中且姊妹取捨尚未決定（暫定保留或候選）。 */
+  readonly pendingSuccession: number;
   readonly left: number;
 }
 
-/** 某系已有母馬的代數與各代的生產中、已離圈數，代數由小到大。 */
+/** 某系已有母馬的代數與各代的生產中、待接替、已離圈數（需求規格 13.3），代數由小到大。 */
 export function generationTabs(
   cards: readonly MareCard[],
   position: LinePosition,
 ): GenerationTab[] {
-  const counts = new Map<number, { producing: number; left: number }>();
+  const counts = new Map<number, { producing: number; pendingSuccession: number; left: number }>();
   for (const card of cards) {
     const { group } = card;
     if (group.kind === 'unassigned' || group.position !== position) {
       continue;
     }
-    const count = counts.get(group.generation) ?? { producing: 0, left: 0 };
+    const count = counts.get(group.generation) ?? { producing: 0, pendingSuccession: 0, left: 0 };
     if (card.status === 'producing') {
       count.producing += 1;
+      if (isPendingSuccession(card.succession)) {
+        count.pendingSuccession += 1;
+      }
     } else {
       count.left += 1;
     }
@@ -284,4 +328,23 @@ export function defaultGeneration(
   return (
     tabs.filter((tab) => tab.producing > 0).at(-1)?.generation ?? tabs.at(-1)?.generation ?? 'all'
   );
+}
+
+/**
+ * 交接中的相鄰兩代：該系都有生產中母馬的相鄰代數中最新的一組（需求規格 13.3、MARE-03）；
+ * 沒有這樣的兩代時為 undefined。
+ */
+export function handoverGenerations(
+  cards: readonly MareCard[],
+  position: LinePosition,
+): HandoverGenerations | undefined {
+  const producing = new Set(
+    generationTabs(cards, position)
+      .filter((tab) => tab.producing > 0)
+      .map((tab) => tab.generation),
+  );
+  const newest = [...producing]
+    .filter((generation) => producing.has(generation - 1))
+    .sort((a, b) => b - a)[0];
+  return newest === undefined ? undefined : { handover: [newest - 1, newest] };
 }

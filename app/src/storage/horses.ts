@@ -81,6 +81,16 @@ export async function findHorsesByName(
   );
   return values.map(toHorse).filter((horse) => horse !== undefined);
 }
+/** 以 [gameId, damId] 索引讀取某匹母馬的全部子女。 */
+export async function listHorsesByDam(
+  database: AppDatabase,
+  gameId: string,
+  damId: string,
+): Promise<Horse[]> {
+  const values: unknown[] = await database.getAllFromIndex('horses', 'damId', [gameId, damId]);
+  return values.map(toHorse).filter((horse) => horse !== undefined);
+}
+
 /** 以單一唯讀交易讀出多匹馬；找不到的 id 不列入。 */
 export async function getHorsesByIds(
   database: AppDatabase,

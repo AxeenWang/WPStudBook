@@ -1,5 +1,6 @@
 import type { HistoryEventType } from '../../domain/history-event.ts';
 import type { LifeStage } from '../../domain/horse.ts';
+import type { MareGroupView } from '../../services/mare-list.ts';
 import type { MareHistoryItem } from '../../services/mares.ts';
 import type {
   LeftReason,
@@ -55,9 +56,16 @@ export function formatMareGroup(group: MareGroup): string {
   }
 }
 
-export function formatGroupTitle(position: number, generation: number | 'all'): string {
+export function formatGroupTitle(
+  position: number,
+  generation: MareGroupView['generation'],
+): string {
   if (generation === 'all') {
     return `第 ${String(position)} 系母馬群（全部代數）`;
+  }
+  if (typeof generation !== 'number') {
+    const [from, to] = generation.handover;
+    return `第 ${String(position)} 系交接中（${formatGenerationTab(position, from)} → ${formatGenerationTab(position, to)}）`;
   }
   return position === 1 && generation === 0
     ? '第 1 系起點母馬群'
