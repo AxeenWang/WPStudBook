@@ -64,4 +64,49 @@ describe('findExternalReferences', () => {
       { kind: 'attribute', value: 'b.png' },
     ]);
   });
+
+  it('[BLD-02] object 的 data、按鈕的 formaction、link 的 imagesrcset 指向外部時回報', () => {
+    const html =
+      '<object data="https://example.com/a.swf"></object>' +
+      '<button formaction="https://example.com/submit">送出</button>' +
+      '<link rel="preload" as="image" imagesrcset="data:image/png;base64,AAAA 1x, https://cdn.example.com/b.png 2x">';
+    expect(findExternalReferences(html)).toEqual([
+      { kind: 'attribute', value: 'https://example.com/a.swf' },
+      { kind: 'attribute', value: 'https://example.com/submit' },
+      { kind: 'attribute', value: 'https://cdn.example.com/b.png' },
+    ]);
+  });
+
+  it('[BLD-02] meta refresh 導向外部網址時回報，單純定時重新整理與其他 meta 不回報', () => {
+    const html =
+      '<meta http-equiv="refresh" content="0; url=https://example.com/next">' +
+      '<meta http-equiv="refresh" content="30">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
+    expect(findExternalReferences(html)).toEqual([
+      { kind: 'attribute', value: 'https://example.com/next' },
+    ]);
+  });
+
+  it('[BLD-02] 行內 style 屬性的 url() 指向外部時回報', () => {
+    const html =
+      `<div style="background:url('https://cdn.example.com/bg.png')"></div>` +
+      `<span style='mask:url(data:image/svg+xml;base64,AAAA)'></span>`;
+    expect(findExternalReferences(html)).toEqual([
+      { kind: 'css', value: 'https://cdn.example.com/bg.png' },
+    ]);
+  });
+
+  it('data-src 之類的自訂屬性不算外部載入', () => {
+    const html =
+      '<img data-src="https://example.com/lazy.png" src="data:image/png;base64,AAAA">' +
+      '<div data-href="page.html"></div>';
+    expect(findExternalReferences(html)).toEqual([]);
+  });
+
+  it('HTML 註解內的網址不算外部載入', () => {
+    const html =
+      '<!-- <script src="https://cdn.example.com/old.js"></script> -->' +
+      '<!--<img src=old.png>--><p>內容</p>';
+    expect(findExternalReferences(html)).toEqual([]);
+  });
 });
