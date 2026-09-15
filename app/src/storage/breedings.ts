@@ -86,6 +86,8 @@ export interface BreedingWriteState {
   readonly mare: Mare | undefined;
   /** 交易內讀出的該年紀錄；還沒有時為 undefined。 */
   readonly record: Breeding | undefined;
+  /** 隔年（這筆紀錄的預定生產年）已登記的產駒 id。 */
+  readonly nextYearFoalId: string | undefined;
 }
 
 export interface BreedingChange {
@@ -108,7 +110,10 @@ export async function writeBreeding(
   write: BreedingWrite,
 ): Promise<Breeding> {
   const { gameId, mareId } = write;
-  const transaction = database.transaction(['games', 'mares', 'breedings', 'events'], 'readwrite');
+  const transaction = database.transaction(
+    ['games', 'mares', 'breedings', 'foals', 'events'],
+    'readwrite',
+  );
   const games = transaction.objectStore('games');
   const breedings = transaction.objectStore('breedings');
   return completeTransaction(transaction, async () => {
@@ -116,12 +121,22 @@ export async function writeBreeding(
     const recordRequest: Promise<unknown> = breedings
       .index('mareId+gameYear')
       .get([gameId, mareId, write.gameYear]);
-    const [game, mare, record] = await Promise.all([
+    const foalRequest: Promise<unknown> = transaction
+      .objectStore('foals')
+      .index('damId+birthYear')
+      .get([gameId, mareId, write.gameYear + 1]);
+    const [game, mare, record, foal] = await Promise.all([
       readGameForWrite(games, gameId),
       mareRequest,
       recordRequest,
+      foalRequest,
     ]);
-    const change = write.apply({ game, mare: toMare(mare), record: toBreeding(record) });
+    const change = write.apply({
+      game,
+      mare: toMare(mare),
+      record: toBreeding(record),
+      nextYearFoalId: isPlainRecord(foal) && typeof foal.id === 'string' ? foal.id : undefined,
+    });
     await Promise.all([
       games.put({ ...game, ...write.touch }),
       breedings.put(withGameId(gameId, change.record)),

@@ -375,6 +375,23 @@ describe('產駒（需求規格 9.3、9.4）', () => {
     });
   });
 
+  it('產駒已比照自由配種登記時，前一年不能改登記為受胎，也不顯示確認出生；其他狀態可以登記', async () => {
+    const context = await open();
+    const value = await setup(context);
+    await saveBreeding(context, breedingInput(value, { conception: '未確認' }));
+    await changeCurrentYear(context, 1969);
+    await registerFoal(
+      context,
+      foalInput(value.mareId, { acceptedWarnings: ['noConceptionRecord'] }),
+    );
+    await expect(saveBreeding(context, breedingInput(value))).rejects.toThrow(
+      '1969 年已登記沒有連結繁殖紀錄的產駒，不能把 1968 年改登記為受胎',
+    );
+    await saveBreeding(context, breedingInput(value, { conception: '不受胎' }));
+    const rows = (await loadMareBreedings(context, value.mareId)).rows;
+    expect(rows[0]).toMatchObject({ record: { conception: '不受胎' }, canConfirmBirth: false });
+  });
+
   it('[BRD-07][BRD-08] 補登正式馬名後主要顯示正式馬名，識別、母馬、出生年與能力不變，追蹤名仍可搜尋；清空後回退追蹤名', async () => {
     const context = await open();
     const value = await setup(context);

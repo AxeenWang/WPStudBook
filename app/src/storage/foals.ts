@@ -200,6 +200,8 @@ export interface FoalWriteState {
   readonly game: Game;
   readonly foal: Foal;
   readonly horse: Horse;
+  /** 已轉入為繁殖牝馬時的紀錄。 */
+  readonly mare: Mare | undefined;
 }
 
 /** 只寫回有變更的紀錄（需求規格 12.2、DATA-01）。 */
@@ -223,24 +225,30 @@ export async function modifyFoal(
   modification: FoalModification,
 ): Promise<FoalWriteState> {
   const { gameId, foalId } = modification;
-  const transaction = database.transaction(['games', 'foals', 'horses', 'events'], 'readwrite');
+  const transaction = database.transaction(
+    ['games', 'foals', 'horses', 'mares', 'events'],
+    'readwrite',
+  );
   const games = transaction.objectStore('games');
   const foals = transaction.objectStore('foals');
   const horses = transaction.objectStore('horses');
   return completeTransaction(transaction, async () => {
     const foalRequest: Promise<unknown> = foals.get([gameId, foalId]);
     const horseRequest: Promise<unknown> = horses.get([gameId, foalId]);
-    const [game, storedFoal, storedHorse] = await Promise.all([
+    const mareRequest: Promise<unknown> = transaction.objectStore('mares').get([gameId, foalId]);
+    const [game, storedFoal, storedHorse, storedMare] = await Promise.all([
       readGameForWrite(games, gameId),
       foalRequest,
       horseRequest,
+      mareRequest,
     ]);
+    const mare = toMare(storedMare);
     const foal = toFoal(storedFoal);
     const horse = toHorse(storedHorse);
     if (foal === undefined || horse === undefined) {
       throw new Error(`找不到產駒 ${foalId}`);
     }
-    const change = modification.apply({ game, foal, horse });
+    const change = modification.apply({ game, foal, horse, mare });
     await Promise.all([
       games.put({ ...game, ...modification.touch }),
       ...(change.foal === undefined ? [] : [foals.put(withGameId(gameId, change.foal))]),
@@ -249,6 +257,6 @@ export async function modifyFoal(
         transaction.objectStore('events').add(withGameId(gameId, event)),
       ),
     ]);
-    return { game, foal: change.foal ?? foal, horse: change.horse ?? horse };
+    return { game, foal: change.foal ?? foal, horse: change.horse ?? horse, mare };
   });
 }

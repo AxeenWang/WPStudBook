@@ -115,9 +115,21 @@ test.describe('配種與產駒', () => {
     const foal = items.nth(2).getByRole('article', { name: 'オオトリモナーコス1969' });
     await expect(foal).toContainText('第 1 系 1 代');
     await expect(foal.getByRole('img', { name: '牝' })).toBeVisible();
+
+    await drawer.getByRole('tab', { name: '配種' }).click();
+    const form = drawer.getByRole('form', { name: '登記繁殖紀錄' });
+    const selected = (label: string) =>
+      form.getByLabel(label, { exact: true }).locator('option:checked');
+    await expect(selected('受胎狀態')).toHaveText('未登記');
+    await fillNumber(form, '配種年', '1969');
+    await expect(selected('受胎狀態')).toHaveText('空胎');
+    await expect(selected('種牡馬')).toHaveText('不選（空胎）');
+    await fillNumber(form, '配種年', '1968');
+    await expect(selected('受胎狀態')).toHaveText('受胎');
+    await expect(selected('種牡馬')).toHaveText('テストシュボバ（第 1 系 0 代）');
   });
 
-  test('[LINE-17][MARE-03][MARE-23][BRD-08] 補名與轉入：暫定保留轉入後該代成立，交接中同時顯示母女，母親卡片提示可出售', async ({
+  test('[LINE-17][MARE-03][MARE-23][BRD-08][BRD-13] 補名與轉入：暫定保留轉入後該代成立，交接中同時顯示母女，母親卡片提示可出售', async ({
     page,
   }) => {
     await setup(page, '轉入局');
@@ -155,6 +167,8 @@ test.describe('配種與產駒', () => {
     await expect(convert.getByRole('status')).toHaveText(
       '已轉入為第 1 系 1 代母馬（暫定保留），該代已成立',
     );
+    await expect(named.getByRole('form', { name: '正式馬名' })).toHaveCount(0);
+    await expect(named).toContainText('已轉入母馬群，繁殖牝馬馬名唯讀。');
     await page.keyboard.press('Escape');
 
     const region = herd(page);

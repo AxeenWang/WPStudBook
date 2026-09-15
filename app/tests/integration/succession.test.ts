@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadMareBreedings, saveBreeding } from '../../src/services/breedings.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
-import { nameFoal, registerFoal, type FoalInput } from '../../src/services/foals.ts';
+import { nameFoal, registerFoal, updateFoal, type FoalInput } from '../../src/services/foals.ts';
 import { changeCurrentYear, createGame } from '../../src/services/games.ts';
 import {
   DEFAULT_MARE_FILTER,
@@ -158,6 +158,37 @@ describe('自家母駒轉入與世代成立（需求規格 8.2、8.4、9.6）', 
         after: { generation: 1, mareId: family.elderId },
       }),
     ]);
+  });
+
+  it('轉入後繁殖牝馬馬名唯讀（需求規格 6.4），產駒紀錄的牧場處置固定為保留', async () => {
+    const context = await open();
+    const family = await raiseFamily(context);
+    await nameFoal(context, { foalId: family.elderId, officialName: 'アネ' });
+    await convertFoalToMare(context, { foalId: family.elderId, site: 32 });
+    await expect(
+      nameFoal(context, { foalId: family.elderId, officialName: 'カイメイ' }),
+    ).rejects.toThrow('繁殖牝馬馬名唯讀');
+    const details = {
+      foalId: family.elderId,
+      sp: 71,
+      st: undefined,
+      subParams: {},
+      turf: undefined,
+      dirt: undefined,
+      distanceText: '',
+      kodashi: undefined,
+      note: '',
+    };
+    await expect(updateFoal(context, { ...details, disposition: 'sold' })).rejects.toThrow(
+      '牧場處置固定為保留',
+    );
+    expect(await updateFoal(context, { ...details, disposition: 'keep' })).toMatchObject({
+      sp: 71,
+      disposition: 'keep',
+    });
+    expect((await getHorse(context.database, family.gameId, family.elderId))?.officialName).toBe(
+      'アネ',
+    );
   });
 
   it('[MARE-04] 某代唯一的母馬離圈 → 該代仍為已成立', async () => {

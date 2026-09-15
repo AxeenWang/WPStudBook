@@ -74,9 +74,9 @@ function UpdateForm({ card }: { readonly card: FoalCard }) {
   const headingId = useId();
   const [disposition, setDisposition] = useState<Disposition>(card.disposition);
   const [details, setDetails] = useState(detailsOf(card));
-  const choices = DISPOSITION_OPTIONS.filter((item) => !card.freeBred || item !== 'keep').map(
-    (item) => ({ value: item, label: DISPOSITION_LABELS[item] }),
-  );
+  const choices = DISPOSITION_OPTIONS.filter((item) =>
+    card.isMare ? item === 'keep' : !card.freeBred || item !== 'keep',
+  ).map((item) => ({ value: item, label: DISPOSITION_LABELS[item] }));
   return (
     <Form
       aria-labelledby={headingId}
@@ -145,7 +145,7 @@ function ConvertForm({
         {card.lineage === undefined
           ? ''
           : ` 第 ${String(card.lineage.position)} 系 ${String(card.lineage.generation)} 代`}
-        母馬群，自身父系由父馬決定。已有同父同母姊妹在圈時成為候選。
+        母馬群，自身父系由父馬決定。已有同父同母姊妹在圈時成為候選。轉入後正式馬名唯讀，請先補登正式馬名。
       </p>
       <SelectField
         label="轉入據點"
@@ -171,7 +171,11 @@ export function FoalPanel({ card }: { readonly card: FoalCard }) {
     (card.sex === 'female' && !card.freeBred && !card.isMare && card.disposition !== 'sold');
   return (
     <div className="foal-panel">
-      <NameForm card={card} />
+      {card.isMare ? (
+        <p className="notice">已轉入母馬群，繁殖牝馬馬名唯讀。</p>
+      ) : (
+        <NameForm card={card} />
+      )}
       <UpdateForm card={card} />
       {convertible && (
         <ConvertForm

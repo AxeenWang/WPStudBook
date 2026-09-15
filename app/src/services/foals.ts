@@ -392,7 +392,7 @@ function officialNameValue(horse: Horse): JsonObject {
 
 /**
  * 補登、取代或清空正式馬名（需求規格 9.4、BRD-08、BRD-10）：只改馬匹的名稱欄位，識別、母馬、出生年、
- * 能力與牧場處置不變。被取代的正式馬名保留為別名，清空後回退顯示追蹤名。
+ * 能力與牧場處置不變。被取代的正式馬名保留為別名，清空後回退顯示追蹤名。已轉入母馬群者馬名唯讀（6.4）。
  */
 export async function nameFoal(context: ServiceContext, input: FoalNameInput): Promise<Horse> {
   const game = await requireCurrentGame(context);
@@ -404,7 +404,13 @@ export async function nameFoal(context: ServiceContext, input: FoalNameInput): P
       gameId: game.id,
       foalId: input.foalId,
       touch: gameTouch(context, now),
-      apply: ({ game: stored, horse }) => {
+      apply: ({ game: stored, horse, mare }) => {
+        if (mare !== undefined) {
+          throw new ServiceError(
+            'invalidInput',
+            '繁殖牝馬馬名唯讀，已轉入母馬群的母駒不能修改正式馬名',
+          );
+        }
         const previous = horse.officialName;
         if ((previous ?? '') === name) {
           throw new ServiceError('invalidInput', '正式馬名沒有變更');
@@ -481,9 +487,12 @@ export async function updateFoal(context: ServiceContext, input: FoalUpdateInput
       gameId: game.id,
       foalId: input.foalId,
       touch: gameTouch(context, now),
-      apply: ({ game: stored, foal }) => {
+      apply: ({ game: stored, foal, mare }) => {
         if (!isDispositionAllowed(foal.freeBred, input.disposition)) {
           throw new ServiceError('invalidInput', '自由配種產駒只能待售或已售出，不能保留');
+        }
+        if (mare !== undefined && input.disposition !== 'keep') {
+          throw new ServiceError('invalidInput', '已轉入母馬群的母駒牧場處置固定為保留');
         }
         const { id, damId, birthYear, lineage, freeBred } = foal;
         const next: Foal = {

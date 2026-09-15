@@ -14,7 +14,7 @@ import type { JsonObject } from '../domain/json.ts';
 import type { Lineage } from '../domain/lineage.ts';
 import type { Timing } from '../domain/timing.ts';
 import { getBreeding, listBreedingsForMare, writeBreeding } from '../storage/breedings.ts';
-import { getFoal } from '../storage/foals.ts';
+import { getFoal, listFoalsForDam } from '../storage/foals.ts';
 import { getHorse, getHorsesByIds } from '../storage/horses.ts';
 import { getMare } from '../storage/mares.ts';
 import { listStallionDuties } from '../storage/stallion-duties.ts';
@@ -204,9 +204,16 @@ export async function saveBreeding(
       mareId,
       gameYear,
       touch: gameTouch(context, now),
-      apply: ({ game: stored, mare: storedMare, record }) => {
+      apply: ({ game: stored, mare: storedMare, record, nextYearFoalId }) => {
         if (storedMare === undefined) {
           throw new ServiceError('invalidInput', '找不到這匹繁殖牝馬');
+        }
+        if (conception === '受胎' && record?.foalId === undefined && nextYearFoalId !== undefined) {
+          // 產駒已比照自由配種登記，改登受胎會留下無法確認出生、也無法連結的受胎紀錄。
+          throw new ServiceError(
+            'invalidInput',
+            `${String(gameYear + 1)} 年已登記沒有連結繁殖紀錄的產駒，不能把 ${String(gameYear)} 年改登記為受胎`,
+          );
         }
         if (gameYear > stored.currentYear) {
           throw new ServiceError(
@@ -256,10 +263,12 @@ export async function loadMareBreedings(
   mareId: string,
 ): Promise<MareBreedings> {
   const game = await requireCurrentGame(context);
-  const [records, stallionOptions] = await Promise.all([
+  const [records, stallionOptions, foals] = await Promise.all([
     listBreedingsForMare(context.database, game.id, mareId),
     listStallionOptions(context),
+    listFoalsForDam(context.database, game.id, mareId),
   ]);
+  const birthYears = new Set(foals.map((foal) => foal.birthYear));
   const horses = await getHorsesByIds(context.database, game.id, [
     ...records.flatMap((record) => (record.stallionId === undefined ? [] : [record.stallionId])),
     ...records.flatMap((record) => (record.foalId === undefined ? [] : [record.foalId])),
@@ -290,7 +299,8 @@ export async function loadMareBreedings(
           record.conception === '受胎' &&
           record.foalId === undefined &&
           record.expectedBirthYear !== undefined &&
-          record.expectedBirthYear <= game.currentYear,
+          record.expectedBirthYear <= game.currentYear &&
+          !birthYears.has(record.expectedBirthYear),
       };
     });
   return { currentYear: game.currentYear, rows, stallionOptions };

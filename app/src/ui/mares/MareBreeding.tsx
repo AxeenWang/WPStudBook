@@ -1,6 +1,6 @@
 import { useCallback, useId, useState } from 'react';
 import { Button, Form, Input, Label, TextField } from 'react-aria-components';
-import type { BreedingType, Conception } from '../../domain/breeding.ts';
+import type { Breeding, BreedingType, Conception } from '../../domain/breeding.ts';
 import {
   BREEDING_TYPE_OPTIONS,
   CONCEPTION_OPTIONS,
@@ -32,22 +32,44 @@ function birthText(year: number): string {
   return `${String(year)} 年 ${String(FOAL_BIRTH_TIMING.month)} 月 ${String(FOAL_BIRTH_TIMING.week)} 週`;
 }
 
+interface BreedingFields {
+  readonly breedingType: BreedingType;
+  /** 內部種牡馬 id、代表外部種牡馬的空字串，或 undefined（不選）。 */
+  readonly stallion: string | undefined;
+  readonly stallionName: string;
+  readonly conception: Conception | undefined;
+}
+
+/** 表單初始值取所選年份的紀錄；該年還沒有紀錄時預選第一匹內部種牡馬。 */
+function fieldsFor(record: Breeding | undefined, data: MareBreedings): BreedingFields {
+  if (record === undefined) {
+    return {
+      breedingType: 'designated',
+      stallion: data.stallionOptions[0]?.id,
+      stallionName: '',
+      conception: undefined,
+    };
+  }
+  return {
+    breedingType: record.breedingType,
+    stallion: record.stallionName === undefined ? record.stallionId : EXTERNAL_STALLION,
+    stallionName: record.stallionName ?? '',
+    conception: record.conception,
+  };
+}
+
 function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data: MareBreedings }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
   const headingId = useId();
-  const current = data.rows.find((row) => row.record.gameYear === data.currentYear)?.record;
+  const recordFor = (year: number | undefined) =>
+    data.rows.find((row) => row.record.gameYear === year)?.record;
   const [gameYear, setGameYear] = useState<number | undefined>(data.currentYear);
-  const [breedingType, setBreedingType] = useState<BreedingType>(
-    current?.breedingType ?? 'designated',
-  );
-  const [stallion, setStallion] = useState<string | undefined>(
-    current?.stallionName === undefined
-      ? (current?.stallionId ?? data.stallionOptions[0]?.id)
-      : EXTERNAL_STALLION,
-  );
-  const [stallionName, setStallionName] = useState(current?.stallionName ?? '');
-  const [conception, setConception] = useState<Conception | undefined>(current?.conception);
+  const [fields, setFields] = useState(() => fieldsFor(recordFor(data.currentYear), data));
+  const { breedingType, stallion, stallionName, conception } = fields;
+  const update = (patch: Partial<BreedingFields>) => {
+    setFields({ ...fields, ...patch });
+  };
   const external = stallion === EXTERNAL_STALLION;
   const stallionChoices = [
     ...data.stallionOptions.map((option) => ({
@@ -76,17 +98,24 @@ function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data
     >
       <h4 id={headingId}>登記繁殖紀錄</h4>
       <p>
-        每年一筆，同年再次保存會更正。受胎狀態原樣保存；沒有進行受胎作業時登記「空胎」，可不選種牡馬。
+        每年一筆，改配種年會帶入那一年的紀錄，再次保存即更正。受胎狀態原樣保存；沒有進行受胎作業時登記「空胎」，可不選種牡馬。
         結果以七月總表為準，未確認時保留原狀態。
       </p>
-      <OptionalIntegerField label="配種年" value={gameYear} onChange={setGameYear} />
+      <OptionalIntegerField
+        label="配種年"
+        value={gameYear}
+        onChange={(year) => {
+          setGameYear(year);
+          setFields(fieldsFor(recordFor(year), data));
+        }}
+      />
       <SelectField
         label="配種類型"
         value={breedingType}
         options={TYPE_CHOICES}
         onChange={(next) => {
           if (next !== undefined) {
-            setBreedingType(next);
+            update({ breedingType: next });
           }
         }}
       />
@@ -95,10 +124,17 @@ function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data
         value={stallion}
         options={stallionChoices}
         emptyLabel="不選（空胎）"
-        onChange={setStallion}
+        onChange={(next) => {
+          update({ stallion: next });
+        }}
       />
       {external && (
-        <TextField value={stallionName} onChange={setStallionName}>
+        <TextField
+          value={stallionName}
+          onChange={(next) => {
+            update({ stallionName: next });
+          }}
+        >
           <Label>外部種牡馬馬名</Label>
           <Input />
         </TextField>
@@ -108,7 +144,9 @@ function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data
         value={conception}
         options={CONCEPTION_CHOICES}
         emptyLabel="未登記"
-        onChange={setConception}
+        onChange={(next) => {
+          update({ conception: next });
+        }}
       />
       <Feedback message={message} error={error} />
       <Button type="submit" isPending={busy}>
