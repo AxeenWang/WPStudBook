@@ -11,7 +11,7 @@ import {
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
-import { requireCurrentGame, touchGame } from './games.ts';
+import { gameTouch, requireCurrentGame } from './games.ts';
 
 /** 手動輸入的系統名稱：去掉前後空白與結尾「系」。 */
 export function normalizeSystemInput(text: string): string {
@@ -86,7 +86,8 @@ export async function saveSystemMapEntry(
   });
   await trackWrite(context, () =>
     writeSystemMapChange(context.database, {
-      game: touchGame(context, game, now),
+      gameId: game.id,
+      touch: gameTouch(context, now),
       put: entry,
       event,
     }),
@@ -114,7 +115,8 @@ export async function deleteSystemMapEntry(
   });
   await trackWrite(context, () =>
     writeSystemMapChange(context.database, {
-      game: touchGame(context, game, now),
+      gameId: game.id,
+      touch: gameTouch(context, now),
       deleteId: entry.id,
       event,
     }),

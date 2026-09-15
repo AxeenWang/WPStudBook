@@ -2,6 +2,7 @@ import type { Game, GameSettings } from '../domain/game.ts';
 import type { HistoryEvent } from '../domain/history-event.ts';
 import type { AppDatabase } from './database.ts';
 import {
+  completeTransaction,
   gameKeyRange,
   isPlainRecord,
   withGameId,
@@ -32,6 +33,30 @@ export async function listGames(database: AppDatabase): Promise<Game[]> {
 export async function getGame(database: AppDatabase, gameId: string): Promise<Game | undefined> {
   const value: unknown = await database.get('games', gameId);
   return isGame(value) ? value : undefined;
+}
+
+/** 寫入遊戲局資料時一併更新的遊戲局欄位：更新時間與最後寫入的程式版本（需求規格 12.1）。 */
+export interface GameTouch {
+  readonly updatedAt: string;
+  readonly appVersion: string;
+}
+
+/** 寫入交易內的 games 資料表；只列出用到的請求，讓不同資料表組合的交易都能傳入。 */
+interface GameStore {
+  get(key: string): Promise<unknown>;
+}
+
+/**
+ * 在寫入交易內讀出遊戲局紀錄，呼叫端合併要更新的欄位後在同一交易寫回，
+ * 不以操作開始時讀到的舊紀錄覆蓋期間其他寫入（例如最近備份、目前遊戲年）。
+ * 找不到時丟出錯誤；呼叫端以 completeTransaction 中止整筆交易。
+ */
+export async function readGameForWrite(store: GameStore, gameId: string): Promise<Game> {
+  const value: unknown = await store.get(gameId);
+  if (!isGame(value)) {
+    throw new Error(`找不到遊戲局 ${gameId}`);
+  }
+  return value;
 }
 
 export async function getCurrentGameId(database: AppDatabase): Promise<string | undefined> {
@@ -76,16 +101,29 @@ export async function insertGame(database: AppDatabase, records: NewGameRecords)
   ]);
 }
 
+export interface CurrentYearUpdate {
+  readonly gameId: string;
+  readonly currentYear: number;
+  readonly touch: GameTouch;
+  readonly event: HistoryEvent;
+}
+
+/** 以單一交易更新目前遊戲年與遊戲局更新時間並寫入事件；回傳寫入後的遊戲局紀錄。 */
 export async function updateCurrentYear(
   database: AppDatabase,
-  update: { readonly game: Game; readonly event: HistoryEvent },
-): Promise<void> {
+  update: CurrentYearUpdate,
+): Promise<Game> {
   const transaction = database.transaction(['games', 'events'], 'readwrite');
-  await Promise.all([
-    transaction.objectStore('games').put(update.game),
-    transaction.objectStore('events').add(withGameId(update.game.id, update.event)),
-    transaction.done,
-  ]);
+  const games = transaction.objectStore('games');
+  return completeTransaction(transaction, async () => {
+    const stored = await readGameForWrite(games, update.gameId);
+    const game: Game = { ...stored, currentYear: update.currentYear, ...update.touch };
+    await Promise.all([
+      games.put(game),
+      transaction.objectStore('events').add(withGameId(update.gameId, update.event)),
+    ]);
+    return game;
+  });
 }
 
 export async function countGameRecords(

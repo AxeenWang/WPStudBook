@@ -1,12 +1,18 @@
-import type { Game } from '../domain/game.ts';
 import type { HistoryEvent } from '../domain/history-event.ts';
 import type { Horse } from '../domain/horse.ts';
 import type { Line } from '../domain/line.ts';
 import type { StallionDuty } from '../domain/stallion-duty.ts';
 import type { SystemMapEntry } from '../domain/system-map.ts';
 import type { AppDatabase } from './database.ts';
+import { readGameForWrite, type GameTouch } from './games.ts';
 import { withHorseNameKeys } from './horses.ts';
-import { gameKeyRange, isPlainRecord, withGameId, withoutGameId } from './records.ts';
+import {
+  completeTransaction,
+  gameKeyRange,
+  isPlainRecord,
+  withGameId,
+  withoutGameId,
+} from './records.ts';
 
 export async function listLines(database: AppDatabase, gameId: string): Promise<Line[]> {
   const values: unknown[] = await database.getAll('lines', gameKeyRange(gameId));
@@ -15,7 +21,8 @@ export async function listLines(database: AppDatabase, gameId: string): Promise<
 }
 
 export interface OpenedLineRecords {
-  readonly game: Game;
+  readonly gameId: string;
+  readonly touch: GameTouch;
   readonly line: Line;
   readonly founder: Horse;
   readonly duty: StallionDuty;
@@ -29,23 +36,25 @@ export async function insertOpenedLine(
   database: AppDatabase,
   records: OpenedLineRecords,
 ): Promise<void> {
-  const gameId = records.game.id;
+  const { gameId, systemMapEntry } = records;
   const transaction = database.transaction(
     ['games', 'lines', 'horses', 'stallionDuties', 'systemMap', 'events'],
     'readwrite',
   );
-  const { systemMapEntry } = records;
-  await Promise.all([
-    transaction.objectStore('games').put(records.game),
-    transaction.objectStore('lines').add(withGameId(gameId, records.line)),
-    transaction.objectStore('horses').add(withHorseNameKeys(gameId, records.founder)),
-    transaction.objectStore('stallionDuties').add(withGameId(gameId, records.duty)),
-    ...(systemMapEntry === undefined
-      ? []
-      : [transaction.objectStore('systemMap').put(withGameId(gameId, systemMapEntry))]),
-    ...records.events.map((event) =>
-      transaction.objectStore('events').add(withGameId(gameId, event)),
-    ),
-    transaction.done,
-  ]);
+  const games = transaction.objectStore('games');
+  await completeTransaction(transaction, async () => {
+    const game = await readGameForWrite(games, gameId);
+    await Promise.all([
+      games.put({ ...game, ...records.touch }),
+      transaction.objectStore('lines').add(withGameId(gameId, records.line)),
+      transaction.objectStore('horses').add(withHorseNameKeys(gameId, records.founder)),
+      transaction.objectStore('stallionDuties').add(withGameId(gameId, records.duty)),
+      ...(systemMapEntry === undefined
+        ? []
+        : [transaction.objectStore('systemMap').put(withGameId(gameId, systemMapEntry))]),
+      ...records.events.map((event) =>
+        transaction.objectStore('events').add(withGameId(gameId, event)),
+      ),
+    ]);
+  });
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { HistoryEvent } from '../../src/domain/history-event.ts';
 import { createGame, getCurrentGame } from '../../src/services/games.ts';
 import {
   deleteSystemMapEntry,
@@ -7,8 +8,21 @@ import {
   listSystemMapHistory,
   saveSystemMapEntry,
 } from '../../src/services/system-map.ts';
-import { readRecords } from '../../src/storage/records.ts';
+import { putRecords, readRecords } from '../../src/storage/records.ts';
+import { writeSystemMapChange } from '../../src/storage/system-map.ts';
 import { useServiceContexts } from './helpers.ts';
+
+const TOUCH = { updatedAt: '2026-09-15T01:00:00.000Z', appVersion: '9.9.9' };
+
+const EVENT: HistoryEvent = {
+  id: 'event-1',
+  subjectId: 'map-1',
+  type: 'systemMapChanged',
+  gameYear: 1968,
+  after: { subsystem: 'ネアルコ', parentSystem: 'ネアルコ' },
+  source: 'user',
+  occurredAt: TOUCH.updatedAt,
+};
 
 describe('系統對照表', () => {
   const openContext = useServiceContexts();
@@ -114,6 +128,52 @@ describe('系統對照表', () => {
     await expect(deleteSystemMapEntry(context, entry.id)).rejects.toMatchObject({
       code: 'invalidInput',
     });
+  });
+
+  it('寫入時在交易內讀出遊戲局再合併更新時間與版本，不覆蓋操作開始後才寫入的最近備份', async () => {
+    const context = await openContext();
+    // game 相當於服務在操作開始時讀到的舊紀錄；之後才以另一個寫入加上最近備份。
+    const game = await createGame(context, { name: '對照局', startYear: 1968 });
+    const lastBackup = {
+      fileName: 'WPStudBook_對照局_1968年_20260915-000500.json.gz',
+      exportedAt: '2026-09-15T00:05:00.000Z',
+      sizeBytes: 100,
+      recordCount: 0,
+    };
+    await context.database.put('games', { ...game, lastBackup });
+
+    await writeSystemMapChange(context.database, {
+      gameId: game.id,
+      touch: TOUCH,
+      put: { id: 'map-1', subsystem: 'ネアルコ', parentSystem: 'ネアルコ' },
+      event: EVENT,
+    });
+
+    expect(await getCurrentGame(context)).toEqual({ ...game, ...TOUCH, lastBackup });
+    expect(await listSystemMap(context)).toEqual([
+      { id: 'map-1', subsystem: 'ネアルコ', parentSystem: 'ネアルコ' },
+    ]);
+    expect(await readRecords(context.database, game.id, 'events')).toEqual([EVENT]);
+  });
+
+  it('遊戲局不存在時丟出錯誤，整筆交易不寫入任何紀錄', async () => {
+    const context = await openContext();
+    const orphan = { id: 'map-0', subsystem: 'ハンプトン', parentSystem: 'ハンプトン' };
+    await putRecords(context.database, 'missing', 'systemMap', [orphan]);
+
+    await expect(
+      writeSystemMapChange(context.database, {
+        gameId: 'missing',
+        touch: TOUCH,
+        put: { id: 'map-1', subsystem: 'ネアルコ', parentSystem: 'ネアルコ' },
+        deleteId: orphan.id,
+        event: EVENT,
+      }),
+    ).rejects.toThrow('找不到遊戲局 missing');
+
+    expect(await context.database.get('games', 'missing')).toBeUndefined();
+    expect(await readRecords(context.database, 'missing', 'systemMap')).toEqual([orphan]);
+    expect(await readRecords(context.database, 'missing', 'events')).toEqual([]);
   });
 
   it('只作用於目前遊戲局；沒有目前遊戲局時拒絕', async () => {

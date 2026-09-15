@@ -1,8 +1,14 @@
-import type { Game } from '../domain/game.ts';
 import type { HistoryEvent } from '../domain/history-event.ts';
 import type { SystemMapEntry } from '../domain/system-map.ts';
 import type { AppDatabase } from './database.ts';
-import { gameKeyRange, isPlainRecord, withGameId, withoutGameId } from './records.ts';
+import { readGameForWrite, type GameTouch } from './games.ts';
+import {
+  completeTransaction,
+  gameKeyRange,
+  isPlainRecord,
+  withGameId,
+  withoutGameId,
+} from './records.ts';
 
 function toEntry(value: unknown): SystemMapEntry | undefined {
   // 本機資料由本程式寫入；備份匯入的對照由 validateCollections 驗證。
@@ -36,7 +42,8 @@ export async function findSystemMapEntry(
 }
 
 export interface SystemMapWrite {
-  readonly game: Game;
+  readonly gameId: string;
+  readonly touch: GameTouch;
   readonly put?: SystemMapEntry | undefined;
   readonly deleteId?: string | undefined;
   readonly event: HistoryEvent;
@@ -47,14 +54,17 @@ export async function writeSystemMapChange(
   database: AppDatabase,
   write: SystemMapWrite,
 ): Promise<void> {
-  const gameId = write.game.id;
+  const { gameId } = write;
   const transaction = database.transaction(['games', 'systemMap', 'events'], 'readwrite');
+  const games = transaction.objectStore('games');
   const systemMap = transaction.objectStore('systemMap');
-  await Promise.all([
-    transaction.objectStore('games').put(write.game),
-    ...(write.deleteId === undefined ? [] : [systemMap.delete([gameId, write.deleteId])]),
-    ...(write.put === undefined ? [] : [systemMap.put(withGameId(gameId, write.put))]),
-    transaction.objectStore('events').add(withGameId(gameId, write.event)),
-    transaction.done,
-  ]);
+  await completeTransaction(transaction, async () => {
+    const game = await readGameForWrite(games, gameId);
+    await Promise.all([
+      games.put({ ...game, ...write.touch }),
+      ...(write.deleteId === undefined ? [] : [systemMap.delete([gameId, write.deleteId])]),
+      ...(write.put === undefined ? [] : [systemMap.put(withGameId(gameId, write.put))]),
+      transaction.objectStore('events').add(withGameId(gameId, write.event)),
+    ]);
+  });
 }

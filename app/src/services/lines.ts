@@ -17,7 +17,7 @@ import { findSystemMapEntry } from '../storage/system-map.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
-import { requireCurrentGame, touchGame } from './games.ts';
+import { gameTouch, requireCurrentGame } from './games.ts';
 import { normalizeSystemInput } from './system-map.ts';
 import { requireAcceptedWarnings, type ServiceWarning } from './warnings.ts';
 
@@ -274,7 +274,8 @@ export async function openFirstLine(
   ];
   await trackWrite(context, () =>
     insertOpenedLine(context.database, {
-      game: touchGame(context, game, now),
+      gameId: game.id,
+      touch: gameTouch(context, now),
       line,
       founder,
       duty,

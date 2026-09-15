@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { HistoryEvent } from '../../src/domain/history-event.ts';
 import { loadAppStatus } from '../../src/services/app-status.ts';
 import { requestPersistentStorage } from '../../src/services/context.ts';
 import {
@@ -13,10 +14,23 @@ import {
   previewYearChange,
   switchGame,
 } from '../../src/services/games.ts';
-import { countGameRecords, readGameSettings } from '../../src/storage/games.ts';
+import { countGameRecords, readGameSettings, updateCurrentYear } from '../../src/storage/games.ts';
 import { putRecords, readRecords } from '../../src/storage/records.ts';
 import { ALL_STORES } from '../../src/storage/schema.ts';
 import { useServiceContexts } from './helpers.ts';
+
+const YEAR_TOUCH = { updatedAt: '2026-09-15T01:00:00.000Z', appVersion: '9.9.9' };
+
+const YEAR_EVENT: HistoryEvent = {
+  id: 'event-1',
+  subjectId: 'game',
+  type: 'gameYearChanged',
+  gameYear: 1969,
+  before: { currentYear: 1968 },
+  after: { currentYear: 1969 },
+  source: 'user',
+  occurredAt: YEAR_TOUCH.updatedAt,
+};
 
 const DEFAULT_SETTINGS = {
   retirementAge: 25,
@@ -152,6 +166,47 @@ describe('遊戲局服務', () => {
         code: 'invalidInput',
       });
     }
+  });
+
+  it('更新目前遊戲年時在交易內讀出遊戲局再合併，不覆蓋操作開始後才寫入的最近備份', async () => {
+    const context = await openContext();
+    // game 相當於服務在操作開始時讀到的舊紀錄；之後才以另一個寫入加上最近備份。
+    const game = await createGame(context, { name: '第一局', startYear: 1968 });
+    const lastBackup = {
+      fileName: 'WPStudBook_第一局_1968年_20260915-000500.json.gz',
+      exportedAt: '2026-09-15T00:05:00.000Z',
+      sizeBytes: 100,
+      recordCount: 0,
+    };
+    await context.database.put('games', { ...game, lastBackup });
+
+    const updated = await updateCurrentYear(context.database, {
+      gameId: game.id,
+      currentYear: 1969,
+      touch: YEAR_TOUCH,
+      event: YEAR_EVENT,
+    });
+
+    const expected = { ...game, currentYear: 1969, ...YEAR_TOUCH, lastBackup };
+    expect(updated).toEqual(expected);
+    expect(await getCurrentGame(context)).toEqual(expected);
+    expect(await readRecords(context.database, game.id, 'events')).toEqual([YEAR_EVENT]);
+  });
+
+  it('更新目前遊戲年時遊戲局不存在就丟出錯誤，整筆交易不寫入任何紀錄', async () => {
+    const context = await openContext();
+
+    await expect(
+      updateCurrentYear(context.database, {
+        gameId: 'missing',
+        currentYear: 1969,
+        touch: YEAR_TOUCH,
+        event: YEAR_EVENT,
+      }),
+    ).rejects.toThrow('找不到遊戲局 missing');
+
+    expect(await context.database.get('games', 'missing')).toBeUndefined();
+    expect(await readRecords(context.database, 'missing', 'events')).toEqual([]);
   });
 
   it('[DATA-10] 刪除前顯示筆數；局名不符時拒絕且資料不變', async () => {

@@ -20,6 +20,7 @@ import {
   setCurrentGameId,
   sumRecordCounts,
   updateCurrentYear,
+  type GameTouch,
 } from '../storage/games.ts';
 import { readRecords, type StoredRecord } from '../storage/records.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
@@ -62,9 +63,12 @@ export async function requireCurrentGame(context: ServiceContext): Promise<Game>
   return game;
 }
 
-/** 寫入遊戲局資料時一併寫回的遊戲局紀錄：更新時間與最後寫入的程式版本（需求規格 12.1）。 */
-export function touchGame(context: ServiceContext, game: Game, now: string): Game {
-  return { ...game, updatedAt: now, appVersion: context.appVersion };
+/**
+ * 寫入遊戲局資料時一併更新的遊戲局欄位：更新時間與最後寫入的程式版本（需求規格 12.1）。
+ * storage 在寫入交易內讀出遊戲局後合併，不以操作開始時讀到的舊紀錄覆蓋（設計決策 5.1 節）。
+ */
+export function gameTouch(context: ServiceContext, now: string): GameTouch {
+  return { updatedAt: now, appVersion: context.appVersion };
 }
 
 async function requireGame(context: ServiceContext, gameId: string): Promise<Game> {
@@ -144,12 +148,6 @@ export async function changeCurrentYear(context: ServiceContext, toYear: number)
   const game = await requireCurrentGame(context);
   checkYearChange(game, toYear);
   const now = context.now().toISOString();
-  const updated: Game = {
-    ...game,
-    currentYear: toYear,
-    updatedAt: now,
-    appVersion: context.appVersion,
-  };
   const event: HistoryEvent = {
     id: context.newId(),
     subjectId: GAME_SUBJECT_ID,
@@ -160,8 +158,14 @@ export async function changeCurrentYear(context: ServiceContext, toYear: number)
     source: 'user',
     occurredAt: now,
   };
-  await trackWrite(context, () => updateCurrentYear(context.database, { game: updated, event }));
-  return updated;
+  return trackWrite(context, () =>
+    updateCurrentYear(context.database, {
+      gameId: game.id,
+      currentYear: toYear,
+      touch: gameTouch(context, now),
+      event,
+    }),
+  );
 }
 
 export interface GameDeletionPreview {

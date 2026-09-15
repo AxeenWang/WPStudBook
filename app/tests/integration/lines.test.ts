@@ -10,6 +10,7 @@ import {
 import { listSystemMap, saveSystemMapEntry } from '../../src/services/system-map.ts';
 import { countGameRecords } from '../../src/storage/games.ts';
 import { findHorsesByName, withHorseNameKeys } from '../../src/storage/horses.ts';
+import { insertOpenedLine } from '../../src/storage/lines.ts';
 import { readRecords } from '../../src/storage/records.ts';
 import { stripNameKeys } from '../fixtures/synthetic-game.ts';
 import { useServiceContexts } from './helpers.ts';
@@ -176,6 +177,52 @@ describe('開啟第 1 系', () => {
     expect([counts.lines, counts.horses, counts.stallionDuties, counts.events]).toEqual([
       0, 0, 0, 0,
     ]);
+  });
+
+  it('寫入時在交易內讀出遊戲局再合併更新時間與版本，不覆蓋操作開始後才寫入的最近備份', async () => {
+    const context = await openContext();
+    // game 相當於服務在操作開始時讀到的舊紀錄；之後才以另一個寫入加上最近備份。
+    const game = await createGame(context, { name: '八系局', startYear: 1968 });
+    const lastBackup = {
+      fileName: 'WPStudBook_八系局_1968年_20260915-000500.json.gz',
+      exportedAt: '2026-09-15T00:05:00.000Z',
+      sizeBytes: 100,
+      recordCount: 0,
+    };
+    await context.database.put('games', { ...game, lastBackup });
+
+    await insertOpenedLine(context.database, {
+      gameId: game.id,
+      touch: { updatedAt: '2026-09-15T01:00:00.000Z', appVersion: '9.9.9' },
+      line: {
+        id: 'line-1',
+        position: 1,
+        subsystem: 'ネアルコ',
+        parentSystem: 'ネアルコ',
+        color: '#c62828',
+        branch: { targetGeneration: 1, openedYear: 1968 },
+        establishedGenerations: [],
+      },
+      founder: { id: 'horse-1', sex: 'male', stageNumbers: [], aliases: [] },
+      duty: {
+        id: 'duty-1',
+        position: 1,
+        generation: 0,
+        horseId: 'horse-1',
+        role: 'current',
+        dutyStatus: 'onDuty',
+        startYear: 1968,
+      },
+      events: [],
+    });
+
+    expect(await getCurrentGame(context)).toEqual({
+      ...game,
+      updatedAt: '2026-09-15T01:00:00.000Z',
+      appVersion: '9.9.9',
+      lastBackup,
+    });
+    expect((await countGameRecords(context.database, game.id)).lines).toBe(1);
   });
 
   it('能力番号與出生年已屬於其他馬匹時拒絕；第 1 系開啟後不能再開啟', async () => {
