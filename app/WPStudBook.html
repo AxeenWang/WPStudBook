@@ -125,6 +125,66 @@
         border-radius: 0.25rem;
         vertical-align: middle;
       }
+      .group-picker,
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: end;
+      }
+      .filters {
+        margin: 1rem 0;
+        padding: 0.75rem;
+        border: 1px solid #d5dbe3;
+        border-radius: 0.5rem;
+      }
+      .field label {
+        display: block;
+      }
+      .mare-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+        gap: 0.75rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .mare-card {
+        padding: 0.75rem;
+        border: 1px solid #d5dbe3;
+        border-radius: 0.5rem;
+      }
+      .mare-card dl,
+      .mare-card dd {
+        margin: 0;
+      }
+      .mare-card dl > div {
+        display: flex;
+        gap: 0.5rem;
+      }
+      .mare-card dt {
+        flex: 0 0 5.5rem;
+        color: #64758a;
+      }
+      .mare-card meter {
+        width: 5rem;
+        margin-inline-end: 0.5rem;
+        vertical-align: middle;
+      }
+      .mare-name {
+        margin: 0 0 0.25rem;
+      }
+      .badge {
+        margin-inline-start: 0.25rem;
+        padding: 0 0.25rem;
+        border: 1px solid #9e7c00;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+      }
+      button[aria-pressed='true'] {
+        font-weight: 700;
+        outline: 2px solid #1f6feb;
+      }
       [role='alert'] {
         color: #b00020;
       }

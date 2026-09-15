@@ -31,6 +31,7 @@ import {
 } from '../domain/mare.ts';
 import {
   isBreedingTally,
+  isCeExtendedKodashi,
   isKodashi,
   isVitalityValue,
   type MareYearly,
@@ -70,6 +71,11 @@ export function defaultOriginFor(
     return undefined;
   }
   return defaultMarketOrigin(marketGroupFor(position, generation), openedPositions);
+}
+
+/** 仔出 11～15 是 CE 擴充值（需求規格 8.8）；介面只標示，不影響保存。 */
+export function isCeExtended(kodashi: number): boolean {
+  return isCeExtendedKodashi(kodashi);
 }
 
 export interface MarketMareInput {

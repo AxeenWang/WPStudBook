@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { errorMessage, formatBytes, formatCount, formatDateTime } from '../../src/ui/format.ts';
+import {
+  errorMessage,
+  formatBytes,
+  formatCount,
+  formatDateTime,
+  formatGeneration,
+} from '../../src/ui/format.ts';
 
 describe('介面顯示格式', () => {
   it('位元組依大小顯示 B、KB、MB', () => {
@@ -23,5 +29,18 @@ describe('介面顯示格式', () => {
   it('錯誤訊息取 message，其他值轉成文字', () => {
     expect(errorMessage(new Error('失敗了'))).toBe('失敗了');
     expect(errorMessage('文字')).toBe('文字');
+  });
+  it('代數文字：0 零代、1 初代，之後二代、十代、十一代、三十五代；100 以上用數字', () => {
+    expect([0, 1, 2, 10, 11, 20, 35, 99].map(formatGeneration)).toEqual([
+      '零代',
+      '初代',
+      '二代',
+      '十代',
+      '十一代',
+      '二十代',
+      '三十五代',
+      '九十九代',
+    ]);
+    expect(formatGeneration(100)).toBe('100 代');
   });
 });
