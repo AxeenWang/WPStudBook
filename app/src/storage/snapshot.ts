@@ -11,7 +11,12 @@ import {
   withoutGameId,
   type StoredRecord,
 } from './records.ts';
-import { BACKUP_COLLECTIONS, RECORD_COLLECTIONS, type BackupCollection } from './schema.ts';
+import {
+  BACKUP_COLLECTIONS,
+  CHECKPOINT_STORES,
+  RECORD_COLLECTIONS,
+  type BackupCollection,
+} from './schema.ts';
 
 export type SnapshotCollections = Readonly<Record<BackupCollection, readonly StoredRecord[]>>;
 
@@ -97,4 +102,50 @@ export async function updateLastBackup(
     }
     await transaction.store.put({ ...value, lastBackup });
   });
+}
+
+export interface GameReplacement {
+  /** 回溯後的遊戲局紀錄（目前遊戲年已改為檢查點年份）。 */
+  readonly game: Game;
+  readonly collections: BackupCollections;
+  readonly extraEvents: readonly HistoryEvent[];
+  readonly removeCheckpointIds: readonly string[];
+}
+
+/**
+ * 回溯：以單一交易清除該局的備份資料表、寫入檢查點內容、更新遊戲局並移除較晚的檢查點（需求規格 12.4）。
+ * IndexedDB 依排入順序執行請求，所以刪除一定在新增之前完成。
+ */
+export async function replaceGameData(
+  database: AppDatabase,
+  replacement: GameReplacement,
+): Promise<void> {
+  const gameId = replacement.game.id;
+  const range = gameKeyRange(gameId);
+  const transaction = database.transaction(
+    ['games', ...BACKUP_COLLECTIONS, ...CHECKPOINT_STORES],
+    'readwrite',
+  );
+  const requests = [
+    transaction.objectStore('games').put(replacement.game),
+    transaction.objectStore('gameSettings').delete(gameId),
+    ...RECORD_COLLECTIONS.map((name) => transaction.objectStore(name).delete(range)),
+    ...CHECKPOINT_STORES.flatMap((name) =>
+      replacement.removeCheckpointIds.map((id) =>
+        transaction.objectStore(name).delete([gameId, id]),
+      ),
+    ),
+    ...replacement.collections.gameSettings.map((settings) =>
+      transaction.objectStore('gameSettings').add(withGameId(gameId, settings)),
+    ),
+    ...RECORD_COLLECTIONS.flatMap((name) =>
+      replacement.collections[name].map((record) =>
+        transaction.objectStore(name).add(withGameId(gameId, record)),
+      ),
+    ),
+    ...replacement.extraEvents.map((event) =>
+      transaction.objectStore('events').add(withGameId(gameId, event)),
+    ),
+  ];
+  await Promise.all([...requests, transaction.done]);
 }
