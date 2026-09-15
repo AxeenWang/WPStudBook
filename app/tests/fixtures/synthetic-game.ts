@@ -125,6 +125,7 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       stallionId: 'horse-sire',
       conception: '受胎',
       expectedBirthYear: 1969,
+      foalId: 'horse-foal',
       deviated: false,
       confirmations: [],
     },
@@ -149,7 +150,9 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       freeBred: false,
       turf: '◎',
       dirt: '×',
-      distanceText: '',
+      sp: 0,
+      subParams: { power: 'S+', health: 'G' },
+      distanceText: '1700～3100m',
     },
   ],
   recoveries: [

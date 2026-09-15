@@ -14,12 +14,15 @@ import {
   type VitalityInput,
 } from '../../services/mares.ts';
 import { CheckboxField, OptionalIntegerField, SelectField } from '../fields.tsx';
-import { errorMessage, formatGeneration } from '../format.ts';
+import { Feedback, useAction } from '../actions.tsx';
+import { formatGeneration } from '../format.ts';
 import { useServices } from '../ServicesContext.tsx';
+import { SisterComparison } from './SisterComparison.tsx';
 import {
   ORIGIN_LABELS,
   SITE_LABELS,
   STAGE_LABELS,
+  SUCCESSION_LABELS,
   YEAR_PLAN_LABELS,
   formatMareGroup,
   formatStatus,
@@ -31,46 +34,6 @@ const PLAN_CHOICES = YEAR_PLAN_OPTIONS.map((plan) => ({
   label: YEAR_PLAN_LABELS[plan],
 }));
 const SITE_CHOICES = MARE_SITE_OPTIONS.map((site) => ({ value: site, label: SITE_LABELS[site] }));
-
-/** 表單送出：忙碌中忽略重複送出，完成後顯示訊息並讓查詢重新載入。 */
-function useAction() {
-  const { notifyChanged } = useServices();
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string>();
-  const [error, setError] = useState<string>();
-  const run = async (action: () => Promise<string>) => {
-    if (busy) {
-      return;
-    }
-    setBusy(true);
-    try {
-      setMessage(await action());
-      setError(undefined);
-    } catch (caught) {
-      setMessage(undefined);
-      setError(errorMessage(caught));
-    } finally {
-      setBusy(false);
-      notifyChanged();
-    }
-  };
-  return { busy, message, error, run };
-}
-
-function Feedback({
-  message,
-  error,
-}: {
-  readonly message: string | undefined;
-  readonly error: string | undefined;
-}) {
-  return (
-    <>
-      {message !== undefined && <p role="status">{message}</p>}
-      {error !== undefined && <p role="alert">{error}</p>}
-    </>
-  );
-}
 
 function YearPlanForm({ detail }: { readonly detail: MareDetail }) {
   const { context } = useServices();
@@ -322,7 +285,19 @@ export function MareSummary({ detail }: { readonly detail: MareDetail }) {
           <dt>今年活力</dt>
           <dd>{formatVitality(card.vitality.vitality, card.vitality.month)}</dd>
         </div>
+        {card.succession !== undefined && (
+          <div>
+            <dt>接替狀態</dt>
+            <dd data-testid="detail-succession">{SUCCESSION_LABELS[card.succession]}</dd>
+          </div>
+        )}
       </dl>
+      {card.origin === 'ownRetired' && card.group.kind === 'own' && (
+        <p className="notice">自家母駒的自身父系由父馬決定，不能改宣告。</p>
+      )}
+      {card.suggestSellMother && (
+        <p className="notice">女兒已轉入且今年已生產，可考慮出售這匹母馬（只是提示）。</p>
+      )}
       <h4>階段馬番号歷程</h4>
       {detail.stageNumbers.length === 0 ? (
         <p>尚無階段馬番号。</p>
@@ -335,6 +310,7 @@ export function MareSummary({ detail }: { readonly detail: MareDetail }) {
           ))}
         </ul>
       )}
+      {card.succession !== undefined && <SisterComparison mareId={card.id} />}
       <YearlyTable records={detail.yearly} />
       {producing && <YearPlanForm detail={detail} />}
       {producing && <TransferForm detail={detail} />}

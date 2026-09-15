@@ -34,7 +34,7 @@ interface MareFiltersProps {
   readonly onChange: (options: MareFilterOptions) => void;
 }
 
-/** 篩選條件（需求規格 13.3）；與系、代數一起取交集。「有未命名產駒」在子計畫 2-3 加入。 */
+/** 篩選條件（需求規格 13.3）；與系、代數一起取交集。 */
 export function MareFilters({ options, onChange }: MareFiltersProps) {
   const update = (patch: Partial<MareFilterOptions>) => {
     onChange({ ...options, ...patch });
@@ -134,6 +134,13 @@ export function MareFilters({ options, onChange }: MareFiltersProps) {
         value={options.kodashiMax}
         onChange={(kodashiMax) => {
           update({ kodashiMax });
+        }}
+      />
+      <CheckboxField
+        label="有未命名產駒"
+        checked={options.unnamedFoalOnly}
+        onChange={(unnamedFoalOnly) => {
+          update({ unnamedFoalOnly });
         }}
       />
       <TextField

@@ -29,6 +29,23 @@ export interface Line {
   readonly establishedGenerations: readonly EstablishedGeneration[];
 }
 
+/** 世代成立後不可回溯（需求規格 8.2）：已成立時回傳 undefined，否則回傳加入成立紀錄後的系位置。 */
+export function establishGeneration(
+  line: Line,
+  generation: number,
+  gameYear: number,
+): Line | undefined {
+  if (line.establishedGenerations.some((item) => item.generation === generation)) {
+    return undefined;
+  }
+  return {
+    ...line,
+    establishedGenerations: [...line.establishedGenerations, { generation, gameYear }].sort(
+      (a, b) => a.generation - b.generation,
+    ),
+  };
+}
+
 export interface LineColor {
   readonly value: string;
   readonly label: string;

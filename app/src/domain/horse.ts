@@ -69,3 +69,17 @@ const NAME_PREFIXES = /^(?:\s*(?:\(外\)|\[地\]))+\s*/u;
 export function toBaseName(fullName: string): string {
   return fullName.replace(NAME_PREFIXES, '');
 }
+
+/** 追蹤名使用的母馬名：基本馬名優先，其次正式馬名，最後由完整馬名去除前綴。 */
+export function nameForTracking(horse: Horse): string | undefined {
+  const name =
+    horse.baseName ??
+    horse.officialName ??
+    (horse.fullName === undefined ? undefined : toBaseName(horse.fullName));
+  return name === '' ? undefined : name;
+}
+
+/** 主要顯示名稱：完整馬名、正式馬名、基本馬名，都沒有時使用追蹤名（需求規格 9.4）。 */
+export function horseDisplayName(horse: Horse, tracking: string | undefined): string | undefined {
+  return horse.fullName ?? horse.officialName ?? horse.baseName ?? tracking;
+}

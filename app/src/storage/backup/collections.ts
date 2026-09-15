@@ -56,6 +56,7 @@ export const RELATIONS: readonly Relation[] = [
   { collection: 'stallionYearly', field: 'horseId', target: 'horses' },
   { collection: 'breedings', field: 'mareId', target: 'horses' },
   { collection: 'breedings', field: 'stallionId', target: 'horses' },
+  { collection: 'breedings', field: 'foalId', target: 'foals' },
   { collection: 'matingRatings', field: 'stallionId', target: 'horses' },
   { collection: 'matingRatings', field: 'mareId', target: 'horses' },
 ];

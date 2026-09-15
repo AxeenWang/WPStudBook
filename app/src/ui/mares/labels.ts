@@ -1,5 +1,6 @@
 import type { HistoryEventType } from '../../domain/history-event.ts';
 import type { LifeStage } from '../../domain/horse.ts';
+import type { MareGroupView } from '../../services/mare-list.ts';
 import type { MareHistoryItem } from '../../services/mares.ts';
 import type {
   LeftReason,
@@ -7,6 +8,7 @@ import type {
   MareOrigin,
   MareSite,
   MareStatus,
+  Succession,
   YearPlan,
 } from '../../domain/mare.ts';
 import type { Vitality, VitalityMonth } from '../../domain/mare-yearly.ts';
@@ -55,9 +57,16 @@ export function formatMareGroup(group: MareGroup): string {
   }
 }
 
-export function formatGroupTitle(position: number, generation: number | 'all'): string {
+export function formatGroupTitle(
+  position: number,
+  generation: MareGroupView['generation'],
+): string {
   if (generation === 'all') {
     return `第 ${String(position)} 系母馬群（全部代數）`;
+  }
+  if (typeof generation !== 'number') {
+    const [from, to] = generation.handover;
+    return `第 ${String(position)} 系交接中（${formatGenerationTab(position, from)} → ${formatGenerationTab(position, to)}）`;
   }
   return position === 1 && generation === 0
     ? '第 1 系起點母馬群'
@@ -101,6 +110,20 @@ export const MARE_EVENT_LABELS: Readonly<Partial<Record<HistoryEventType, string
   mareSold: '賣出',
   mareTransferred: '轉場',
   mareYearlyChanged: '更正年度資料',
+  breedingRecorded: '登記繁殖紀錄',
+  foalBorn: '出生',
+  foalChanged: '更正產駒資料',
+  horseNamed: '更正正式馬名',
+  successionChanged: '接替狀態變更',
+};
+
+/** 姊妹接替狀態（需求規格 8.9）。 */
+export const SUCCESSION_LABELS: Readonly<Record<Succession, string>> = {
+  provisional: '暫定保留',
+  sisterCandidate: '候選',
+  confirmed: '正式保留',
+  replaced: '已被取代',
+  sold: '已售出',
 };
 
 /** 歷程一列：「1968 年 5 月 1 週：轉場（日本 → 美國）」。 */

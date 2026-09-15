@@ -1,7 +1,10 @@
 import { DEFAULT_GAME_SETTINGS, MIN_GAME_YEAR, type Game } from '../domain/game.ts';
 import type { HistoryEvent, HistoryEventType } from '../domain/history-event.ts';
+import { trackingName, type Foal } from '../domain/foal.ts';
 import {
   formatAbilityNo,
+  horseDisplayName,
+  nameForTracking,
   parseAbilityNo,
   toBaseName,
   type Horse,
@@ -20,6 +23,7 @@ import {
   isMareSite,
   isSameGroup,
   marketGroupFor,
+  suggestsSellingMother,
   type AssignedMareGroup,
   type Mare,
   type MareGroup,
@@ -39,9 +43,15 @@ import {
 } from '../domain/mare-yearly.ts';
 import type { Timing } from '../domain/timing.ts';
 import { getConception, listConceptionsInYear } from '../storage/breedings.ts';
+import { listFoals, listFoalsForDam } from '../storage/foals.ts';
 import { listEventsForSubject } from '../storage/events.ts';
 import { readGameSettings } from '../storage/games.ts';
-import { findHorseByIdentity, getHorse, getHorsesByIds } from '../storage/horses.ts';
+import {
+  findHorseByIdentity,
+  getHorse,
+  getHorsesByIds,
+  listHorsesByDam,
+} from '../storage/horses.ts';
 import { listLines } from '../storage/lines.ts';
 import {
   getMareYearly,
@@ -340,23 +350,78 @@ export interface MareHerd {
   readonly cards: readonly MareCard[];
 }
 
+interface MareExtras {
+  readonly trackingName: string | undefined;
+  readonly hasUnnamedFoal: boolean;
+  readonly suggestSellMother: boolean;
+}
+
+interface MareExtrasSource {
+  /** 母馬、她的母親與她的子女都要在內。 */
+  readonly horses: ReadonlyMap<string, Horse>;
+  /** 這匹母馬的產駒。 */
+  readonly foals: readonly Foal[];
+  /** 已轉入為繁殖牝馬的女兒。 */
+  readonly daughters: readonly Mare[];
+  readonly currentYear: number;
+}
+
+/** 追蹤名、有未命名產駒與出售母親提醒（需求規格 8.5、9.4、13.3）。 */
+function mareExtras(mare: Mare, source: MareExtrasSource): MareExtras {
+  const horse = source.horses.get(mare.id);
+  const dam = horse?.damId === undefined ? undefined : source.horses.get(horse.damId);
+  const unnamed = (foal: Foal) => {
+    const foalHorse = source.horses.get(foal.id);
+    return (
+      foal.disposition !== 'sold' &&
+      foalHorse !== undefined &&
+      horseDisplayName(foalHorse, undefined) === undefined
+    );
+  };
+  return {
+    trackingName:
+      dam === undefined || horse?.birthYear === undefined
+        ? undefined
+        : trackingName(nameForTracking(dam), horse.birthYear),
+    hasUnnamedFoal: source.foals.some(unnamed),
+    suggestSellMother: suggestsSellingMother(
+      mare,
+      source.daughters,
+      source.foals.some((foal) => foal.birthYear === source.currentYear),
+    ),
+  };
+}
+
 /** 母馬群清單資料：目前遊戲局全部母馬的卡片；篩選、排序與分頁由 mare-list.ts 在記憶體中處理。 */
 export async function loadMareHerd(context: ServiceContext): Promise<MareHerd> {
   const game = await requireCurrentGame(context);
-  const [mares, yearly, lines, storedSettings, conceptions] = await Promise.all([
+  const [mares, yearly, lines, storedSettings, conceptions, foals] = await Promise.all([
     listMares(context.database, game.id),
     listMareYearly(context.database, game.id),
     listLines(context.database, game.id),
     readGameSettings(context.database, game.id),
     listConceptionsInYear(context.database, game.id, game.currentYear),
+    listFoals(context.database, game.id),
   ]);
-  const horses = await getHorsesByIds(
-    context.database,
-    game.id,
-    mares.map((mare) => mare.id),
+  const horses = new Map(
+    await getHorsesByIds(context.database, game.id, [
+      ...mares.map((mare) => mare.id),
+      ...foals.map((foal) => foal.id),
+    ]),
   );
+  const missingDams = [...horses.values()].flatMap((horse) =>
+    horse.damId === undefined || horses.has(horse.damId) ? [] : [horse.damId],
+  );
+  for (const [id, dam] of await getHorsesByIds(context.database, game.id, missingDams)) {
+    horses.set(id, dam);
+  }
   const settings = storedSettings ?? DEFAULT_GAME_SETTINGS;
   const yearlyByHorse = Map.groupBy(yearly, (record) => record.horseId);
+  const foalsByDam = Map.groupBy(foals, (foal) => foal.damId);
+  const daughtersByDam = Map.groupBy(
+    mares.filter((mare) => horses.get(mare.id)?.damId !== undefined),
+    (mare) => horses.get(mare.id)?.damId ?? '',
+  );
   return {
     currentYear: game.currentYear,
     highAgeReminderAge: settings.highAgeReminderAge,
@@ -370,6 +435,12 @@ export async function loadMareHerd(context: ServiceContext): Promise<MareHerd> {
         conception: conceptions.get(mare.id),
         currentYear: game.currentYear,
         settings,
+        ...mareExtras(mare, {
+          horses,
+          foals: foalsByDam.get(mare.id) ?? [],
+          daughters: daughtersByDam.get(mare.id) ?? [],
+          currentYear: game.currentYear,
+        }),
       }),
     ),
   };
@@ -713,7 +784,9 @@ function siteIn(value: JsonValue | undefined): MareSite | undefined {
  */
 const SAME_TIME_ORDER: Readonly<Partial<Record<HistoryEventType, number>>> = {
   horseCreated: 0,
+  foalBorn: 1,
   mareAdded: 1,
+  foalChanged: 2,
 };
 
 function compareHistoryNewestFirst(a: HistoryEvent, b: HistoryEvent): number {
@@ -741,13 +814,25 @@ function toHistoryItem(event: HistoryEvent): MareHistoryItem {
 export async function loadMareDetail(context: ServiceContext, mareId: string): Promise<MareDetail> {
   const game = await requireCurrentGame(context);
   const mare = await requireMare(context, game.id, mareId);
-  const [horse, horseYearly, events, storedSettings, conception] = await Promise.all([
-    getHorse(context.database, game.id, mareId),
-    listMareYearlyForHorse(context.database, game.id, mareId),
-    listEventsForSubject(context.database, game.id, mareId),
-    readGameSettings(context.database, game.id),
-    getConception(context.database, game.id, mareId, game.currentYear),
+  const [horse, horseYearly, events, storedSettings, conception, foals, children] =
+    await Promise.all([
+      getHorse(context.database, game.id, mareId),
+      listMareYearlyForHorse(context.database, game.id, mareId),
+      listEventsForSubject(context.database, game.id, mareId),
+      readGameSettings(context.database, game.id),
+      getConception(context.database, game.id, mareId, game.currentYear),
+      listFoalsForDam(context.database, game.id, mareId),
+      listHorsesByDam(context.database, game.id, mareId),
+    ]);
+  const [dam, daughters] = await Promise.all([
+    horse?.damId === undefined ? undefined : getHorse(context.database, game.id, horse.damId),
+    Promise.all(children.map((child) => getMare(context.database, game.id, child.id))),
   ]);
+  const related = new Map(
+    [...children, ...(horse === undefined ? [] : [horse]), ...(dam === undefined ? [] : [dam])].map(
+      (item) => [item.id, item],
+    ),
+  );
   const yearly = horseYearly.sort((a, b) => b.gameYear - a.gameYear);
   return {
     card: buildMareCard({
@@ -757,6 +842,12 @@ export async function loadMareDetail(context: ServiceContext, mareId: string): P
       conception,
       currentYear: game.currentYear,
       settings: storedSettings ?? DEFAULT_GAME_SETTINGS,
+      ...mareExtras(mare, {
+        horses: related,
+        foals,
+        daughters: daughters.filter((item) => item !== undefined),
+        currentYear: game.currentYear,
+      }),
     }),
     abilityNo: horse?.abilityNo === undefined ? undefined : formatAbilityNo(horse.abilityNo),
     birthYear: horse?.birthYear,

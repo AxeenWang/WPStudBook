@@ -13,7 +13,7 @@ import {
   withoutGameId,
 } from './records.ts';
 
-function toMare(value: unknown): Mare | undefined {
+export function toMare(value: unknown): Mare | undefined {
   // 本機資料由本程式寫入；備份匯入的母馬由 validateCollections 驗證。
   return isPlainRecord(value) ? (withoutGameId(value) as unknown as Mare) : undefined;
 }
