@@ -149,6 +149,16 @@ describe('decodeBackup', () => {
     });
   });
 
+  it('[DATA-04] 含有超出範圍的數字時拒絕，不丟出例外', async () => {
+    const document = await documentWith();
+    const text = JSON.stringify(document).replace('"startYear":1968', '"startYear":1e999');
+    const bytes = new TextEncoder().encode(text);
+    expect(failure(await decodeBackup(bytes, OPTIONS))).toEqual({
+      stage: 'hash',
+      codes: ['invalidJson'],
+    });
+  });
+
   it('[DATA-04] 重複識別與缺少關聯在識別與關聯階段拒絕', async () => {
     const duplicated = await documentWith({
       collections: { ...validCollections(), lines: [{ id: 'l1' }, { id: 'l1' }] },

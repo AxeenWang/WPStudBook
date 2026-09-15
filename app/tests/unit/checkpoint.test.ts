@@ -30,7 +30,14 @@ describe('檢查點保留', () => {
 
   it('[CKPT-03] 釘選者不自動清除，即使總數仍超過保留數', () => {
     const list = Array.from({ length: 17 }, (_, index) => checkpoint(index, index !== 16));
-    expect(selectCheckpointsToPrune(list, 15)).toEqual(['cp-16']);
+    expect(selectCheckpointsToPrune(list, 15, 'cp-16')).toEqual([]);
+  });
+
+  it('[CKPT-03] 剛建立的檢查點不會被清除，改清除其他最舊且未釘選者', () => {
+    const list = Array.from({ length: 16 }, (_, index) =>
+      checkpoint(index, index >= 1 && index <= 14),
+    );
+    expect(selectCheckpointsToPrune(list, 15, 'cp-15')).toEqual(['cp-00']);
   });
 });
 

@@ -102,6 +102,26 @@ describe('檢查點與回溯', () => {
     expect(await readCheckpointBytes(context.database, game.id, second.id)).toBeUndefined();
   });
 
+  it('[CKPT-03] 已釘選數達到保留數時，新建立的檢查點仍保留', async () => {
+    const { context, game } = await seededContext();
+    await context.database.put('gameSettings', {
+      ...SYNTHETIC_SETTINGS,
+      checkpointRetention: 2,
+      gameId: game.id,
+    });
+    const first = (await createCheckpoint(context)).checkpoint;
+    await setCheckpointPinned(context, first.id, true);
+    const second = (await createCheckpoint(context)).checkpoint;
+    await setCheckpointPinned(context, second.id, true);
+
+    const third = await createCheckpoint(context);
+
+    expect(third.prunedIds).toEqual([]);
+    const ids = (await listGameCheckpoints(context)).map((item) => item.id);
+    expect(ids).toHaveLength(3);
+    expect(ids).toContain(third.checkpoint.id);
+  });
+
   it('[CKPT-04] 回溯預覽顯示將捨棄的資料與較晚的檢查點，且不寫入', async () => {
     const { context, game } = await seededContext();
     const { target, later } = await changedAfterCheckpoint(context, game);
@@ -196,6 +216,27 @@ describe('檢查點與回溯', () => {
     expect((await getCurrentGame(context))?.currentYear).toBe(1969);
     expect(await readRecords(context.database, game.id, 'horses')).toHaveLength(4);
     expect(await listGameCheckpoints(context)).toHaveLength(2);
+  });
+
+  it('回溯寫入中途失敗時整筆退回，資料與檢查點不變', async () => {
+    const { context: firstContext, game } = await seededContext();
+    // target 的內容是建立回溯目標當下的合成局備份，events 已含 SYNTHETIC_RECORDS 的 event-1。
+    const { target } = await changedAfterCheckpoint(firstContext, game);
+
+    const secondContext = await openContext({
+      schemaVersion: 2,
+      migrations: [{ from: 1, migrate: (payload) => payload }],
+      newId: () => 'event-1',
+    });
+
+    // 取代交易加入的遷移事件 id 與檢查點內容既有的 event-1 相同，插入時以 ConstraintError 中止整筆交易。
+    await expect(rollbackToCheckpoint(secondContext, target.id, NO_DOWNLOAD)).rejects.toThrow(
+      'constraint',
+    );
+
+    expect((await getCurrentGame(firstContext))?.currentYear).toBe(1969);
+    expect(await readRecords(firstContext.database, game.id, 'horses')).toHaveLength(4);
+    expect(await listGameCheckpoints(firstContext)).toHaveLength(2);
   });
 
   it('[CKPT-07] 回溯只影響目前遊戲局，也不能回溯到其他局的檢查點', async () => {

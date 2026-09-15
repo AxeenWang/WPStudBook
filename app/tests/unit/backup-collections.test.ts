@@ -98,6 +98,18 @@ describe('validateCollections', () => {
     expect(issueCodes(result)).toEqual(['uniqueConflict']);
   });
 
+  it('[DATA-04] 唯一索引欄位是陣列時也檢查重複', () => {
+    const result = validateCollections(
+      collections({
+        horses: [
+          { id: 'h1', abilityNo: [1, 2], birthYear: 1965 },
+          { id: 'h2', abilityNo: [1, 2], birthYear: 1965 },
+        ],
+      }),
+    );
+    expect(issueCodes(result)).toEqual(['uniqueConflict']);
+  });
+
   it('[DATA-04] 內部 id 參照不存在時回報缺少關聯；只有外部名稱時不檢查', () => {
     const result = validateCollections(
       collections({

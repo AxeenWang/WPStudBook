@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   exportBackup,
   previewBackupFile,
+  recordDeliveredBackup,
   restoreBackupAsNewGame,
 } from '../../src/services/backup.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
@@ -56,9 +57,10 @@ describe('備份匯出與還原', () => {
     return { context, game };
   }
 
-  it('[DATA-07] 匯出目前遊戲局：摘要含檔名、局、筆數、大小、版本與時間，並記錄最近備份', async () => {
-    const { context } = await seededContext();
+  it('[DATA-07] 匯出目前遊戲局：摘要含檔名、局、筆數、大小、版本與時間，記錄最近備份前不寫入', async () => {
+    const { context, game } = await seededContext();
     const file = await exportBackup(context);
+    expect(file.gameId).toBe(game.id);
     expect(file.summary).toEqual({
       fileName: 'WPStudBook_テスト局「一」_1968年_20260915-000002.json.gz',
       gameName: 'テスト局「一」',
@@ -88,11 +90,28 @@ describe('備份匯出與還原', () => {
     expect(file.fileName).toBe(file.summary.fileName);
     expect(file.mediaType).toBe('application/gzip');
     expect(isGzip(file.bytes)).toBe(true);
+    expect((await getCurrentGame(context))?.lastBackup).toBeUndefined();
+
+    await recordDeliveredBackup(context, file);
+
     expect((await getCurrentGame(context))?.lastBackup).toEqual({
       fileName: file.fileName,
       exportedAt: '2026-09-15T00:00:02.000Z',
       sizeBytes: file.bytes.length,
       recordCount: 16,
+    });
+  });
+
+  it('記錄最近備份失敗時，已產生的備份檔不受影響', async () => {
+    const { context } = await seededContext();
+    const file = await exportBackup(context);
+
+    await expect(
+      recordDeliveredBackup(context, { ...file, gameId: 'missing-game' }),
+    ).rejects.toThrow('找不到遊戲局');
+    expect(context.status.write.state).toBe('failed');
+    expect(await previewBackupFile(context, file.fileName, file.bytes)).toMatchObject({
+      ok: true,
     });
   });
 
@@ -224,5 +243,35 @@ describe('備份匯出與還原', () => {
         occurredAt: '2026-09-15T00:00:00.000Z',
       },
     ]);
+  });
+
+  it('還原寫入中途失敗時整筆退回，不留下新局', async () => {
+    const { context: sourceContext } = await seededContext();
+    const file = await exportBackup(sourceContext);
+
+    const restoreIds = ['restored-game', 'event-1'];
+    let restoreIdIndex = 0;
+    const context = await openContext({
+      schemaVersion: 2,
+      migrations: [{ from: 1, migrate: (payload) => payload }],
+      newId: () => {
+        const id = restoreIds[restoreIdIndex];
+        restoreIdIndex += 1;
+        if (id === undefined) {
+          throw new Error('newId 呼叫次數超出預期');
+        }
+        return id;
+      },
+    });
+    const gamesBefore = await listAllGames(context);
+    const currentBefore = await getCurrentGame(context);
+
+    // 遷移事件的 id 與備份內既有的 event-1 相同，插入時以 ConstraintError 中止整筆交易。
+    await expect(restoreBackupAsNewGame(context, { bytes: file.bytes })).rejects.toThrow(
+      'constraint',
+    );
+
+    expect(await listAllGames(context)).toEqual(gamesBefore);
+    expect(await getCurrentGame(context)).toEqual(currentBefore);
   });
 });
