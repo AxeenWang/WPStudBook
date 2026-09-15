@@ -117,7 +117,12 @@ export function BackupSection({ currentGame }: { readonly currentGame: Game | un
       setProblem(undefined);
       setMessage(`已匯出原始資料「${file.fileName}」；這個檔案不能還原，請保留下來以便排查問題`);
     } catch (caught) {
-      setProblem({ title: '原始資料匯出失敗', details: [errorMessage(caught)] });
+      // 保留匯出按鈕，讓使用者可以直接重試。
+      setProblem({
+        title: '原始資料匯出失敗',
+        details: [errorMessage(caught)],
+        offerRawExport: true,
+      });
     } finally {
       setBusy(false);
     }
