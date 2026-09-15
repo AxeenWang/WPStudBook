@@ -1,16 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import { parseBrowserChannels } from './scripts/lib/browser-channels.ts';
 
-type BrowserChannel = 'msedge' | 'chrome';
-
-function selectedChannels(): BrowserChannel[] {
-  const channels = (process.env.E2E_BROWSERS ?? 'msedge')
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item): item is BrowserChannel => item === 'msedge' || item === 'chrome');
-  if (!channels.includes('chrome') && !process.env.CI) {
-    console.warn('[e2e] 未執行 Chrome：E2E_BROWSERS 未包含 chrome，Chrome 由 GitHub Actions 驗證');
-  }
-  return channels;
+const channels = parseBrowserChannels(process.env.E2E_BROWSERS);
+if (!channels.includes('chrome') && !process.env.CI) {
+  console.warn('[e2e] 未執行 Chrome：E2E_BROWSERS 未包含 chrome，Chrome 由 GitHub Actions 驗證');
 }
 
 export default defineConfig({
@@ -28,7 +21,7 @@ export default defineConfig({
     // 不影響任何測試斷言或涵蓋範圍；trace 與失敗自動截圖仍保留供除錯使用。
     video: 'off',
   },
-  projects: selectedChannels().map((channel) => ({
+  projects: channels.map((channel) => ({
     name: channel,
     use: {
       ...(channel === 'msedge' ? devices['Desktop Edge'] : devices['Desktop Chrome']),

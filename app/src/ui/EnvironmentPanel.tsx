@@ -32,25 +32,17 @@ export function EnvironmentPanel() {
       {report === undefined ? (
         <p role="status">檢查中…</p>
       ) : (
-        <>
-          <table>
-            <tbody>
-              {CHECK_LABELS.map(([key, label]) => (
-                <tr key={key}>
-                  <th scope="row">{label}</th>
-                  <td data-testid={`env-${key}`}>{report[key] ? '通過' : '失敗'}</td>
-                  <td data-testid={`env-${key}-reason`}>{report.failures[key] ?? ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p>
-            IndexedDB 探測次數：
-            <span data-testid="probe-count">
-              {report.probeCount === undefined ? '無法取得' : String(report.probeCount)}
-            </span>
-          </p>
-        </>
+        <table>
+          <tbody>
+            {CHECK_LABELS.map(([key, label]) => (
+              <tr key={key}>
+                <th scope="row">{label}</th>
+                <td data-testid={`env-${key}`}>{report[key] ? '通過' : '失敗'}</td>
+                <td data-testid={`env-${key}-reason`}>{report.failures[key] ?? ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
       <Button
         onPress={() => {

@@ -4,9 +4,16 @@ export interface ExternalReference {
 }
 
 const SCRIPT_BLOCK = /<script\b([^>]*)>[\s\S]*?<\/script>/gi;
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 const STYLE_BLOCK = /<style\b([^>]*)>([\s\S]*?)<\/style>/gi;
+// 屬性名稱前必須是空白、引號、斜線或冒號，避免把 data-src 之類的自訂屬性當成 src；冒號用於支援 xlink:href 等命名空間屬性。
 const URL_ATTRIBUTE =
-  /\b(src|href|srcset|poster|action)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+  /(?<=[\s"'/:])(src|href|srcset|imagesrcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+const STYLE_ATTRIBUTE = /(?<=[\s"'/:])style\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+const META_TAG = /<meta\b[^>]*>/gi;
+const HTTP_EQUIV_REFRESH = /(?<=[\s"'/:])http-equiv\s*=\s*["']?refresh\b/i;
+const CONTENT_ATTRIBUTE = /(?<=[\s"'/:])content\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+const REFRESH_URL = /(?:^|[;,\s])url\s*=\s*(['"]?)([^'"]*)\1/i;
 const CSS_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
 const CSS_IMPORT_STRING = /@import\s+(?:"([^"]+)"|'([^']+)')/gi;
 
@@ -65,8 +72,10 @@ export function findExternalReferences(html: string): ExternalReference[] {
   const references: ExternalReference[] = [];
   const cssBlocks: string[] = [];
 
+  // 先移除 script 內容（程式碼可能含有 "<!--" 字串），再移除 HTML 註解，最後取出 style 區塊。
   const markup = html
     .replace(SCRIPT_BLOCK, (_match: string, attributes: string) => `<script${attributes}></script>`)
+    .replace(HTML_COMMENT, '')
     .replace(STYLE_BLOCK, (_match: string, attributes: string, css: string) => {
       cssBlocks.push(css);
       return `<style${attributes}></style>`;
@@ -76,7 +85,7 @@ export function findExternalReferences(html: string): ExternalReference[] {
     const attribute = (match[1] ?? '').toLowerCase();
     const value = match[2] ?? match[3] ?? match[4] ?? '';
 
-    if (attribute === 'srcset') {
+    if (attribute === 'srcset' || attribute === 'imagesrcset') {
       for (const candidate of parseSrcsetCandidates(value)) {
         if (!isEmbedded(candidate)) {
           references.push({ kind: 'attribute', value: candidate });
@@ -90,7 +99,24 @@ export function findExternalReferences(html: string): ExternalReference[] {
     }
   }
 
-  for (const css of cssBlocks) {
+  for (const match of markup.matchAll(META_TAG)) {
+    const tag = match[0];
+    if (!HTTP_EQUIV_REFRESH.test(tag)) {
+      continue;
+    }
+    const content = CONTENT_ATTRIBUTE.exec(tag);
+    const contentValue = content?.[1] ?? content?.[2] ?? content?.[3] ?? '';
+    const url = (REFRESH_URL.exec(contentValue)?.[2] ?? '').trim();
+    if (url !== '' && !isEmbedded(url)) {
+      references.push({ kind: 'attribute', value: url });
+    }
+  }
+
+  const inlineStyles = Array.from(
+    markup.matchAll(STYLE_ATTRIBUTE),
+    (match) => match[1] ?? match[2] ?? '',
+  );
+  for (const css of [...cssBlocks, ...inlineStyles]) {
     for (const match of css.matchAll(CSS_URL)) {
       const value = match[1] ?? match[2] ?? match[3] ?? '';
       if (!isEmbedded(value)) {

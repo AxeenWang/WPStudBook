@@ -12,13 +12,12 @@ describe('runEnvironmentCheck（Node，無 IndexedDB）', () => {
     });
   });
 
-  it('沒有安全環境旗標與 IndexedDB 時如實回報失敗與原因，且不帶探測次數', async () => {
+  it('沒有安全環境旗標與 IndexedDB 時如實回報失敗與原因', async () => {
     const report = await runEnvironmentCheck();
     expect(report.secureContext).toBe(false);
     expect(report.indexedDb).toBe(false);
-    expect('probeCount' in report).toBe(false);
     expect(Object.keys(report.failures).sort()).toEqual(['indexedDb', 'secureContext']);
     expect(report.failures.secureContext).toBe('isSecureContext 不是 true');
-    expect(report.failures.indexedDb).toContain('indexedDB');
+    expect(report.failures.indexedDb).toContain('IndexedDB');
   });
 });

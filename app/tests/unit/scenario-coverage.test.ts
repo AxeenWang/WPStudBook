@@ -39,6 +39,22 @@ describe('情境覆蓋', () => {
     expect([...extractTaggedIds(source)]).toEqual(['TEST-01', 'TEST-02']);
   });
 
+  it('同一個標題連寫多個標籤時全部計入', () => {
+    const source = "it('[TEST-01][TEST-02] 備份往返', () => {});\n";
+    expect([...extractTaggedIds(source)]).toEqual(['TEST-01', 'TEST-02']);
+  });
+
+  it('標籤後面接文字時，文字中的標籤不計入', () => {
+    const source = "it('[TEST-01] 說明 [TEST-02]', () => {});\n";
+    expect([...extractTaggedIds(source)]).toEqual(['TEST-01']);
+  });
+
+  it('代號超過兩位數時仍能辨識', () => {
+    const spec = '## 15. 驗收情境\n- **TEST-100**：條件 → 結果\n## 16. 待確認事項\n';
+    expect(extractScenarioIds(spec)).toEqual(['TEST-100']);
+    expect([...extractTaggedIds("it('[TEST-100] 標題', () => {});")]).toEqual(['TEST-100']);
+  });
+
   it('列出沒有任何測試標籤的情境', () => {
     expect(findUncoveredScenarios(['ID-01', 'ID-02', 'LINE-14'], new Set(['ID-01']))).toEqual([
       'ID-02',

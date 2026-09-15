@@ -1,4 +1,4 @@
-import { incrementProbeCounter } from '../storage/probe-counter.ts';
+import { probeAppDatabase } from '../storage/database.ts';
 
 export const ENVIRONMENT_CHECK_KEYS = [
   'secureContext',
@@ -13,7 +13,6 @@ export type EnvironmentCheckKey = (typeof ENVIRONMENT_CHECK_KEYS)[number];
 
 export interface EnvironmentReport extends Readonly<Record<EnvironmentCheckKey, boolean>> {
   readonly failures: Readonly<Partial<Record<EnvironmentCheckKey, string>>>;
-  readonly probeCount?: number;
 }
 
 type CheckResult = { readonly ok: true } | { readonly ok: false; readonly reason: string };
@@ -102,13 +101,12 @@ function checkShiftJis(): CheckResult {
   }
 }
 
-async function checkIndexedDb(): Promise<
-  { readonly ok: true; readonly count: number } | { readonly ok: false; readonly reason: string }
-> {
+async function checkIndexedDb(): Promise<CheckResult> {
   try {
-    return { ok: true, count: await incrementProbeCounter() };
+    await probeAppDatabase();
+    return PASSED;
   } catch (error) {
-    return { ok: false, reason: describeError(error) };
+    return failed(describeError(error));
   }
 }
 
@@ -124,7 +122,7 @@ export async function runEnvironmentCheck(): Promise<EnvironmentReport> {
     sha256,
     compression,
     shiftJis: checkShiftJis(),
-    indexedDb: database.ok ? PASSED : failed(database.reason),
+    indexedDb: database,
   };
 
   const failures: Partial<Record<EnvironmentCheckKey, string>> = {};
@@ -135,7 +133,7 @@ export async function runEnvironmentCheck(): Promise<EnvironmentReport> {
     }
   }
 
-  const report = {
+  return {
     secureContext: results.secureContext.ok,
     randomUuid: results.randomUuid.ok,
     sha256: results.sha256.ok,
@@ -144,5 +142,4 @@ export async function runEnvironmentCheck(): Promise<EnvironmentReport> {
     indexedDb: results.indexedDb.ok,
     failures,
   };
-  return database.ok ? { ...report, probeCount: database.count } : report;
 }
