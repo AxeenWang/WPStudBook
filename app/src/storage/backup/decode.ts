@@ -76,7 +76,17 @@ export async function decodeBackup(
   if (countIssues.length > 0) {
     return { ok: false, stage: 'counts', issues: countIssues };
   }
-  if ((await computeBackupHash(source.game, source.collections)) !== source.sha256) {
+  let computedHash: string;
+  try {
+    computedHash = await computeBackupHash(source.game, source.collections);
+  } catch (error) {
+    return rejected(
+      'hash',
+      'invalidJson',
+      `檔案含有無法以標準化 JSON 表示的值（例如超出範圍的數字）：${describeError(error)}`,
+    );
+  }
+  if (computedHash !== source.sha256) {
     return rejected('hash', 'hashMismatch', 'SHA-256 不符：檔案內容已被修改或損壞');
   }
   const migrated = migrateBackupPayload(
