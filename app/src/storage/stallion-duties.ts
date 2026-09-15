@@ -77,6 +77,8 @@ export interface StallionState {
   readonly line: Line | undefined;
   /** 這個系位置的全部任期（現任與預定後繼，含已結束者）。 */
   readonly duties: readonly StallionDuty[];
+  /** 在崗現任的馬匹紀錄（鍵為馬匹 id）。 */
+  readonly onDutyHorses: ReadonlyMap<string, Horse>;
   readonly candidate: CandidateRecords | undefined;
   /** 指定的配種，或進行中的預定後繼所指的配種。 */
   readonly birth: PlannedBirthRecords | undefined;
@@ -145,9 +147,20 @@ async function readStallionState(
     (duty): duty is PlannedDuty => duty.role === 'planned' && duty.endYear === undefined,
   )?.breedingId;
   const breedingId = request.breedingId ?? plannedBreedingId;
-  const birth =
-    breedingId === undefined ? undefined : await readPlannedBirth(objectStore, gameId, breedingId);
-  return { line, duties, candidate, birth };
+  const onDutyIds = duties.flatMap((duty) =>
+    duty.role === 'current' && duty.dutyStatus === 'onDuty' ? [duty.horseId] : [],
+  );
+  const [birth, onDutyValues] = await Promise.all([
+    breedingId === undefined ? undefined : readPlannedBirth(objectStore, gameId, breedingId),
+    Promise.all(onDutyIds.map((id) => objectStore('horses').get([gameId, id]))),
+  ]);
+  const onDutyHorses = new Map(
+    onDutyValues
+      .map(toHorse)
+      .filter((horse) => horse !== undefined)
+      .map((horse) => [horse.id, horse]),
+  );
+  return { line, duties, onDutyHorses, candidate, birth };
 }
 
 /** 以唯讀交易讀出一個系位置的任期與要核對的馬匹、配種。 */

@@ -51,7 +51,7 @@ describe('血緣表（需求規格 10.4）', () => {
       position: 1,
       generation: 1,
       successorId: stud.youngerId,
-      reason: 'brotherBetter',
+      reason: 'betterBrother',
       effectiveYear: 1971,
       stallionNo: '',
     });

@@ -1,5 +1,5 @@
 import type {
-  ChangeReason,
+  ReplaceReason,
   DutyStatus,
   PlannedReadiness,
   StallionRole,
@@ -69,18 +69,18 @@ const DUTY_STATUSES = enumSet<DutyStatus>({
 const PLANNED_READINESS_VALUES = enumSet<PlannedReadiness>({
   unborn: true,
   racing: true,
-  retiredPendingAssignment: true,
+  retiredPending: true,
   inService: true,
 });
-const CHANGE_REASON_VALUES = enumSet<ChangeReason>({
-  brotherBetter: true,
+const REPLACE_REASON_VALUES = enumSet<ReplaceReason>({
+  betterBrother: true,
   predecessorRetired: true,
   unavailable: true,
   recovery: true,
   historicalRetirement: true,
   other: true,
 });
-const HORSE_FATE_KINDS = enumSet<HorseFate['kind']>({ stallion: true });
+const HORSE_FATE_KINDS = enumSet<HorseFate['kind']>({ becameStallion: true });
 const OVERALL_GRADE_VALUES = enumSet<OverallGrade>({ S: true, A: true, B: true, C: true, D: true });
 const EVENT_TYPES = enumSet<HistoryEventType>({
   gameYearChanged: true,
@@ -321,13 +321,13 @@ function checkCurrentDuty(record: StoredRecord): string | undefined {
     [!('readiness' in record) && !('breedingId' in record), '現任不可有 readiness 或 breedingId'],
     onDuty
       ? [
-          !('endYear' in record) && !('changeReason' in record) && !('successorId' in record),
-          '在崗的現任不可有 endYear、changeReason 或 successorId',
+          !('endYear' in record) && !('replaceReason' in record) && !('successorId' in record),
+          '在崗的現任不可有 endYear、replaceReason 或 successorId',
         ]
       : [isYear(record.endYear), '已離開在崗的現任必須有 endYear'],
     [
-      optional(record, 'changeReason', (value) => isOneOf(CHANGE_REASON_VALUES, value)),
-      'changeReason 不是有效的更換原因',
+      optional(record, 'replaceReason', (value) => isOneOf(REPLACE_REASON_VALUES, value)),
+      'replaceReason 不是有效的更換原因',
     ],
     [optional(record, 'successorId', isNonEmptyString), 'successorId 必須是非空字串'],
     [record.successorId !== record.horseId, '後任不可是自己'],
@@ -339,8 +339,8 @@ function checkPlannedDuty(record: StoredRecord): string | undefined {
   return firstProblem([
     [isOneOf(PLANNED_READINESS_VALUES, record.readiness), 'readiness 不是有效的就緒狀態'],
     [
-      !('dutyStatus' in record) && !('changeReason' in record) && !('successorId' in record),
-      '預定後繼不可有 dutyStatus、changeReason 或 successorId',
+      !('dutyStatus' in record) && !('replaceReason' in record) && !('successorId' in record),
+      '預定後繼不可有 dutyStatus、replaceReason 或 successorId',
     ],
     unborn
       ? [

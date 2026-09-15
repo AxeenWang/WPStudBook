@@ -5,7 +5,6 @@ import {
   type MatingRating,
   type OverallGrade,
 } from '../domain/mating-rating.ts';
-import { getHorsesByIds } from '../storage/horses.ts';
 import { getMare } from '../storage/mares.ts';
 import { listMatingRatingsForMare, writeMatingRating } from '../storage/mating-ratings.ts';
 import { listStallionOptions, type StallionOption } from './breedings.ts';
@@ -13,6 +12,7 @@ import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
+import { loadHorseNames } from './horse-names.ts';
 
 /** 介面用的選項（ui 不能引用 domain 的值）。 */
 export const OVERALL_GRADE_OPTIONS: readonly OverallGrade[] = OVERALL_GRADES;
@@ -130,17 +130,17 @@ export async function loadMareMatingRatings(
     listMatingRatingsForMare(context.database, game.id, mareId),
     listStallionOptions(context),
   ]);
-  const horses = await getHorsesByIds(context.database, game.id, [
-    ...new Set(ratings.map((rating) => rating.stallionId)),
-  ]);
+  const names = await loadHorseNames(
+    context.database,
+    game.id,
+    ratings.map((rating) => rating.stallionId),
+  );
   const rows = ratings
     .map((rating): MatingRatingRow => {
-      const horse = horses.get(rating.stallionId);
       return {
         id: rating.id,
         stallionId: rating.stallionId,
-        stallionName:
-          horse?.fullName ?? horse?.officialName ?? horse?.baseName ?? rating.stallionId,
+        stallionName: names.get(rating.stallionId) ?? rating.stallionId,
         gameYear: rating.gameYear,
         overallGrade: rating.overallGrade,
         explosivePower: rating.explosivePower,

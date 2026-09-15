@@ -29,7 +29,7 @@ export interface HorseAlias {
  * 在其他牧場成為繁殖牝馬（11.10）於階段 4 加入。
  */
 export interface HorseFate {
-  readonly kind: 'stallion';
+  readonly kind: 'becameStallion';
   readonly gameYear: number;
 }
 
@@ -64,7 +64,7 @@ export function withStageNumber(horse: Horse, stageNumber: StageNumber): Horse {
 
 /** 繁殖牝馬與種牡馬馬名唯讀（需求規格 6.4）；此處判斷已成為種牡馬的馬。 */
 export function isStallionHorse(horse: Horse): boolean {
-  return horse.fate?.kind === 'stallion';
+  return horse.fate?.kind === 'becameStallion';
 }
 
 export const ABILITY_NO_MAX = 0xffff;

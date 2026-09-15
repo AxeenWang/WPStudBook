@@ -150,13 +150,13 @@ describe('資料表欄位規則', () => {
       ...DUTY,
       dutyStatus: 'replaced',
       endYear: 1970,
-      changeReason: 'brotherBetter',
+      replaceReason: 'betterBrother',
       successorId: 'h2',
     };
     expectProblems('stallionDuties', replaced, [
       [omit(replaced, 'endYear'), 'endYear'],
       [{ ...replaced, endYear: 1967 }, '不可早於'],
-      [{ ...replaced, changeReason: 'older' }, 'changeReason'],
+      [{ ...replaced, replaceReason: 'older' }, 'replaceReason'],
       [{ ...replaced, successorId: 'h1' }, '後任不可是自己'],
       [{ ...DUTY, endYear: 1970 }, '在崗的現任不可有'],
       [{ ...DUTY, readiness: 'racing' }, '現任不可有 readiness'],
@@ -192,10 +192,10 @@ describe('資料表欄位規則', () => {
   });
 
   it('horses：去向只接受成為種牡馬與遊戲年', () => {
-    const stallion = { ...HORSE, sex: 'male', fate: { kind: 'stallion', gameYear: 1972 } };
+    const stallion = { ...HORSE, sex: 'male', fate: { kind: 'becameStallion', gameYear: 1972 } };
     expectProblems('horses', stallion, [
       [{ ...stallion, fate: { kind: 'broodmare', gameYear: 1972 } }, 'fate'],
-      [{ ...stallion, fate: { kind: 'stallion' } }, 'fate'],
+      [{ ...stallion, fate: { kind: 'becameStallion' } }, 'fate'],
     ]);
   });
 

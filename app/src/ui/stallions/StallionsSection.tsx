@@ -1,8 +1,8 @@
 import { useId, useState } from 'react';
 import { Button, Form, Input, Label, TextField } from 'react-aria-components';
-import type { ChangeReason, PlannedReadiness } from '../../domain/stallion-duty.ts';
+import type { ReplaceReason, PlannedReadiness } from '../../domain/stallion-duty.ts';
 import {
-  CHANGE_REASON_OPTIONS,
+  REPLACE_REASON_OPTIONS,
   assignCurrentStallion,
   changeDutyStatus,
   confirmPlannedBirth,
@@ -15,6 +15,7 @@ import {
   type LineStallions,
   type PlannedSuccessorView,
   type SettableDutyStatus,
+  type SuccessorOption,
 } from '../../services/stallions.ts';
 import { Feedback, useAction, type ActionState } from '../actions.tsx';
 import { OptionalIntegerField, SelectField, type SelectOption } from '../fields.tsx';
@@ -23,11 +24,11 @@ import { PedigreeView } from '../pedigree/PedigreeView.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 import { BrotherComparisonView } from './BrotherComparisonView.tsx';
 import { READINESS_CHOICES } from './HorseStallionActions.tsx';
-import { CHANGE_REASON_LABELS, DUTY_STATUS_LABELS, READINESS_LABELS } from './labels.ts';
+import { REPLACE_REASON_LABELS, DUTY_STATUS_LABELS, READINESS_LABELS } from './labels.ts';
 
-const REASON_CHOICES = CHANGE_REASON_OPTIONS.map((reason) => ({
+const REASON_CHOICES = REPLACE_REASON_OPTIONS.map((reason) => ({
   value: reason,
-  label: CHANGE_REASON_LABELS[reason],
+  label: REPLACE_REASON_LABELS[reason],
 }));
 
 function StallionNoField({
@@ -61,7 +62,7 @@ function ReplaceForm({
     .filter((option) => option.generation === item.generation && option.id !== item.horseId)
     .map((option) => ({ value: option.id, label: option.name }));
   const [successorId, setSuccessorId] = useState<string>();
-  const [reason, setReason] = useState<ChangeReason>();
+  const [reason, setReason] = useState<ReplaceReason>();
   const [effectiveYear, setEffectiveYear] = useState<number | undefined>(currentYear);
   const [stallionNo, setStallionNo] = useState('');
   return (
@@ -178,9 +179,9 @@ function CurrentItem({
     DUTY_STATUS_LABELS[item.dutyStatus],
     period,
     item.age === undefined ? undefined : `${String(item.age)} 歲`,
-    item.changeReason === undefined
+    item.replaceReason === undefined
       ? undefined
-      : `更換原因 ${CHANGE_REASON_LABELS[item.changeReason]}`,
+      : `更換原因 ${REPLACE_REASON_LABELS[item.replaceReason]}`,
     item.successorName === undefined ? undefined : `後任 ${item.successorName}`,
   ].filter((part) => part !== undefined);
   const buttons: [CurrentPanel, string, boolean][] = [
@@ -218,6 +219,16 @@ function CurrentItem({
   );
 }
 
+/** 可以直接接任的公駒：該代還沒有在崗現任；已有在崗現任的代數改用更換現任或兄弟比較。 */
+function assignableOptions(line: LineStallions): readonly SuccessorOption[] {
+  return line.successorOptions.filter(
+    (option) =>
+      !line.current.some(
+        (item) => item.dutyStatus === 'onDuty' && item.generation === option.generation,
+      ),
+  );
+}
+
 interface LineFormProps {
   readonly line: LineStallions;
   /** 由系卡片持有：送出後這個表單可能消失（例如沒有可選的公駒），訊息仍要留在畫面上。 */
@@ -230,7 +241,7 @@ function AssignForm({ line, action }: LineFormProps) {
   const headingId = useId();
   const [horseId, setHorseId] = useState<string>();
   const [stallionNo, setStallionNo] = useState('');
-  const choices = line.successorOptions.map((option) => ({
+  const choices = assignableOptions(line).map((option) => ({
     value: option.id,
     label: `${option.name}（${String(option.generation)} 代）`,
   }));
@@ -276,7 +287,7 @@ function PlannedBlock({
   const { context } = useServices();
   const { busy, run } = action;
   const [readiness, setReadiness] = useState<PlannedReadiness>(
-    planned.readiness === 'retiredPendingAssignment' ? 'retiredPendingAssignment' : 'racing',
+    planned.readiness === 'retiredPending' ? 'retiredPending' : 'racing',
   );
   const { birth, horse } = planned;
   const target =
@@ -446,7 +457,7 @@ function LineStallionsCard({
           ))}
         </ul>
       )}
-      {line.successorOptions.length > 0 && <AssignForm line={line} action={action} />}
+      {assignableOptions(line).length > 0 && <AssignForm line={line} action={action} />}
       <h4>預定後繼</h4>
       {line.planned === undefined ? (
         <p>尚未指定。</p>

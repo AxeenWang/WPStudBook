@@ -16,13 +16,13 @@ import type { Line } from '../domain/line.ts';
 import type { Lineage } from '../domain/lineage.ts';
 import { ageInYear, mareGeneration } from '../domain/mare.ts';
 import {
-  CHANGE_REASONS,
+  REPLACE_REASONS,
   PLANNED_READINESS,
   isActivePlanned,
   isOnDuty,
   reachesStallionReminderAge,
-  statusForChangeReason,
-  type ChangeReason,
+  statusForReplaceReason,
+  type ReplaceReason,
   type CurrentDuty,
   type DutyStatus,
   type PlannedDuty,
@@ -50,18 +50,14 @@ import { gameTouch, requireCurrentGame } from './games.ts';
 import { deriveOffspringLineage, lineageMismatch, lineageText } from './succession.ts';
 
 /** 介面用的選項（ui 不能引用 domain 的值）。 */
-export const CHANGE_REASON_OPTIONS: readonly ChangeReason[] = CHANGE_REASONS;
+export const REPLACE_REASON_OPTIONS: readonly ReplaceReason[] = REPLACE_REASONS;
 /** 使用者可以直接設定的就緒狀態；尚未誕生由指定配種決定，正式供用由接任決定。 */
 export const SETTABLE_READINESS: readonly PlannedReadiness[] = PLANNED_READINESS.filter(
-  (readiness) => readiness === 'racing' || readiness === 'retiredPendingAssignment',
+  (readiness) => readiness === 'racing' || readiness === 'retiredPending',
 );
 
 function fail(issues: readonly string[]): never {
   throw new ServiceError('invalidInput', issues.join('；'));
-}
-
-function nameOf(horse: Horse | undefined): string | undefined {
-  return horse === undefined ? undefined : horseDisplayName(horse, undefined);
 }
 
 /** 種牡馬馬番号：空白表示未填；接受 `0x` 開頭或不帶前綴的十六進位（設計決策 5.3 節）。 */
@@ -85,11 +81,12 @@ interface CandidateCheck {
 
 /**
  * 公駒成為現任或預定後繼前的核對（需求規格 9.6）：只接受非自由配種的自家公駒；以父母再次推導系與代數，
- * 與出生紀錄不符時阻止；所屬系位置必須已開啟。
+ * 與出生紀錄不符時阻止；必須屬於操作的系位置，且該系已開啟。line 是交易內讀出的 position 系位置。
  */
 function checkCandidate(
   candidate: CandidateRecords | undefined,
   line: Line | undefined,
+  position: number,
 ): CandidateCheck {
   const horse = candidate?.horse;
   if (candidate === undefined || horse === undefined) {
@@ -111,8 +108,10 @@ function checkCandidate(
     if (mismatch !== undefined) {
       issues.push(mismatch);
     }
-    if (line?.position !== lineage.position) {
-      issues.push(`第 ${String(lineage.position)} 系尚未開啟`);
+    if (lineage.position !== position) {
+      issues.push(`這匹馬屬於第 ${String(lineage.position)} 系，不是第 ${String(position)} 系`);
+    } else if (line === undefined) {
+      issues.push(`第 ${String(position)} 系尚未開啟`);
     }
   }
   return { issues, lineage: issues.length === 0 ? lineage : undefined };
@@ -128,7 +127,7 @@ function dutyStatusValue(duty: CurrentDuty): JsonObject {
   return {
     dutyStatus: duty.dutyStatus,
     ...(duty.endYear === undefined ? {} : { endYear: duty.endYear }),
-    ...(duty.changeReason === undefined ? {} : { changeReason: duty.changeReason }),
+    ...(duty.replaceReason === undefined ? {} : { replaceReason: duty.replaceReason }),
     ...(duty.successorId === undefined ? {} : { successorId: duty.successorId }),
   };
 }
@@ -143,6 +142,14 @@ function plannedValue(duty: PlannedDuty): JsonObject {
   };
 }
 
+/**
+ * 預定後繼指定結束的年份：不早於指定年。更換現任可以回填較早的生效年，目前遊戲年也可以調回較早的年份，
+ * 結束年早於指定年的紀錄會被備份欄位規則拒絕。
+ */
+function plannedEndYear(planned: PlannedDuty, year: number): number {
+  return Math.max(year, planned.startYear);
+}
+
 interface DutyStart {
   readonly horse: Horse;
   readonly lineage: Lineage;
@@ -152,8 +159,8 @@ interface DutyStart {
 }
 
 /**
- * 開始現任任期：寫入去向（成為種牡馬）與種牡馬馬番号；這匹馬是該系進行中的預定後繼時，
- * 指定改為正式供用並結束（需求規格 7.7）。
+ * 開始現任任期：寫入去向（成為種牡馬）與種牡馬馬番号；這匹馬是該系進行中的預定後繼時（含指向他出生前的
+ * 配種、尚未確認的指定），指定改為正式供用並結束（需求規格 7.7）。
  */
 function startDuty(
   context: ServiceContext,
@@ -191,9 +198,22 @@ function startDuty(
     }),
   );
   const planned = state.duties.find(isActivePlanned);
+  const bornFromPlanned =
+    planned?.breedingId !== undefined &&
+    state.birth?.breeding?.id === planned.breedingId &&
+    state.birth.breeding.foalId === horse.id;
   const duties: StallionDuty[] = [duty];
-  if (planned?.horseId === horse.id) {
-    const ended: PlannedDuty = { ...planned, readiness: 'inService', endYear: startYear };
+  if (planned !== undefined && (planned.horseId === horse.id || bornFromPlanned)) {
+    const ended: PlannedDuty = {
+      id: planned.id,
+      position: planned.position,
+      generation: planned.generation,
+      role: 'planned',
+      horseId: horse.id,
+      readiness: 'inService',
+      startYear: planned.startYear,
+      endYear: plannedEndYear(planned, startYear),
+    };
     duties.push(ended);
     events.push(
       userEvent(context, {
@@ -209,7 +229,7 @@ function startDuty(
   return { duties, horses: stallionHorse === undefined ? [] : [stallionHorse], events };
 }
 
-/** 寫入去向與種牡馬馬番号；都沒有變更時回傳 undefined。 */
+/** 寫入去向與種牡馬馬番号；只有第一次成為種牡馬時寫事件，都沒有變更時回傳 undefined。 */
 function becomeStallion(
   context: ServiceContext,
   game: Game,
@@ -228,8 +248,8 @@ function becomeStallion(
           source: 'manual',
         });
   const becomes = !isStallionHorse(horse);
-  if (!becomes && numbered === horse) {
-    return undefined;
+  if (!becomes) {
+    return numbered === horse ? undefined : numbered;
   }
   events.push(
     userEvent(context, {
@@ -240,9 +260,7 @@ function becomeStallion(
       after: stallionNo === undefined ? {} : { stallionNo },
     }),
   );
-  return becomes
-    ? { ...numbered, fate: { kind: 'stallion', gameYear: game.currentYear } }
-    : numbered;
+  return { ...numbered, fate: { kind: 'becameStallion', gameYear: game.currentYear } };
 }
 
 export interface RegisterStallionInput {
@@ -317,7 +335,7 @@ export async function assignCurrentStallion(
       request: { position, horseId: input.horseId },
       touch: gameTouch(context, now),
       apply: (stored, state) => {
-        const { issues, lineage } = checkCandidate(state.candidate, state.line);
+        const { issues, lineage } = checkCandidate(state.candidate, state.line, position);
         const horse = state.candidate?.horse;
         if (issues.length > 0 || lineage === undefined || horse === undefined || !state.line) {
           fail(issues);
@@ -360,7 +378,7 @@ export interface ReplaceStallionInput {
   readonly position: number;
   readonly generation: number;
   readonly successorId: string;
-  readonly reason: ChangeReason | undefined;
+  readonly reason: ReplaceReason | undefined;
   /** 生效年；未填時傳入 undefined。 */
   readonly effectiveYear: number | undefined;
   readonly stallionNo: string;
@@ -370,7 +388,7 @@ interface Replacement {
   readonly position: number;
   readonly generation: number;
   readonly successorId: string;
-  readonly reason: ChangeReason;
+  readonly reason: ReplaceReason;
   readonly effectiveYear: number;
   readonly stallionNo: number | undefined;
   /** 兄弟比較一律標示已被取代（需求規格 7.7）。 */
@@ -392,7 +410,11 @@ function planReplacement(
   if (predecessor === undefined) {
     issues.push(`${lineageText(position, generation)}目前沒有在崗的現任，請直接接任`);
   }
-  const { issues: candidateIssues, lineage } = checkCandidate(state.candidate, state.line);
+  const { issues: candidateIssues, lineage } = checkCandidate(
+    state.candidate,
+    state.line,
+    position,
+  );
   issues.push(...candidateIssues);
   if (
     lineage !== undefined &&
@@ -427,9 +449,9 @@ function planReplacement(
   }
   const ended: CurrentDuty = {
     ...predecessor,
-    dutyStatus: replacement.forceReplaced ? 'replaced' : statusForChangeReason(replacement.reason),
+    dutyStatus: replacement.forceReplaced ? 'replaced' : statusForReplaceReason(replacement.reason),
     endYear: effectiveYear,
-    changeReason: replacement.reason,
+    replaceReason: replacement.reason,
     successorId: horse.id,
   };
   const started = startDuty(
@@ -610,7 +632,7 @@ export interface PlannedSuccessorInput {
 }
 
 function isSettableReadiness(readiness: PlannedReadiness | undefined): boolean {
-  return readiness === 'racing' || readiness === 'retiredPendingAssignment';
+  return readiness === 'racing' || readiness === 'retiredPending';
 }
 
 /** 預定後繼的系與代數：指定馬匹時核對 9.6，指定配種時由父母推導。 */
@@ -620,15 +642,14 @@ function plannedTarget(
 ): { readonly lineage: Lineage; readonly readiness: PlannedReadiness } {
   const issues: string[] = [];
   if (input.horseId !== undefined) {
-    const { issues: candidateIssues, lineage } = checkCandidate(state.candidate, state.line);
+    const { issues: candidateIssues, lineage } = checkCandidate(
+      state.candidate,
+      state.line,
+      input.position,
+    );
     issues.push(...candidateIssues);
     if (!isSettableReadiness(input.readiness)) {
       issues.push('請選擇就緒狀態');
-    }
-    if (lineage !== undefined && lineage.position !== input.position) {
-      issues.push(
-        `這匹馬屬於第 ${String(lineage.position)} 系，不能指定為第 ${String(input.position)} 系的預定後繼`,
-      );
     }
     if (state.duties.some((duty) => isOnDuty(duty) && duty.horseId === input.horseId)) {
       issues.push('這匹馬已經是現任');
@@ -713,7 +734,9 @@ export async function setPlannedSuccessor(
           startYear: stored.currentYear,
         };
         const ended =
-          existing === undefined ? undefined : { ...existing, endYear: stored.currentYear };
+          existing === undefined
+            ? undefined
+            : { ...existing, endYear: plannedEndYear(existing, stored.currentYear) };
         const event = userEvent(context, {
           subjectId: line.id,
           type: 'plannedSuccessorChanged',
@@ -816,10 +839,7 @@ export async function confirmPlannedBirth(
     if (born.horse.sex !== 'male') {
       fail(['產駒是牝馬，預定後繼失效；請重新指定或取消']);
     }
-    const { issues, lineage } = checkCandidate(born, state.line);
-    if (lineage !== undefined && lineage.position !== position) {
-      fail([`產駒屬於第 ${String(lineage.position)} 系`]);
-    }
+    const { issues, lineage } = checkCandidate(born, state.line, position);
     if (issues.length > 0 || lineage === undefined) {
       fail(issues);
     }
@@ -842,7 +862,7 @@ export async function endPlannedSuccessor(
 ): Promise<PlannedDuty> {
   return updatePlanned(context, position, (planned, _state, game) => ({
     ...planned,
-    endYear: game.currentYear,
+    endYear: plannedEndYear(planned, game.currentYear),
   }));
 }
 
@@ -977,7 +997,7 @@ export async function loadBrotherComparison(
         name: displayName(book, item),
         birthYear: item.birthYear,
         age: ageInYear(item.birthYear, book.game.currentYear),
-        damName: nameOf(dam) ?? item.damName,
+        damName: dam === undefined ? item.damName : displayName(book, dam),
         sp: foal?.sp,
         st: foal?.st,
         subParams: foal?.subParams ?? {},
@@ -989,11 +1009,12 @@ export async function loadBrotherComparison(
       };
     })
     .sort((a, b) => (a.birthYear ?? 0) - (b.birthYear ?? 0) || a.id.localeCompare(b.id));
+  const sireOf = book.horses.get(horse.sireId);
   return {
     position: lineage.position,
     generation: lineage.generation,
     sireId: horse.sireId,
-    sireName: nameOf(book.horses.get(horse.sireId)) ?? horse.sireName,
+    sireName: sireOf === undefined ? horse.sireName : displayName(book, sireOf),
     rows,
   };
 }
@@ -1007,7 +1028,7 @@ export interface BrotherChoiceInput {
 
 /**
  * 從兄弟比較選定現任（需求規格 7.7、LINE-30、LINE-31）：只接受同系同代、同父且已成為種牡馬的兄弟，
- * 其他一律阻止；已有在崗現任時改由選定者擔任，原現任標示已被取代。
+ * 其他一律阻止；已有同父兄弟在崗時改由選定者擔任，原現任標示已被取代。在崗者不是同父兄弟時改用更換現任。
  */
 export async function chooseCurrentFromBrothers(
   context: ServiceContext,
@@ -1045,8 +1066,18 @@ export async function chooseCurrentFromBrothers(
         if (onDuty?.horseId === horse.id) {
           fail(['這匹馬已經是現任']);
         }
+        if (
+          onDuty !== undefined &&
+          state.onDutyHorses.get(onDuty.horseId)?.sireId !== input.sireId
+        ) {
+          fail(['目前的現任不是同父兄弟，請使用更換現任']);
+        }
         if (onDuty === undefined) {
-          const { issues, lineage: checked } = checkCandidate(state.candidate, state.line);
+          const { issues, lineage: checked } = checkCandidate(
+            state.candidate,
+            state.line,
+            input.position,
+          );
           if (issues.length > 0 || checked === undefined || state.line === undefined) {
             fail(issues);
           }
@@ -1067,7 +1098,7 @@ export async function chooseCurrentFromBrothers(
             position: input.position,
             generation: input.generation,
             successorId: horse.id,
-            reason: 'brotherBetter',
+            reason: 'betterBrother',
             effectiveYear: stored.currentYear,
             stallionNo: undefined,
             forceReplaced: true,
@@ -1089,7 +1120,7 @@ export interface CurrentStallionView {
   readonly dutyStatus: DutyStatus;
   readonly startYear: number;
   readonly endYear: number | undefined;
-  readonly changeReason: ChangeReason | undefined;
+  readonly replaceReason: ReplaceReason | undefined;
   readonly successorName: string | undefined;
   readonly age: number | undefined;
   /** 在崗且達到種牡馬提醒年齡（LINE-26）。 */
@@ -1202,7 +1233,7 @@ export async function loadStallionOverview(context: ServiceContext): Promise<Sta
             dutyStatus: duty.dutyStatus,
             startYear: duty.startYear,
             endYear: duty.endYear,
-            changeReason: duty.changeReason,
+            replaceReason: duty.replaceReason,
             successorName: successorNameOf(book, duty.successorId),
             age,
             reminder: isOnDuty(duty) && reachesStallionReminderAge(age, reminderAge),

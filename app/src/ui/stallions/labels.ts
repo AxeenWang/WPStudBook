@@ -1,4 +1,4 @@
-import type { ChangeReason, DutyStatus, PlannedReadiness } from '../../domain/stallion-duty.ts';
+import type { ReplaceReason, DutyStatus, PlannedReadiness } from '../../domain/stallion-duty.ts';
 import type { BrotherStatus } from '../../services/stallions.ts';
 
 export const DUTY_STATUS_LABELS: Readonly<Record<DutyStatus, string>> = {
@@ -11,12 +11,12 @@ export const DUTY_STATUS_LABELS: Readonly<Record<DutyStatus, string>> = {
 export const READINESS_LABELS: Readonly<Record<PlannedReadiness, string>> = {
   unborn: '尚未誕生',
   racing: '競走中',
-  retiredPendingAssignment: '已引退待指定',
+  retiredPending: '已引退待指定',
   inService: '正式供用',
 };
 
-export const CHANGE_REASON_LABELS: Readonly<Record<ChangeReason, string>> = {
-  brotherBetter: '弟弟較優',
+export const REPLACE_REASON_LABELS: Readonly<Record<ReplaceReason, string>> = {
+  betterBrother: '弟弟較優',
   predecessorRetired: '前任引退',
   unavailable: '無法供用',
   recovery: '斷血補系',

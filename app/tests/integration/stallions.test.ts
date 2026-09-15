@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { saveBreeding } from '../../src/services/breedings.ts';
+import { exportBackup } from '../../src/services/backup.ts';
+import { listStallionOptions, saveBreeding } from '../../src/services/breedings.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
 import { nameFoal, registerFoal } from '../../src/services/foals.ts';
 import { changeCurrentYear } from '../../src/services/games.ts';
+import { loadMareMatingRatings, saveMatingRating } from '../../src/services/mating-ratings.ts';
+import { loadPedigree } from '../../src/services/pedigree.ts';
 import { updateReminderSettings } from '../../src/services/settings.ts';
 import {
   assignCurrentStallion,
@@ -41,7 +44,7 @@ describe('自家種牡馬接任與更換現任（需求規格 7.7、9.6）', () 
       position: 1,
       generation: 1,
       successorId: stud.youngerId,
-      reason: 'brotherBetter',
+      reason: 'betterBrother',
       effectiveYear: 1970,
       stallionNo: '',
     });
@@ -55,12 +58,12 @@ describe('自家種牡馬接任與更換現任（需求規格 7.7、9.6）', () 
       name: 'オオトリモナーコス1969',
       dutyStatus: 'replaced',
       endYear: 1970,
-      changeReason: 'brotherBetter',
+      replaceReason: 'betterBrother',
       successorName: 'テストヒンバ1970',
     });
     const elder = await getHorse(context.database, stud.gameId, stud.elderId);
     expect(elder).toMatchObject({
-      fate: { kind: 'stallion', gameYear: 1970 },
+      fate: { kind: 'becameStallion', gameYear: 1970 },
       stageNumbers: [{ stage: 'stallion', number: 0x0101, gameYear: 1970, source: 'manual' }],
     });
     const events = await readRecords(context.database, stud.gameId, 'events');
@@ -71,7 +74,7 @@ describe('自家種牡馬接任與更換現任（需求規格 7.7、9.6）', () 
         after: {
           dutyStatus: 'replaced',
           endYear: 1970,
-          changeReason: 'brotherBetter',
+          replaceReason: 'betterBrother',
           successorId: stud.youngerId,
         },
       }),
@@ -113,10 +116,10 @@ describe('自家種牡馬接任與更換現任（需求規格 7.7、9.6）', () 
     const elderDuty = (await currentOfFirstLine(context)).find(
       (item) => item.horseId === stud.elderId,
     );
-    expect(elderDuty).toMatchObject({ dutyStatus: 'retired', changeReason: 'predecessorRetired' });
+    expect(elderDuty).toMatchObject({ dutyStatus: 'retired', replaceReason: 'predecessorRetired' });
   });
 
-  it('接任前再次核對父母、系與代數（需求規格 9.6）；母駒、自由配種、已有在崗現任時阻止', async () => {
+  it('[PED-08] 接任前再次核對父母、系與代數（需求規格 9.6）；母駒、自由配種、已有在崗現任時阻止', async () => {
     const context = await open();
     const stud = await raiseStud(context);
     await expect(
@@ -368,9 +371,9 @@ describe('預定後繼（需求規格 7.7）', () => {
       readiness: 'racing',
       startYear: 1970,
     });
-    await updatePlannedReadiness(context, { position: 1, readiness: 'retiredPendingAssignment' });
+    await updatePlannedReadiness(context, { position: 1, readiness: 'retiredPending' });
     expect(await loadHorseStallionStatus(context, colt.horse.id)).toMatchObject({
-      planned: { position: 1, readiness: 'retiredPendingAssignment' },
+      planned: { position: 1, readiness: 'retiredPending' },
     });
 
     await assignCurrentStallion(context, { horseId: colt.horse.id, stallionNo: '' });
@@ -393,7 +396,7 @@ describe('預定後繼（需求規格 7.7）', () => {
     ).toEqual([
       { generation: 2, readiness: 'unborn', breedingId: breeding.id },
       { generation: 2, readiness: 'racing', horseId: colt.horse.id },
-      { generation: 2, readiness: 'retiredPendingAssignment', horseId: colt.horse.id },
+      { generation: 2, readiness: 'retiredPending', horseId: colt.horse.id },
       { generation: 2, readiness: 'inService', horseId: colt.horse.id, endYear: 1971 },
     ]);
   });
@@ -457,12 +460,159 @@ describe('預定後繼（需求規格 7.7）', () => {
         horseId: stud.elderId,
         readiness: 'racing',
       }),
-    ).rejects.toThrow('第 1 系尚未開啟');
+    ).rejects.toThrow('這匹馬屬於第 1 系，不是第 2 系');
     await expect(
       setPlannedSuccessor(context, { position: 1, horseId: stud.daughterId, readiness: 'racing' }),
     ).rejects.toThrow('只有公馬可以成為種牡馬');
     await expect(setPlannedSuccessor(context, { position: 1 })).rejects.toThrow(
       '請選擇一匹公駒或一筆已受胎的配種',
     );
+  });
+});
+
+describe('種牡馬任期的邊界（子計畫 2-4 審查）', () => {
+  const open = useServiceContexts();
+
+  it('更換現任回填較早的生效年、或調回目前遊戲年後結束預定後繼 → 結束年不早於指定年，仍可備份', async () => {
+    const context = await open();
+    const stud = await raiseStud(context);
+    await assignCurrentStallion(context, { horseId: stud.elderId, stallionNo: '' });
+    await changeCurrentYear(context, 1972);
+    const planned = await setPlannedSuccessor(context, {
+      position: 1,
+      horseId: stud.youngerId,
+      readiness: 'racing',
+    });
+    await replaceCurrentStallion(context, {
+      position: 1,
+      generation: 1,
+      successorId: stud.youngerId,
+      reason: 'other',
+      effectiveYear: 1971,
+      stallionNo: '',
+    });
+    const duties = await listStallionDuties(context.database, stud.gameId);
+    expect(duties.find((duty) => duty.id === planned.id)).toMatchObject({
+      readiness: 'inService',
+      startYear: 1972,
+      endYear: 1972,
+    });
+
+    await setPlannedSuccessor(context, { position: 1, horseId: stud.elderId, readiness: 'racing' });
+    await changeCurrentYear(context, 1970);
+    const ended = await endPlannedSuccessor(context, 1);
+    expect(ended).toMatchObject({ startYear: 1972, endYear: 1972 });
+    await expect(exportBackup(context)).resolves.toMatchObject({ gameId: stud.gameId });
+  });
+
+  it('預定後繼的產駒出生後未確認就直接接任 → 指定改存馬匹並結束為正式供用', async () => {
+    const context = await open();
+    const stud = await raiseStud(context);
+    const breeding = await saveBreeding(context, {
+      mareId: stud.daughterId,
+      gameYear: 1970,
+      breedingType: 'designated',
+      stallionId: stud.founderId,
+      stallionName: '',
+      conception: '受胎',
+    });
+    const planned = await setPlannedSuccessor(context, { position: 1, breedingId: breeding.id });
+    await changeCurrentYear(context, 1971);
+    const colt = await registerFoal(context, foalInput(stud.daughterId, 1971));
+
+    await assignCurrentStallion(context, { horseId: colt.horse.id, stallionNo: '' });
+
+    const duties = await listStallionDuties(context.database, stud.gameId);
+    expect(duties.find((duty) => duty.id === planned.id)).toEqual({
+      id: planned.id,
+      position: 1,
+      generation: 2,
+      role: 'planned',
+      horseId: colt.horse.id,
+      readiness: 'inService',
+      startYear: 1970,
+      endYear: 1971,
+    });
+    expect((await loadStallionOverview(context)).lines[0]?.planned).toBeUndefined();
+    await expect(exportBackup(context)).resolves.toMatchObject({ gameId: stud.gameId });
+  });
+
+  it('兄弟比較不能取代不同父的在崗現任，改用更換現任', async () => {
+    const context = await open();
+    const stud = await raiseStud(context);
+    await assignCurrentStallion(context, { horseId: stud.elderId, stallionNo: '' });
+    const breedingOf = (mareId: string, stallionId: string) =>
+      saveBreeding(context, {
+        mareId,
+        gameYear: 1970,
+        breedingType: 'designated',
+        stallionId,
+        stallionName: '',
+        conception: '受胎',
+      });
+    const elderDamId = String((await getHorse(context.database, stud.gameId, stud.elderId))?.damId);
+    // 第 1 系 1 代 × 起點母馬、零代 × 第 1 系 1 代母馬，都產出第 1 系 2 代，但父馬不同。
+    await breedingOf(elderDamId, stud.elderId);
+    await breedingOf(stud.daughterId, stud.founderId);
+    await changeCurrentYear(context, 1971);
+    const byElder = await registerFoal(context, foalInput(elderDamId, 1971));
+    const byFounder = await registerFoal(context, foalInput(stud.daughterId, 1971));
+    await assignCurrentStallion(context, { horseId: byElder.horse.id, stallionNo: '' });
+    await registerAsStallion(context, { horseId: byFounder.horse.id, stallionNo: '' });
+
+    await expect(
+      chooseCurrentFromBrothers(context, {
+        position: 1,
+        generation: 2,
+        sireId: stud.founderId,
+        horseId: byFounder.horse.id,
+      }),
+    ).rejects.toThrow('目前的現任不是同父兄弟，請使用更換現任');
+  });
+
+  it('已登記的種牡馬接任時補填馬番号不重複寫入成為種牡馬事件；未命名的自家種牡馬以追蹤名顯示', async () => {
+    const context = await open();
+    const stud = await raiseStud(context);
+    await registerAsStallion(context, { horseId: stud.elderId, stallionNo: '0x0001' });
+    await assignCurrentStallion(context, { horseId: stud.elderId, stallionNo: '0x0002' });
+
+    const elder = await getHorse(context.database, stud.gameId, stud.elderId);
+    expect(elder?.stageNumbers.map((item) => item.number)).toEqual([1, 2]);
+    const events = await readRecords(context.database, stud.gameId, 'events');
+    expect(events.filter((event) => event.type === 'becameStallion')).toHaveLength(1);
+
+    expect(await listStallionOptions(context)).toContainEqual({
+      id: stud.elderId,
+      name: 'オオトリモナーコス1969',
+      lineage: { position: 1, generation: 1 },
+    });
+    await saveMatingRating(context, {
+      mareId: stud.daughterId,
+      stallionId: stud.elderId,
+      overallGrade: 'C',
+      explosivePower: undefined,
+    });
+    expect((await loadMareMatingRatings(context, stud.daughterId)).rows[0]?.stallionName).toBe(
+      'オオトリモナーコス1969',
+    );
+  });
+
+  it('被取代後又選回在崗的種牡馬，血緣表不標示已被取代', async () => {
+    const context = await open();
+    const stud = await raiseStud(context);
+    await registerAsStallion(context, { horseId: stud.youngerId, stallionNo: '' });
+    await assignCurrentStallion(context, { horseId: stud.elderId, stallionNo: '' });
+    const choose = (horseId: string) =>
+      chooseCurrentFromBrothers(context, {
+        position: 1,
+        generation: 1,
+        sireId: stud.founderId,
+        horseId,
+      });
+    await choose(stud.youngerId);
+    await choose(stud.elderId);
+
+    expect((await loadPedigree(context, stud.elderId, 1)).root.statuses).toEqual([]);
+    expect((await loadPedigree(context, stud.youngerId, 1)).root.statuses).toEqual(['replaced']);
   });
 });

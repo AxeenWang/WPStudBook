@@ -8,18 +8,13 @@ export const DUTY_STATUSES = ['onDuty', 'replaced', 'outOfService', 'retired'] a
 export type DutyStatus = (typeof DUTY_STATUSES)[number];
 
 /** 預定後繼的就緒狀態：尚未誕生、競走中、已引退待指定、正式供用（需求規格 7.7）。 */
-export const PLANNED_READINESS = [
-  'unborn',
-  'racing',
-  'retiredPendingAssignment',
-  'inService',
-] as const;
+export const PLANNED_READINESS = ['unborn', 'racing', 'retiredPending', 'inService'] as const;
 
 export type PlannedReadiness = (typeof PLANNED_READINESS)[number];
 
 /** 更換現任的原因：弟弟較優、前任引退、無法供用、斷血補系、遊戲依史實引退、其他（需求規格 7.7）。 */
-export const CHANGE_REASONS = [
-  'brotherBetter',
+export const REPLACE_REASONS = [
+  'betterBrother',
   'predecessorRetired',
   'unavailable',
   'recovery',
@@ -27,7 +22,7 @@ export const CHANGE_REASONS = [
   'other',
 ] as const;
 
-export type ChangeReason = (typeof CHANGE_REASONS)[number];
+export type ReplaceReason = (typeof REPLACE_REASONS)[number];
 
 interface DutyBase {
   readonly id: string;
@@ -44,7 +39,7 @@ export interface CurrentDuty extends DutyBase {
   readonly horseId: string;
   readonly dutyStatus: DutyStatus;
   /** 由更換現任結束任期時的原因。 */
-  readonly changeReason?: ChangeReason;
+  readonly replaceReason?: ReplaceReason;
   /** 由更換現任結束任期時的後任馬匹。 */
   readonly successorId?: string;
 }
@@ -72,14 +67,14 @@ export function isActivePlanned(duty: StallionDuty): duty is PlannedDuty {
 }
 
 /** 更換現任後前任的狀態：引退類原因為已引退，無法供用為退出生產行列，其他為已被取代。 */
-export function statusForChangeReason(reason: ChangeReason): DutyStatus {
+export function statusForReplaceReason(reason: ReplaceReason): DutyStatus {
   switch (reason) {
     case 'predecessorRetired':
     case 'historicalRetirement':
       return 'retired';
     case 'unavailable':
       return 'outOfService';
-    case 'brotherBetter':
+    case 'betterBrother':
     case 'recovery':
     case 'other':
       return 'replaced';

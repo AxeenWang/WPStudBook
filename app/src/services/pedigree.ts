@@ -83,14 +83,15 @@ export async function loadPedigree(
     } else if (mare === undefined && foalsById.get(id)?.disposition === 'sold') {
       statuses.add('sold');
     }
-    const own = duties
+    // 只看最近一次現任任期：被取代後又選回在崗的種牡馬不標示已被取代。
+    const latest = duties
       .filter((duty): duty is CurrentDuty => duty.role === 'current' && duty.horseId === id)
-      .sort((a, b) => b.startYear - a.startYear);
-    if (own.some((duty) => duty.dutyStatus === 'replaced')) {
-      statuses.add('replaced');
-    }
-    const latest = own[0]?.dutyStatus;
-    if (latest === 'retired' || latest === 'outOfService') {
+      .sort(
+        (a, b) =>
+          b.startYear - a.startYear ||
+          Number(b.dutyStatus === 'onDuty') - Number(a.dutyStatus === 'onDuty'),
+      )[0]?.dutyStatus;
+    if (latest !== undefined && latest !== 'onDuty') {
       statuses.add(latest);
     }
     return [...statuses];
