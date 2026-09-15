@@ -6,7 +6,9 @@ export type ServiceErrorCode =
   | 'backupRejected'
   | 'checkpointNotFound'
   | 'checkpointInvalid'
-  | 'deliveryFailed';
+  | 'deliveryFailed'
+  /** 有使用者尚未確認的警告（需求規格 5.2）。 */
+  | 'confirmationRequired';
 
 export class ServiceError extends Error {
   readonly code: ServiceErrorCode;

@@ -62,6 +62,11 @@ export async function requireCurrentGame(context: ServiceContext): Promise<Game>
   return game;
 }
 
+/** 寫入遊戲局資料時一併寫回的遊戲局紀錄：更新時間與最後寫入的程式版本（需求規格 12.1）。 */
+export function touchGame(context: ServiceContext, game: Game, now: string): Game {
+  return { ...game, updatedAt: now, appVersion: context.appVersion };
+}
+
 async function requireGame(context: ServiceContext, gameId: string): Promise<Game> {
   const game = await getGame(context.database, gameId);
   if (game === undefined) {
