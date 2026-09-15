@@ -69,7 +69,7 @@ export async function createCheckpoint(
       gameId: game.id,
       checkpoint,
       bytes: file.bytes,
-      selectPruned: (all) => selectCheckpointsToPrune(all, retention),
+      selectPruned: (all) => selectCheckpointsToPrune(all, retention, checkpoint.id),
     }),
   );
   return { checkpoint, prunedIds };

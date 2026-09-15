@@ -32,10 +32,14 @@ export function sortCheckpointsByCreation(checkpoints: readonly Checkpoint[]): C
   return [...checkpoints].sort(compareCreation);
 }
 
-/** 需求規格 12.4：總數超過保留數時，由舊到新刪除未釘選者，直到不超過保留數或沒有未釘選者。 */
+/**
+ * 需求規格 12.4：總數超過保留數時，由舊到新刪除未釘選者，直到不超過保留數或沒有候選為止。
+ * 剛建立的檢查點（keepId）不清除；其餘都已釘選時總數可以超過保留數。
+ */
 export function selectCheckpointsToPrune(
   checkpoints: readonly Checkpoint[],
   retention: number,
+  keepId?: string,
 ): string[] {
   let excess = checkpoints.length - retention;
   const pruned: string[] = [];
@@ -43,7 +47,7 @@ export function selectCheckpointsToPrune(
     if (excess <= 0) {
       break;
     }
-    if (!item.pinned) {
+    if (!item.pinned && item.id !== keepId) {
       pruned.push(item.id);
       excess -= 1;
     }
