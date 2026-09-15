@@ -67,3 +67,49 @@ export async function insertMare(
     return records;
   });
 }
+
+export interface MareWriteState {
+  readonly game: Game;
+  readonly mare: Mare;
+}
+
+export interface MareChange {
+  readonly mare: Mare;
+  readonly events: readonly HistoryEvent[];
+}
+
+export interface MareModification {
+  readonly gameId: string;
+  readonly mareId: string;
+  readonly touch: GameTouch;
+  /** 以寫入交易內讀出的遊戲局與母馬產生新紀錄與事件；只能做同步運算，丟出錯誤時整筆交易中止。 */
+  readonly apply: (current: MareWriteState) => MareChange;
+}
+
+/** 修改一匹母馬：單一交易讀出遊戲局與母馬，寫回母馬、事件與遊戲局更新時間。 */
+export async function modifyMare(
+  database: AppDatabase,
+  modification: MareModification,
+): Promise<Mare> {
+  const { gameId, mareId } = modification;
+  const transaction = database.transaction(['games', 'mares', 'events'], 'readwrite');
+  const games = transaction.objectStore('games');
+  const mares = transaction.objectStore('mares');
+  return completeTransaction(transaction, async () => {
+    const storedRequest: Promise<unknown> = mares.get([gameId, mareId]);
+    const [game, stored] = await Promise.all([readGameForWrite(games, gameId), storedRequest]);
+    const mare = toMare(stored);
+    if (mare === undefined) {
+      throw new Error(`找不到繁殖牝馬 ${mareId}`);
+    }
+    const change = modification.apply({ game, mare });
+    await Promise.all([
+      games.put({ ...game, ...modification.touch }),
+      mares.put(withGameId(gameId, change.mare)),
+      ...change.events.map((event) =>
+        transaction.objectStore('events').add(withGameId(gameId, event)),
+      ),
+    ]);
+    return change.mare;
+  });
+}

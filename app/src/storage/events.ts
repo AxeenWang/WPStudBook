@@ -21,3 +21,19 @@ export async function listEventsOfType(
     .filter(isPlainRecord)
     .map((value) => withoutGameId(value) as unknown as HistoryEvent);
 }
+
+/** 以 [gameId, subjectId] 索引讀取同一對象的事件（順序不保證，呼叫端自行排序）。 */
+export async function listEventsForSubject(
+  database: AppDatabase,
+  gameId: string,
+  subjectId: string,
+): Promise<HistoryEvent[]> {
+  const values: unknown[] = await database.getAllFromIndex('events', 'subjectId', [
+    gameId,
+    subjectId,
+  ]);
+  // 本機資料由本程式寫入，只確認是物件；備份匯入的事件由 validateCollections 驗證。
+  return values
+    .filter(isPlainRecord)
+    .map((value) => withoutGameId(value) as unknown as HistoryEvent);
+}

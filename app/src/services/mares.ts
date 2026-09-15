@@ -1,5 +1,13 @@
 import { DEFAULT_GAME_SETTINGS, MIN_GAME_YEAR, type Game } from '../domain/game.ts';
-import { formatAbilityNo, parseAbilityNo, toBaseName, type Horse } from '../domain/horse.ts';
+import type { HistoryEvent, HistoryEventType } from '../domain/history-event.ts';
+import {
+  formatAbilityNo,
+  parseAbilityNo,
+  toBaseName,
+  type Horse,
+  type StageNumber,
+} from '../domain/horse.ts';
+import type { JsonObject, JsonValue } from '../domain/json.ts';
 import { LINE_POSITIONS, isLinePosition, type LinePosition } from '../domain/line.ts';
 import {
   MARE_GROUP_TARGET,
@@ -10,21 +18,32 @@ import {
   checkSubstituteSire,
   defaultMarketOrigin,
   isMareSite,
+  isSameGroup,
   marketGroupFor,
   type AssignedMareGroup,
   type Mare,
+  type MareGroup,
   type MareOrigin,
   type MareSite,
   type MarketGroupIssue,
   type UndeterminedReason,
   type YearPlan,
 } from '../domain/mare.ts';
+import {
+  isBreedingTally,
+  isKodashi,
+  isVitalityValue,
+  type MareYearly,
+  type Vitality,
+} from '../domain/mare-yearly.ts';
+import type { Timing } from '../domain/timing.ts';
 import { listConceptionsInYear } from '../storage/breedings.ts';
+import { listEventsForSubject } from '../storage/events.ts';
 import { readGameSettings } from '../storage/games.ts';
-import { findHorseByIdentity, getHorsesByIds } from '../storage/horses.ts';
+import { findHorseByIdentity, getHorse, getHorsesByIds } from '../storage/horses.ts';
 import { listLines } from '../storage/lines.ts';
-import { listMareYearly } from '../storage/mare-yearly.ts';
-import { insertMare, listMares } from '../storage/mares.ts';
+import { getMareYearly, listMareYearly, writeMareYearly } from '../storage/mare-yearly.ts';
+import { getMare, insertMare, listMares, modifyMare } from '../storage/mares.ts';
 import { listSystemMapEntries } from '../storage/system-map.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
@@ -337,5 +356,387 @@ export async function loadMareHerd(context: ServiceContext): Promise<MareHerd> {
         settings,
       }),
     ),
+  };
+}
+
+async function requireMare(context: ServiceContext, gameId: string, mareId: string): Promise<Mare> {
+  const mare = await getMare(context.database, gameId, mareId);
+  if (mare === undefined) {
+    throw new ServiceError('invalidInput', '找不到這匹繁殖牝馬');
+  }
+  return mare;
+}
+
+/** 賣出、轉場與今年計畫只適用於繁殖牝馬圈內的母馬。 */
+function requireProducing(mare: Mare): void {
+  if (mare.status !== 'producing') {
+    throw new ServiceError('invalidInput', '這匹繁殖牝馬已離圈');
+  }
+}
+
+export interface SellPreview {
+  readonly name: string;
+  readonly group: MareGroup;
+  /** 賣出前所在母馬群（同系同代的自家與替代母馬）的生產中數；待指定用途為 undefined。 */
+  readonly producingInGroup: number | undefined;
+}
+
+/** 賣出前顯示影響（需求規格 8.5）。 */
+export async function previewSellMare(
+  context: ServiceContext,
+  mareId: string,
+): Promise<SellPreview> {
+  const game = await requireCurrentGame(context);
+  const mare = await requireMare(context, game.id, mareId);
+  requireProducing(mare);
+  const [horse, mares] = await Promise.all([
+    getHorse(context.database, game.id, mareId),
+    listMares(context.database, game.id),
+  ]);
+  const { group } = mare;
+  return {
+    name: horse?.fullName ?? horse?.officialName ?? mareId,
+    group,
+    producingInGroup:
+      group.kind === 'unassigned'
+        ? undefined
+        : mares.filter(
+            (item) =>
+              item.status === 'producing' &&
+              isSameGroup(item.group, group.position, group.generation),
+          ).length,
+  };
+}
+
+/**
+ * 賣出（需求規格 8.5）：只改狀態為已離圈並保存事件，來源、紀錄與血緣都保留；
+ * 自家母馬有姊妹接替狀態時一併改為已售出（8.9）。玩家不能讓母馬引退，沒有退役操作。
+ */
+export async function sellMare(context: ServiceContext, mareId: string): Promise<Mare> {
+  const game = await requireCurrentGame(context);
+  requireProducing(await requireMare(context, game.id, mareId));
+  const now = context.now().toISOString();
+  return trackWrite(context, () =>
+    modifyMare(context.database, {
+      gameId: game.id,
+      mareId,
+      touch: gameTouch(context, now),
+      apply: ({ game: stored, mare }) => {
+        requireProducing(mare);
+        const { succession } = mare;
+        const sold: Mare = {
+          ...mare,
+          status: 'left',
+          leftReason: 'sold',
+          ...(succession === undefined ? {} : { succession: 'sold' as const }),
+        };
+        const event = userEvent(context, {
+          subjectId: mareId,
+          type: 'mareSold',
+          gameYear: stored.currentYear,
+          occurredAt: now,
+          before: { status: 'producing', ...(succession === undefined ? {} : { succession }) },
+          after: {
+            status: 'left',
+            leftReason: 'sold',
+            ...(succession === undefined ? {} : { succession: 'sold' }),
+          },
+        });
+        return { mare: sold, events: [event] };
+      },
+    }),
+  );
+}
+
+export interface TransferInput {
+  readonly mareId: string;
+  /** 未選擇時傳入 NaN。 */
+  readonly site: number;
+  readonly month: number | undefined;
+  readonly week: number | undefined;
+}
+
+function isIntegerBetween(value: number | undefined, min: number, max: number): value is number {
+  return value !== undefined && Number.isInteger(value) && value >= min && value <= max;
+}
+
+/** 轉場（需求規格 8.6）：保存原據點、新據點、年、時點與來源；時點由使用者填寫月與週。 */
+export async function transferMare(context: ServiceContext, input: TransferInput): Promise<Mare> {
+  const game = await requireCurrentGame(context);
+  const { mareId, month, week } = input;
+  const site = isMareSite(input.site) ? input.site : undefined;
+  const issues: string[] = [];
+  if (site === undefined) {
+    issues.push('請選擇新據點');
+  }
+  if (!isIntegerBetween(month, 1, 12)) {
+    issues.push('月份必須是 1～12 的整數');
+  }
+  if (!isIntegerBetween(week, 1, 5)) {
+    issues.push('週必須是 1～5 的整數');
+  }
+  if (issues.length > 0 || site === undefined || month === undefined || week === undefined) {
+    throw new ServiceError('invalidInput', issues.join('；'));
+  }
+  const mare = await requireMare(context, game.id, mareId);
+  requireProducing(mare);
+  if (mare.site === site) {
+    throw new ServiceError('invalidInput', '新據點與目前據點相同');
+  }
+  const timing: Timing = { month, week };
+  const now = context.now().toISOString();
+  return trackWrite(context, () =>
+    modifyMare(context.database, {
+      gameId: game.id,
+      mareId,
+      touch: gameTouch(context, now),
+      apply: ({ game: stored, mare: current }) => {
+        requireProducing(current);
+        if (current.site === site) {
+          throw new ServiceError('invalidInput', '新據點與目前據點相同');
+        }
+        const event = userEvent(context, {
+          subjectId: mareId,
+          type: 'mareTransferred',
+          gameYear: stored.currentYear,
+          timing,
+          occurredAt: now,
+          before: { site: current.site },
+          after: { site },
+        });
+        return { mare: { ...current, site }, events: [event] };
+      },
+    }),
+  );
+}
+
+export interface YearPlanInput {
+  readonly mareId: string;
+  readonly plan: YearPlan;
+}
+
+/** 今年計畫（需求規格 8.7）：連同目前遊戲年保存，不寫事件。 */
+export async function setYearPlan(context: ServiceContext, input: YearPlanInput): Promise<Mare> {
+  const game = await requireCurrentGame(context);
+  requireProducing(await requireMare(context, game.id, input.mareId));
+  const now = context.now().toISOString();
+  return trackWrite(context, () =>
+    modifyMare(context.database, {
+      gameId: game.id,
+      mareId: input.mareId,
+      touch: gameTouch(context, now),
+      apply: ({ game: stored, mare }) => {
+        requireProducing(mare);
+        return {
+          mare: { ...mare, yearPlan: { plan: input.plan, gameYear: stored.currentYear } },
+          events: [],
+        };
+      },
+    }),
+  );
+}
+
+export interface VitalityInput {
+  /** 空白表示沒有這份快照（顯示待更新），不是 0。 */
+  readonly value: number | undefined;
+  readonly boosted: boolean;
+}
+
+export interface MareYearlyInput {
+  readonly mareId: string;
+  readonly vitalityMay: VitalityInput;
+  readonly vitalityJuly: VitalityInput;
+  readonly kodashi: number | undefined;
+  readonly breedingYears: number | undefined;
+  readonly breedingCount: number | undefined;
+}
+
+const YEARLY_FIELDS = [
+  'vitalityMay',
+  'vitalityJuly',
+  'kodashi',
+  'breedingYears',
+  'breedingCount',
+] as const;
+
+function yearlyValue(record: MareYearly | undefined): JsonObject {
+  const value: Record<string, JsonValue> = {};
+  for (const field of YEARLY_FIELDS) {
+    const item = record?.[field];
+    if (item !== undefined) {
+      value[field] = item;
+    }
+  }
+  return value;
+}
+
+function vitalityFrom(input: VitalityInput, label: string, issues: string[]): Vitality | undefined {
+  if (input.value === undefined) {
+    if (input.boosted) {
+      issues.push(`${label}沒有數值時不能勾選増強中`);
+    }
+    return undefined;
+  }
+  if (!isVitalityValue(input.value)) {
+    issues.push(`${label}必須是 0～100 的整數`);
+    return undefined;
+  }
+  return { state: 'confirmed', value: input.value, boosted: input.boosted };
+}
+
+/**
+ * 以表單內容取代目前遊戲年的年度資料（需求規格 8.7、8.8）：空白欄位不保存，
+ * 活力 0 與仔出 0 是有效值。人工更正保存前後值（mareYearlyChanged）。
+ */
+export async function saveMareYearly(
+  context: ServiceContext,
+  input: MareYearlyInput,
+): Promise<MareYearly> {
+  const game = await requireCurrentGame(context);
+  const issues: string[] = [];
+  const vitalityMay = vitalityFrom(input.vitalityMay, '5 月活力', issues);
+  const vitalityJuly = vitalityFrom(input.vitalityJuly, '7 月活力', issues);
+  const { kodashi, breedingYears, breedingCount } = input;
+  if (kodashi !== undefined && !isKodashi(kodashi)) {
+    issues.push('仔出必須是 0～15 的整數');
+  }
+  if (breedingYears !== undefined && !isBreedingTally(breedingYears)) {
+    issues.push('繁殖年數必須是 0～99 的整數');
+  }
+  if (breedingCount !== undefined && !isBreedingTally(breedingCount)) {
+    issues.push('繁殖頭數必須是 0～99 的整數');
+  }
+  if (issues.length > 0) {
+    throw new ServiceError('invalidInput', issues.join('；'));
+  }
+  const { mareId } = input;
+  await requireMare(context, game.id, mareId);
+  const fields = {
+    ...(vitalityMay === undefined ? {} : { vitalityMay }),
+    ...(vitalityJuly === undefined ? {} : { vitalityJuly }),
+    ...(kodashi === undefined ? {} : { kodashi }),
+    ...(breedingYears === undefined ? {} : { breedingYears }),
+    ...(breedingCount === undefined ? {} : { breedingCount }),
+  };
+  const submitted = JSON.stringify(
+    yearlyValue({ id: '', horseId: mareId, gameYear: 0, ...fields }),
+  );
+  const unchanged = (record: MareYearly | undefined) =>
+    JSON.stringify(yearlyValue(record)) === submitted;
+  if (unchanged(await getMareYearly(context.database, game.id, mareId, game.currentYear))) {
+    throw new ServiceError('invalidInput', '年度資料沒有變更');
+  }
+  const now = context.now().toISOString();
+  return trackWrite(context, () =>
+    writeMareYearly(context.database, {
+      gameId: game.id,
+      horseId: mareId,
+      touch: gameTouch(context, now),
+      apply: ({ game: stored, record }) => {
+        if (unchanged(record)) {
+          throw new ServiceError('invalidInput', '年度資料沒有變更');
+        }
+        const next: MareYearly = {
+          id: record?.id ?? context.newId(),
+          horseId: mareId,
+          gameYear: stored.currentYear,
+          ...fields,
+        };
+        const event = userEvent(context, {
+          subjectId: mareId,
+          type: 'mareYearlyChanged',
+          gameYear: stored.currentYear,
+          occurredAt: now,
+          before: record === undefined ? undefined : yearlyValue(record),
+          after: yearlyValue(next),
+        });
+        return { record: next, events: [event] };
+      },
+    }),
+  );
+}
+
+export interface MareHistoryItem {
+  readonly id: string;
+  readonly type: HistoryEventType;
+  readonly gameYear: number;
+  readonly timing: Timing | undefined;
+  readonly occurredAt: string;
+  /** 只有轉場事件才有。 */
+  readonly fromSite: MareSite | undefined;
+  readonly toSite: MareSite | undefined;
+}
+
+export interface MareDetail {
+  readonly card: MareCard;
+  /** 已格式化為 0x 開頭的 4 位十六進位。 */
+  readonly abilityNo: string | undefined;
+  readonly birthYear: number | undefined;
+  readonly sireName: string | undefined;
+  readonly damName: string | undefined;
+  readonly originNote: string | undefined;
+  readonly stageNumbers: readonly StageNumber[];
+  /** 新到舊。 */
+  readonly yearly: readonly MareYearly[];
+  readonly currentYearly: MareYearly | undefined;
+  /** 新到舊。 */
+  readonly history: readonly MareHistoryItem[];
+}
+
+function siteIn(value: JsonValue | undefined): MareSite | undefined {
+  if (typeof value !== 'object') {
+    return undefined;
+  }
+  const site: unknown = Reflect.get(value, 'site');
+  return typeof site === 'number' && isMareSite(site) ? site : undefined;
+}
+
+function toHistoryItem(event: HistoryEvent): MareHistoryItem {
+  const transfer = event.type === 'mareTransferred';
+  return {
+    id: event.id,
+    type: event.type,
+    gameYear: event.gameYear,
+    timing: event.timing,
+    occurredAt: event.occurredAt,
+    fromSite: transfer ? siteIn(event.before) : undefined,
+    toSite: transfer ? siteIn(event.after) : undefined,
+  };
+}
+
+/** 詳情欄資料（需求規格 13.4）：概要、年度資料與歷程。 */
+export async function loadMareDetail(context: ServiceContext, mareId: string): Promise<MareDetail> {
+  const game = await requireCurrentGame(context);
+  const mare = await requireMare(context, game.id, mareId);
+  const [horse, allYearly, events, storedSettings, conceptions] = await Promise.all([
+    getHorse(context.database, game.id, mareId),
+    listMareYearly(context.database, game.id),
+    listEventsForSubject(context.database, game.id, mareId),
+    readGameSettings(context.database, game.id),
+    listConceptionsInYear(context.database, game.id, game.currentYear),
+  ]);
+  const yearly = allYearly
+    .filter((record) => record.horseId === mareId)
+    .sort((a, b) => b.gameYear - a.gameYear);
+  return {
+    card: buildMareCard({
+      mare,
+      horse,
+      yearly,
+      conception: conceptions.get(mareId),
+      currentYear: game.currentYear,
+      settings: storedSettings ?? DEFAULT_GAME_SETTINGS,
+    }),
+    abilityNo: horse?.abilityNo === undefined ? undefined : formatAbilityNo(horse.abilityNo),
+    birthYear: horse?.birthYear,
+    sireName: horse?.sireName,
+    damName: horse?.damName,
+    originNote: mare.originNote,
+    stageNumbers: horse?.stageNumbers ?? [],
+    yearly,
+    currentYearly: yearly.find((record) => record.gameYear === game.currentYear),
+    history: events
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.id.localeCompare(a.id))
+      .map(toHistoryItem),
   };
 }
