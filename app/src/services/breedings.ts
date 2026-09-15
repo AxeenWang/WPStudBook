@@ -35,10 +35,12 @@ export interface StallionOption {
   readonly lineage: Lineage;
 }
 
-/** 配種表單的內部種牡馬選項：有任期的種牡馬（依系位置、代數與馬名排序）。 */
+/** 配種表單的內部種牡馬選項：擔任過現任的種牡馬（依系位置、代數與馬名排序）。 */
 export async function listStallionOptions(context: ServiceContext): Promise<StallionOption[]> {
   const game = await requireCurrentGame(context);
-  const duties = await listStallionDuties(context.database, game.id);
+  const duties = (await listStallionDuties(context.database, game.id)).filter(
+    (duty) => duty.role === 'current',
+  );
   const horses = await getHorsesByIds(
     context.database,
     game.id,

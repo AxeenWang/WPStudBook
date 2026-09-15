@@ -145,6 +145,86 @@ describe('資料表欄位規則', () => {
     ]);
   });
 
+  it('stallionDuties：現任離開在崗時有卸任年、更換原因與後任；在崗時不可有', () => {
+    const replaced = {
+      ...DUTY,
+      dutyStatus: 'replaced',
+      endYear: 1970,
+      changeReason: 'brotherBetter',
+      successorId: 'h2',
+    };
+    expectProblems('stallionDuties', replaced, [
+      [omit(replaced, 'endYear'), 'endYear'],
+      [{ ...replaced, endYear: 1967 }, '不可早於'],
+      [{ ...replaced, changeReason: 'older' }, 'changeReason'],
+      [{ ...replaced, successorId: 'h1' }, '後任不可是自己'],
+      [{ ...DUTY, endYear: 1970 }, '在崗的現任不可有'],
+      [{ ...DUTY, readiness: 'racing' }, '現任不可有 readiness'],
+      [omit(DUTY, 'horseId'), 'horseId'],
+    ]);
+    expect(check('stallionDuties', { ...replaced, dutyStatus: 'retired' })).toBeUndefined();
+    expect(check('stallionDuties', omit(replaced, 'successorId'))).toBeUndefined();
+  });
+
+  it('stallionDuties：預定後繼尚未誕生時只指向配種，其他就緒狀態只指向馬匹', () => {
+    const unborn = {
+      id: 'd2',
+      position: 1,
+      generation: 2,
+      breedingId: 'b1',
+      role: 'planned',
+      readiness: 'unborn',
+      startYear: 1970,
+    };
+    const racing = { ...omit(unborn, 'breedingId'), horseId: 'h2', readiness: 'racing' };
+    expectProblems('stallionDuties', unborn, [
+      [{ ...unborn, readiness: 'waiting' }, 'readiness'],
+      [{ ...unborn, horseId: 'h2' }, '只有 breedingId'],
+      [omit(unborn, 'breedingId'), '只有 breedingId'],
+      [{ ...unborn, dutyStatus: 'onDuty' }, '預定後繼不可有'],
+      [{ ...racing, breedingId: 'b1' }, '只有 horseId'],
+      [omit(racing, 'horseId'), '只有 horseId'],
+    ]);
+    expect(check('stallionDuties', racing)).toBeUndefined();
+    expect(
+      check('stallionDuties', { ...racing, readiness: 'inService', endYear: 1971 }),
+    ).toBeUndefined();
+  });
+
+  it('horses：去向只接受成為種牡馬與遊戲年', () => {
+    const stallion = { ...HORSE, sex: 'male', fate: { kind: 'stallion', gameYear: 1972 } };
+    expectProblems('horses', stallion, [
+      [{ ...stallion, fate: { kind: 'broodmare', gameYear: 1972 } }, 'fate'],
+      [{ ...stallion, fate: { kind: 'stallion' } }, 'fate'],
+    ]);
+  });
+
+  it('[BRD-18] matingRatings：總合評價只有 S、A、B、C、D，爆發力為整數，兩者至少一項', () => {
+    const rating = {
+      id: 'r1',
+      stallionId: 'h2',
+      mareId: 'h1',
+      gameYear: 1970,
+      overallGrade: 'S',
+      explosivePower: 16,
+    };
+    for (const grade of ['S', 'A', 'B', 'C', 'D']) {
+      expect(check('matingRatings', { ...rating, overallGrade: grade })).toBeUndefined();
+    }
+    expect(check('matingRatings', omit(rating, 'overallGrade'))).toBeUndefined();
+    expect(check('matingRatings', { ...rating, explosivePower: 0 })).toBeUndefined();
+    expectProblems('matingRatings', omit(rating, 'explosivePower'), [
+      [{ ...rating, overallGrade: 'E' }, 'overallGrade'],
+      [{ ...rating, overallGrade: 's' }, 'overallGrade'],
+      [{ ...rating, explosivePower: 1.5 }, 'explosivePower'],
+      [{ ...rating, explosivePower: 100 }, 'explosivePower'],
+      [omit(omit(rating, 'overallGrade'), 'explosivePower'), '至少要有一項'],
+      [omit(rating, 'stallionId'), 'stallionId'],
+      [omit(rating, 'mareId'), 'mareId'],
+      [{ ...rating, gameYear: 999 }, 'gameYear'],
+    ]);
+  });
+
   it('events：對象、型別、遊戲年、時點、來源與現實時間', () => {
     expect(
       check('events', {

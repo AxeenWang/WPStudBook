@@ -1,9 +1,16 @@
-import type { DutyStatus, StallionRole } from '../../domain/stallion-duty.ts';
+import type {
+  ChangeReason,
+  DutyStatus,
+  PlannedReadiness,
+  StallionRole,
+} from '../../domain/stallion-duty.ts';
 import type { HistoryEventSource, HistoryEventType } from '../../domain/history-event.ts';
 import type { BreedingType, Conception } from '../../domain/breeding.ts';
 import type { Aptitude, Disposition, SubParamGrade, SubParamKey } from '../../domain/foal.ts';
 import type { AliasKind, LifeStage, RecordSource, Sex } from '../../domain/horse.ts';
+import type { HorseFate } from '../../domain/horse.ts';
 import type { ImportType } from '../../domain/import-type.ts';
+import type { OverallGrade } from '../../domain/mating-rating.ts';
 import type {
   AssignedGroupKind,
   LeftReason,
@@ -59,6 +66,22 @@ const DUTY_STATUSES = enumSet<DutyStatus>({
   outOfService: true,
   retired: true,
 });
+const PLANNED_READINESS_VALUES = enumSet<PlannedReadiness>({
+  unborn: true,
+  racing: true,
+  retiredPendingAssignment: true,
+  inService: true,
+});
+const CHANGE_REASON_VALUES = enumSet<ChangeReason>({
+  brotherBetter: true,
+  predecessorRetired: true,
+  unavailable: true,
+  recovery: true,
+  historicalRetirement: true,
+  other: true,
+});
+const HORSE_FATE_KINDS = enumSet<HorseFate['kind']>({ stallion: true });
+const OVERALL_GRADE_VALUES = enumSet<OverallGrade>({ S: true, A: true, B: true, C: true, D: true });
 const EVENT_TYPES = enumSet<HistoryEventType>({
   gameYearChanged: true,
   schemaMigrated: true,
@@ -77,6 +100,10 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   horseNamed: true,
   successionChanged: true,
   lineGenerationEstablished: true,
+  becameStallion: true,
+  stallionDutyChanged: true,
+  plannedSuccessorChanged: true,
+  matingRatingRecorded: true,
 });
 const EVENT_SOURCES = enumSet<HistoryEventSource>({ user: true, migration: true });
 const MARE_GROUP_KINDS = enumSet<AssignedGroupKind | 'unassigned'>({
@@ -213,6 +240,10 @@ function isAlias(value: unknown): boolean {
   );
 }
 
+function isHorseFate(value: unknown): boolean {
+  return isPlainRecord(value) && isOneOf(HORSE_FATE_KINDS, value.kind) && isYear(value.gameYear);
+}
+
 const HORSE_TEXT_FIELDS = [
   'fullName',
   'baseName',
@@ -236,6 +267,7 @@ function checkHorse(record: StoredRecord): string | undefined {
     [record.sireId !== record.id && record.damId !== record.id, '父母不可是自己'],
     [isArrayOf(record.stageNumbers, isStageNumber), 'stageNumbers 必須是階段馬番号陣列'],
     [isArrayOf(record.aliases, isAlias), 'aliases 必須是名稱別名陣列'],
+    [optional(record, 'fate', isHorseFate), 'fate 必須含有效的 kind 與 gameYear'],
   ]);
 }
 
@@ -281,15 +313,62 @@ function checkSystemMapEntry(record: StoredRecord): string | undefined {
   ]);
 }
 
-function checkStallionDuty(record: StoredRecord): string | undefined {
+function checkCurrentDuty(record: StoredRecord): string | undefined {
+  const onDuty = record.dutyStatus === 'onDuty';
   return firstProblem([
-    [isIntegerIn(record.position, 1, 8), 'position 必須是 1～8 的整數'],
-    [isIntegerIn(record.generation, 0, 9999), 'generation 必須是 0 以上的整數'],
-    [isNonEmptyString(record.horseId), 'horseId 必須是非空字串'],
-    [isOneOf(STALLION_ROLES, record.role), 'role 必須是 current 或 planned'],
+    [isNonEmptyString(record.horseId), '現任的 horseId 必須是非空字串'],
     [isOneOf(DUTY_STATUSES, record.dutyStatus), 'dutyStatus 不是有效的任期狀態'],
-    [isYear(record.startYear), 'startYear 必須是 1000～9999 的整數'],
+    [!('readiness' in record) && !('breedingId' in record), '現任不可有 readiness 或 breedingId'],
+    onDuty
+      ? [
+          !('endYear' in record) && !('changeReason' in record) && !('successorId' in record),
+          '在崗的現任不可有 endYear、changeReason 或 successorId',
+        ]
+      : [isYear(record.endYear), '已離開在崗的現任必須有 endYear'],
+    [
+      optional(record, 'changeReason', (value) => isOneOf(CHANGE_REASON_VALUES, value)),
+      'changeReason 不是有效的更換原因',
+    ],
+    [optional(record, 'successorId', isNonEmptyString), 'successorId 必須是非空字串'],
+    [record.successorId !== record.horseId, '後任不可是自己'],
   ]);
+}
+
+function checkPlannedDuty(record: StoredRecord): string | undefined {
+  const unborn = record.readiness === 'unborn';
+  return firstProblem([
+    [isOneOf(PLANNED_READINESS_VALUES, record.readiness), 'readiness 不是有效的就緒狀態'],
+    [
+      !('dutyStatus' in record) && !('changeReason' in record) && !('successorId' in record),
+      '預定後繼不可有 dutyStatus、changeReason 或 successorId',
+    ],
+    unborn
+      ? [
+          isNonEmptyString(record.breedingId) && !('horseId' in record),
+          '尚未誕生的預定後繼必須只有 breedingId',
+        ]
+      : [
+          isNonEmptyString(record.horseId) && !('breedingId' in record),
+          '已誕生的預定後繼必須只有 horseId',
+        ],
+    [optional(record, 'endYear', isYear), 'endYear 必須是 1000～9999 的整數'],
+  ]);
+}
+
+function checkStallionDuty(record: StoredRecord): string | undefined {
+  const { startYear, endYear } = record;
+  return (
+    firstProblem([
+      [isIntegerIn(record.position, 1, 8), 'position 必須是 1～8 的整數'],
+      [isIntegerIn(record.generation, 0, 9999), 'generation 必須是 0 以上的整數'],
+      [isOneOf(STALLION_ROLES, record.role), 'role 必須是 current 或 planned'],
+      [isYear(startYear), 'startYear 必須是 1000～9999 的整數'],
+      [
+        !isInteger(endYear) || !isInteger(startYear) || endYear >= startYear,
+        'endYear 不可早於 startYear',
+      ],
+    ]) ?? (record.role === 'current' ? checkCurrentDuty(record) : checkPlannedDuty(record))
+  );
 }
 
 function checkMareGroup(group: unknown): string | undefined {
@@ -463,6 +542,23 @@ function checkFoal(record: StoredRecord): string | undefined {
   ]);
 }
 
+function checkMatingRating(record: StoredRecord): string | undefined {
+  return firstProblem([
+    [isNonEmptyString(record.stallionId), 'stallionId 必須是非空字串'],
+    [isNonEmptyString(record.mareId), 'mareId 必須是非空字串'],
+    [isYear(record.gameYear), 'gameYear 必須是 1000～9999 的整數'],
+    [
+      optional(record, 'overallGrade', (value) => isOneOf(OVERALL_GRADE_VALUES, value)),
+      'overallGrade 必須是 S、A、B、C 或 D',
+    ],
+    [
+      optional(record, 'explosivePower', (value) => isIntegerIn(value, 0, 99)),
+      'explosivePower 必須是 0～99 的整數',
+    ],
+    ['overallGrade' in record || 'explosivePower' in record, '總合評價與爆發力至少要有一項'],
+  ]);
+}
+
 /** 各資料表的欄位規則（設計決策 5.4 節）；未列出的資料表只檢查通用規則。 */
 export const RECORD_RULES: Readonly<Partial<Record<RecordCollection, RecordRule>>> = {
   horses: checkHorse,
@@ -473,5 +569,6 @@ export const RECORD_RULES: Readonly<Partial<Record<RecordCollection, RecordRule>
   mareYearly: checkMareYearly,
   breedings: checkBreeding,
   foals: checkFoal,
+  matingRatings: checkMatingRating,
   events: checkEvent,
 };

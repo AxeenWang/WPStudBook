@@ -153,7 +153,7 @@ describe('能力與適性（需求規格 4.7、9.3）', () => {
   });
 
   it('種牡馬的系與代數：有任期時取任期，否則取他本身的產駒紀錄', () => {
-    expect(stallionLineage([{ position: 1, generation: 0 }], undefined)).toEqual({
+    expect(stallionLineage([{ position: 1, generation: 0, role: 'current' }], undefined)).toEqual({
       position: 1,
       generation: 0,
     });
@@ -192,6 +192,7 @@ function foalCard(id: string, overrides: Partial<FoalCard> = {}): FoalCard {
     kodashi: undefined,
     note: undefined,
     isMare: false,
+    isStallion: false,
     ...overrides,
   };
 }
