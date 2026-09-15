@@ -250,15 +250,42 @@ describe('遊戲局服務', () => {
     expect(await readRecords(context.database, game.id, 'events')).toHaveLength(1);
   });
 
-  it('[DATA-11] 目前遊戲年已被其他寫入改成目標年份時，交易內的檢查拒絕且不寫入事件', async () => {
+  it('[DATA-11] 操作開始後其他寫入把目前遊戲年改成目標年份時，交易內的檢查拒絕且不寫入事件', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '第一局', startYear: 1968 });
-    await context.database.put('games', { ...game, currentYear: 1969 });
 
-    await expect(changeCurrentYear(context, 1969)).rejects.toMatchObject({
-      code: 'invalidInput',
+    let injectionDone = false;
+    let concurrentPutPromise: Promise<IDBValidKey> | undefined;
+    const originalTransaction = context.database.transaction.bind(context.database);
+    const mockTransaction = vi.spyOn(context.database, 'transaction');
+
+    mockTransaction.mockImplementation(function (
+      storeNames: ArrayLike<string>,
+      mode?: IDBTransactionMode,
+    ) {
+      // 在第一個 readwrite 交易開始時注入並行寫入
+      if (mode === 'readwrite' && !injectionDone) {
+        injectionDone = true;
+        // 不 await，讓 put 與後續交易並行
+        concurrentPutPromise = context.database.put('games', { ...game, currentYear: 1969 });
+      }
+      return originalTransaction.call(context.database, storeNames, mode);
     });
-    expect(await readRecords(context.database, game.id, 'events')).toEqual([]);
+
+    try {
+      await expect(changeCurrentYear(context, 1969)).rejects.toMatchObject({
+        code: 'invalidInput',
+      });
+      if (concurrentPutPromise) {
+        await concurrentPutPromise;
+      }
+      expect(injectionDone).toBe(true);
+      expect((await getCurrentGame(context))?.currentYear).toBe(1969);
+      expect((await getCurrentGame(context))?.updatedAt).toBe(game.updatedAt);
+      expect(await readRecords(context.database, game.id, 'events')).toEqual([]);
+    } finally {
+      mockTransaction.mockRestore();
+    }
   });
 
   it('[DATA-10] 刪除前顯示筆數；局名不符時拒絕且資料不變', async () => {
