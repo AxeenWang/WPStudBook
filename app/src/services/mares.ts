@@ -78,6 +78,11 @@ export function isCeExtended(kodashi: number): boolean {
   return isCeExtendedKodashi(kodashi);
 }
 
+/** 馬番号與能力番号的顯示格式（設計決策 5.3 節）。 */
+export function horseNumberText(value: number): string {
+  return formatAbilityNo(value);
+}
+
 export interface MarketMareInput {
   readonly position: number;
   readonly generation: number;

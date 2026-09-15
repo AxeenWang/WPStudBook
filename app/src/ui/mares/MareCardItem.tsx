@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Button } from 'react-aria-components';
 import type { MareCard } from '../../services/mare-list.ts';
 import { isCeExtended } from '../../services/mares.ts';
@@ -14,6 +15,7 @@ import {
 interface MareCardItemProps {
   readonly card: MareCard;
   readonly vitalityThreshold: number | undefined;
+  readonly onOpen: () => void;
   readonly onSell: () => void;
 }
 
@@ -25,12 +27,30 @@ function femaleLineText(femaleLine: string | undefined): string {
 }
 
 /** 母馬卡片（需求規格 13.3、UI-01）：只有「賣出」，沒有退役操作（8.5）。 */
-export function MareCardItem({ card, vitalityThreshold, onSell }: MareCardItemProps) {
+export function MareCardItem({ card, vitalityThreshold, onOpen, onSell }: MareCardItemProps) {
+  const nameButton = useRef<HTMLButtonElement>(null);
   const { vitality, month } = card.vitality;
   return (
-    <li className="mare-card">
+    <li
+      className="mare-card"
+      onClick={(event) => {
+        // 點卡片開啟詳情欄；卡片內的按鈕與表單元件各自處理。先把焦點移到馬名按鈕，關閉後焦點回到這裡。
+        if (
+          event.target instanceof Element &&
+          event.target.closest('button, a, input, select, textarea') !== null
+        ) {
+          return;
+        }
+        nameButton.current?.focus();
+        onOpen();
+      }}
+    >
       <article aria-label={card.name}>
-        <h4 className="mare-name">{card.name}</h4>
+        <h4 className="mare-name">
+          <Button ref={nameButton} className="link-button" onPress={onOpen}>
+            {card.name}
+          </Button>
+        </h4>
         <dl>
           <div>
             <dt>代數</dt>

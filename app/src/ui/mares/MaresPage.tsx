@@ -23,6 +23,7 @@ import { useServiceQuery } from '../ServicesContext.tsx';
 import { AddMareForm } from './AddMareForm.tsx';
 import { formatGenerationTab, formatGroupTitle, formatMareGroup } from './labels.ts';
 import { MareCardItem } from './MareCardItem.tsx';
+import { MareDetailDrawer, type MareDetailTab } from './MareDetailDrawer.tsx';
 import { MareFilters } from './MareFilters.tsx';
 import { SellMareDialog } from './SellMareDialog.tsx';
 
@@ -39,6 +40,8 @@ function MareHerdView() {
   const [adding, setAdding] = useState(false);
   const [sellingId, setSellingId] = useState<string>();
   const [messages, setMessages] = useState<readonly string[]>();
+  const [detailId, setDetailId] = useState<string>();
+  const [detailTab, setDetailTab] = useState<MareDetailTab>('summary');
 
   if (herd === undefined) {
     return error === undefined ? <p role="status">載入中…</p> : <p role="alert">{error}</p>;
@@ -166,6 +169,9 @@ function MareHerdView() {
               key={card.id}
               card={card}
               vitalityThreshold={herd.vitalityThreshold}
+              onOpen={() => {
+                setDetailId(card.id);
+              }}
               onSell={() => {
                 setSellingId(card.id);
               }}
@@ -204,6 +210,16 @@ function MareHerdView() {
             if (soldName !== undefined) {
               setMessages([`已賣出「${soldName}」，可在狀態篩選選「已離圈」查看紀錄`]);
             }
+          }}
+        />
+      )}
+      {detailId !== undefined && (
+        <MareDetailDrawer
+          mareId={detailId}
+          tab={detailTab}
+          onTabChange={setDetailTab}
+          onClose={() => {
+            setDetailId(undefined);
           }}
         />
       )}

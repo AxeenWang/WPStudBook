@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeHistoryItem,
   ORIGIN_LABELS,
   SITE_LABELS,
   YEAR_PLAN_LABELS,
@@ -48,5 +49,29 @@ describe('母馬的介面文字', () => {
       '等待活力',
       '輪休',
     ]);
+  });
+  it('[MARE-19] 歷程文字含遊戲年、時點、事件與轉場前後據點', () => {
+    expect(
+      describeHistoryItem({
+        id: 'e1',
+        type: 'mareTransferred',
+        gameYear: 1968,
+        timing: { month: 5, week: 1 },
+        occurredAt: '2026-09-15T00:00:00.000Z',
+        fromSite: 32,
+        toSite: 34,
+      }),
+    ).toBe('1968 年 5 月 1 週：轉場（日本 → 美國）');
+    expect(
+      describeHistoryItem({
+        id: 'e2',
+        type: 'mareAdded',
+        gameYear: 1969,
+        timing: undefined,
+        occurredAt: '2026-09-15T00:00:00.000Z',
+        fromSite: undefined,
+        toSite: undefined,
+      }),
+    ).toBe('1969 年：加入母馬群');
   });
 });

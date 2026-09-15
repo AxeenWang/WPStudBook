@@ -1,3 +1,6 @@
+import type { HistoryEventType } from '../../domain/history-event.ts';
+import type { LifeStage } from '../../domain/horse.ts';
+import type { MareHistoryItem } from '../../services/mares.ts';
 import type {
   LeftReason,
   MareGroup,
@@ -83,4 +86,33 @@ export function formatStatus(status: MareStatus, leftReason: LeftReason | undefi
     return '生產中';
   }
   return leftReason === undefined ? '已離圈' : `已離圈（${LEFT_REASON_LABELS[leftReason]}）`;
+}
+
+export const STAGE_LABELS: Readonly<Record<LifeStage, string>> = {
+  foal: '幼駒',
+  racehorse: '競走馬',
+  broodmare: '繁殖牝馬',
+  stallion: '種牡馬',
+};
+
+export const MARE_EVENT_LABELS: Readonly<Partial<Record<HistoryEventType, string>>> = {
+  horseCreated: '建立馬匹',
+  mareAdded: '加入母馬群',
+  mareSold: '賣出',
+  mareTransferred: '轉場',
+  mareYearlyChanged: '更正年度資料',
+};
+
+/** 歷程一列：「1968 年 5 月 1 週：轉場（日本 → 美國）」。 */
+export function describeHistoryItem(item: MareHistoryItem): string {
+  const label = MARE_EVENT_LABELS[item.type] ?? item.type;
+  const timing =
+    item.timing === undefined
+      ? ''
+      : ` ${String(item.timing.month)} 月 ${String(item.timing.week)} 週`;
+  const sites =
+    item.fromSite !== undefined && item.toSite !== undefined
+      ? `（${SITE_LABELS[item.fromSite]} → ${SITE_LABELS[item.toSite]}）`
+      : '';
+  return `${String(item.gameYear)} 年${timing}：${label}${sites}`;
 }

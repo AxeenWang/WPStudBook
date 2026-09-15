@@ -185,6 +185,69 @@
         font-weight: 700;
         outline: 2px solid #1f6feb;
       }
+      .mare-card {
+        cursor: pointer;
+      }
+      .link-button {
+        padding: 0;
+        border: none;
+        background: none;
+        color: #1565c0;
+        font: inherit;
+        font-weight: 700;
+        text-align: left;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      .drawer-overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        justify-content: flex-end;
+        background: rgb(0 0 0 / 30%);
+      }
+      .drawer {
+        width: min(32rem, 100%);
+        height: 100%;
+        overflow-y: auto;
+        border-left: 0.5rem solid #1565c0;
+        background: #eef4fc;
+      }
+      .drawer-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .detail-list,
+      .detail-list dd {
+        margin: 0;
+      }
+      .detail-list > div {
+        display: flex;
+        gap: 0.5rem;
+      }
+      .detail-list dt {
+        flex: 0 0 6rem;
+        color: #64758a;
+      }
+      [role='tablist'] {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-block: 0.5rem;
+      }
+      [role='tab'] {
+        padding: 0.25rem 0.5rem;
+        border: 1px solid #d5dbe3;
+        border-radius: 0.25rem;
+        cursor: pointer;
+      }
+      [role='tab'][aria-selected='true'] {
+        border-color: #1565c0;
+        background: #fff;
+        font-weight: 700;
+      }
       [role='alert'] {
         color: #b00020;
       }
