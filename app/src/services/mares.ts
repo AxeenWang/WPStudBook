@@ -1,4 +1,4 @@
-import { MIN_GAME_YEAR, type Game } from '../domain/game.ts';
+import { DEFAULT_GAME_SETTINGS, MIN_GAME_YEAR, type Game } from '../domain/game.ts';
 import { formatAbilityNo, parseAbilityNo, toBaseName, type Horse } from '../domain/horse.ts';
 import { LINE_POSITIONS, isLinePosition, type LinePosition } from '../domain/line.ts';
 import {
@@ -19,14 +19,18 @@ import {
   type UndeterminedReason,
   type YearPlan,
 } from '../domain/mare.ts';
-import { findHorseByIdentity } from '../storage/horses.ts';
+import { listConceptionsInYear } from '../storage/breedings.ts';
+import { readGameSettings } from '../storage/games.ts';
+import { findHorseByIdentity, getHorsesByIds } from '../storage/horses.ts';
 import { listLines } from '../storage/lines.ts';
-import { insertMare } from '../storage/mares.ts';
+import { listMareYearly } from '../storage/mare-yearly.ts';
+import { insertMare, listMares } from '../storage/mares.ts';
 import { listSystemMapEntries } from '../storage/system-map.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
+import { buildMareCard, type MareCard } from './mare-list.ts';
 import { normalizeSystemInput } from './system-map.ts';
 import { requireAcceptedWarnings, type ServiceWarning } from './warnings.ts';
 
@@ -291,4 +295,47 @@ export async function addMarketMare(
     }),
   );
   return { horse, mare, notices };
+}
+
+export interface MareHerd {
+  readonly currentYear: number;
+  readonly highAgeReminderAge: number;
+  readonly vitalityThreshold: number | undefined;
+  readonly openedPositions: readonly LinePosition[];
+  readonly cards: readonly MareCard[];
+}
+
+/** 母馬群清單資料：目前遊戲局全部母馬的卡片；篩選、排序與分頁由 mare-list.ts 在記憶體中處理。 */
+export async function loadMareHerd(context: ServiceContext): Promise<MareHerd> {
+  const game = await requireCurrentGame(context);
+  const [mares, yearly, lines, storedSettings, conceptions] = await Promise.all([
+    listMares(context.database, game.id),
+    listMareYearly(context.database, game.id),
+    listLines(context.database, game.id),
+    readGameSettings(context.database, game.id),
+    listConceptionsInYear(context.database, game.id, game.currentYear),
+  ]);
+  const horses = await getHorsesByIds(
+    context.database,
+    game.id,
+    mares.map((mare) => mare.id),
+  );
+  const settings = storedSettings ?? DEFAULT_GAME_SETTINGS;
+  const yearlyByHorse = Map.groupBy(yearly, (record) => record.horseId);
+  return {
+    currentYear: game.currentYear,
+    highAgeReminderAge: settings.highAgeReminderAge,
+    vitalityThreshold: settings.vitalityThreshold,
+    openedPositions: lines.map((line) => line.position),
+    cards: mares.map((mare) =>
+      buildMareCard({
+        mare,
+        horse: horses.get(mare.id),
+        yearly: yearlyByHorse.get(mare.id) ?? [],
+        conception: conceptions.get(mare.id),
+        currentYear: game.currentYear,
+        settings,
+      }),
+    ),
+  };
 }
