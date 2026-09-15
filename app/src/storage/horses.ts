@@ -13,14 +13,22 @@ function aliasNames(aliases: unknown): unknown[] {
     : [];
 }
 
-/** 完整馬名、基本馬名、正式馬名與別名，去除重複後加上 gameId（IndexedDB 多值索引不能與複合鍵合用）。 */
+function nameKey(gameId: string, name: string): string {
+  return `${gameId}${NAME_KEY_SEPARATOR}${name}`;
+}
+
+/**
+ * 完整馬名、基本馬名、正式馬名與別名，去除前後空白後捨棄空字串並去除重複，再加上 gameId
+ * （IndexedDB 多值索引不能與複合鍵合用）。名稱比較可忽略前後空白（需求規格 11.3）；紀錄本身的名稱保留原文。
+ */
 export function horseNameKeys(gameId: string, horse: object): string[] {
   const fieldNames = NAME_FIELDS.map((field): unknown => Reflect.get(horse, field));
   const aliases: unknown = Reflect.get(horse, 'aliases');
-  const names = [...fieldNames, ...aliasNames(aliases)].filter(
-    (name): name is string => typeof name === 'string' && name !== '',
-  );
-  return [...new Set(names)].map((name) => `${gameId}${NAME_KEY_SEPARATOR}${name}`);
+  const names = [...fieldNames, ...aliasNames(aliases)]
+    .filter((name): name is string => typeof name === 'string')
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
+  return [...new Set(names)].map((name) => nameKey(gameId, name));
 }
 
 /** 寫入 horses 的紀錄：加上 gameId 並依名稱重建 nameKeys。 */
@@ -60,7 +68,7 @@ export async function findHorseByIdentity(
   return toHorse(value);
 }
 
-/** 精確名稱查詢（完整馬名、基本馬名、正式馬名或別名），只找同一局。 */
+/** 精確名稱查詢（完整馬名、基本馬名、正式馬名或別名），忽略前後空白，只找同一局。 */
 export async function findHorsesByName(
   database: AppDatabase,
   gameId: string,
@@ -69,7 +77,7 @@ export async function findHorsesByName(
   const values: unknown[] = await database.getAllFromIndex(
     'horses',
     'nameKeys',
-    `${gameId}${NAME_KEY_SEPARATOR}${name}`,
+    nameKey(gameId, name.trim()),
   );
   return values.map(toHorse).filter((horse) => horse !== undefined);
 }
