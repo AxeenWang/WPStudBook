@@ -18,3 +18,16 @@ export async function createGameViaUi(page: Page, name: string, startYear = 1968
   await form.getByRole('button', { name: '建立遊戲局' }).click();
   await expect(page.getByTestId('status-game')).toHaveText(name);
 }
+
+export async function changeYearViaUi(page: Page, year: number): Promise<void> {
+  const form = page.getByRole('form', { name: '目前遊戲年' });
+  const input = form.getByLabel('新的目前遊戲年');
+  await input.fill(String(year));
+  await input.blur();
+  await form.getByRole('button', { name: '更新遊戲年' }).click();
+  await page
+    .getByRole('dialog', { name: '確認更新目前遊戲年' })
+    .getByRole('button', { name: '確認更新' })
+    .click();
+  await expect(page.getByTestId('status-year')).toHaveText(`${String(year)} 年`);
+}
