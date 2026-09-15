@@ -119,7 +119,7 @@ export interface YearChangePreview {
   readonly checkpointsAfterTarget: number;
 }
 
-export function checkYearChange(game: Game, toYear: number): void {
+function checkYearChange(game: Game, toYear: number): void {
   const issue = checkGameYears(game.startYear, toYear);
   if (issue !== undefined) {
     throw new ServiceError('invalidInput', INPUT_MESSAGES[issue]);

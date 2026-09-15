@@ -79,3 +79,20 @@ export async function writeMareYearly(
     return change.record;
   });
 }
+
+/** 以 [gameId, horseId, gameYear] 索引讀取一匹母馬全部年度的資料（遊戲年由小到大）。 */
+export async function listMareYearlyForHorse(
+  database: AppDatabase,
+  gameId: string,
+  horseId: string,
+): Promise<MareYearly[]> {
+  const values: unknown[] = await database.getAllFromIndex(
+    'mareYearly',
+    'horseId+gameYear',
+    IDBKeyRange.bound(
+      [gameId, horseId, Number.NEGATIVE_INFINITY],
+      [gameId, horseId, Number.POSITIVE_INFINITY],
+    ),
+  );
+  return values.map(toMareYearly).filter((record) => record !== undefined);
+}

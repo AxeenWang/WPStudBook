@@ -118,7 +118,7 @@ describe('遊戲局提醒設定', () => {
     expect((await loadMareHerd(context)).cards.some((item) => item.belowThreshold)).toBe(false);
   });
 
-  it('輸入錯誤或沒有變更時拒絕，不寫入；寫入時保留交易內讀出的其他設定', async () => {
+  it('輸入錯誤或沒有變更時拒絕，不寫入', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '設定局', startYear: 1968 });
 
@@ -138,15 +138,35 @@ describe('遊戲局提醒設定', () => {
       updateReminderSettings(context, { highAgeReminderAge: 18, vitalityThreshold: undefined }),
     ).rejects.toMatchObject({ code: 'invalidInput', message: '設定沒有變更' });
     expect(await readRecords(context.database, game.id, 'events')).toEqual([]);
+  });
 
-    // 其他寫入（例如之後子計畫的檢查點保留數設定）在操作開始後改了設定。
-    const stored = await readGameSettings(context.database, game.id);
-    await context.database.put('gameSettings', {
-      ...stored,
-      gameId: game.id,
-      checkpointRetention: 7,
+  it('寫入時使用交易內讀出的設定：操作開始後才寫入的其他設定不會被覆蓋', async () => {
+    let injectWrite: (() => void) | undefined;
+    const context = await openContext({
+      now: () => {
+        const inject = injectWrite;
+        injectWrite = undefined;
+        inject?.();
+        return new Date('2026-09-15T00:00:00.000Z');
+      },
     });
+    const game = await createGame(context, { name: '設定局', startYear: 1968 });
+    const stored = await readGameSettings(context.database, game.id);
+    // 服務先讀出設定再取時間；在取時間時排入另一個寫入（例如之後子計畫的檢查點保留數設定），
+    // 它的交易比服務的寫入交易先建立，所以會先提交。
+    let concurrentWrite: Promise<unknown> | undefined;
+    injectWrite = () => {
+      concurrentWrite = context.database.put('gameSettings', {
+        ...stored,
+        gameId: game.id,
+        checkpointRetention: 7,
+      });
+    };
+
     await updateReminderSettings(context, { highAgeReminderAge: 18, vitalityThreshold: 0 });
+
+    expect(concurrentWrite).toBeDefined();
+    await concurrentWrite;
     expect(await readGameSettings(context.database, game.id)).toMatchObject({
       checkpointRetention: 7,
       vitalityThreshold: 0,

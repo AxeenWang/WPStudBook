@@ -38,12 +38,17 @@ import {
   type Vitality,
 } from '../domain/mare-yearly.ts';
 import type { Timing } from '../domain/timing.ts';
-import { listConceptionsInYear } from '../storage/breedings.ts';
+import { getConception, listConceptionsInYear } from '../storage/breedings.ts';
 import { listEventsForSubject } from '../storage/events.ts';
 import { readGameSettings } from '../storage/games.ts';
 import { findHorseByIdentity, getHorse, getHorsesByIds } from '../storage/horses.ts';
 import { listLines } from '../storage/lines.ts';
-import { getMareYearly, listMareYearly, writeMareYearly } from '../storage/mare-yearly.ts';
+import {
+  getMareYearly,
+  listMareYearly,
+  listMareYearlyForHorse,
+  writeMareYearly,
+} from '../storage/mare-yearly.ts';
 import { getMare, insertMare, listMares, modifyMare } from '../storage/mares.ts';
 import { listSystemMapEntries } from '../storage/system-map.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
@@ -702,6 +707,23 @@ function siteIn(value: JsonValue | undefined): MareSite | undefined {
   return typeof site === 'number' && isMareSite(site) ? site : undefined;
 }
 
+/**
+ * 同一操作寫入的事件共用同一個時間；正式環境的 id 是隨機 UUID，不能用來排先後。
+ * 依操作內的寫入順序給名次，名次較後者視為較新。
+ */
+const SAME_TIME_ORDER: Readonly<Partial<Record<HistoryEventType, number>>> = {
+  horseCreated: 0,
+  mareAdded: 1,
+};
+
+function compareHistoryNewestFirst(a: HistoryEvent, b: HistoryEvent): number {
+  return (
+    b.occurredAt.localeCompare(a.occurredAt) ||
+    (SAME_TIME_ORDER[b.type] ?? 0) - (SAME_TIME_ORDER[a.type] ?? 0) ||
+    b.id.localeCompare(a.id)
+  );
+}
+
 function toHistoryItem(event: HistoryEvent): MareHistoryItem {
   const transfer = event.type === 'mareTransferred';
   return {
@@ -719,22 +741,20 @@ function toHistoryItem(event: HistoryEvent): MareHistoryItem {
 export async function loadMareDetail(context: ServiceContext, mareId: string): Promise<MareDetail> {
   const game = await requireCurrentGame(context);
   const mare = await requireMare(context, game.id, mareId);
-  const [horse, allYearly, events, storedSettings, conceptions] = await Promise.all([
+  const [horse, horseYearly, events, storedSettings, conception] = await Promise.all([
     getHorse(context.database, game.id, mareId),
-    listMareYearly(context.database, game.id),
+    listMareYearlyForHorse(context.database, game.id, mareId),
     listEventsForSubject(context.database, game.id, mareId),
     readGameSettings(context.database, game.id),
-    listConceptionsInYear(context.database, game.id, game.currentYear),
+    getConception(context.database, game.id, mareId, game.currentYear),
   ]);
-  const yearly = allYearly
-    .filter((record) => record.horseId === mareId)
-    .sort((a, b) => b.gameYear - a.gameYear);
+  const yearly = horseYearly.sort((a, b) => b.gameYear - a.gameYear);
   return {
     card: buildMareCard({
       mare,
       horse,
       yearly,
-      conception: conceptions.get(mareId),
+      conception,
       currentYear: game.currentYear,
       settings: storedSettings ?? DEFAULT_GAME_SETTINGS,
     }),
@@ -746,8 +766,6 @@ export async function loadMareDetail(context: ServiceContext, mareId: string): P
     stageNumbers: horse?.stageNumbers ?? [],
     yearly,
     currentYearly: yearly.find((record) => record.gameYear === game.currentYear),
-    history: events
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.id.localeCompare(a.id))
-      .map(toHistoryItem),
+    history: events.sort(compareHistoryNewestFirst).map(toHistoryItem),
   };
 }

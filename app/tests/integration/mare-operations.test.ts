@@ -392,4 +392,21 @@ describe('繁殖牝馬操作', () => {
       code: 'invalidInput',
     });
   });
+
+  it('同一操作寫入的事件時間相同時，歷程依寫入順序排列，不依 id', async () => {
+    let next = 9999;
+    // 遞減的 id：先寫入的事件 id 反而較大，確認排序不靠 id。
+    const context = await openContext({
+      newId: () => {
+        next -= 1;
+        return `id-${String(next)}`;
+      },
+    });
+    await createGame(context, { name: 'order', startYear: 1968 });
+    const added = await addMarketMare(context, STARTER);
+
+    const detail = await loadMareDetail(context, added.horse.id);
+
+    expect(detail.history.map((item) => item.type)).toEqual(['mareAdded', 'horseCreated']);
+  });
 });
