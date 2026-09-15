@@ -11,7 +11,7 @@ import { listSystemMap, saveSystemMapEntry } from '../../src/services/system-map
 import { countGameRecords } from '../../src/storage/games.ts';
 import { findHorsesByName, withHorseNameKeys } from '../../src/storage/horses.ts';
 import { insertOpenedLine } from '../../src/storage/lines.ts';
-import { readRecords } from '../../src/storage/records.ts';
+import { putRecords, readRecords } from '../../src/storage/records.ts';
 import { stripNameKeys } from '../fixtures/synthetic-game.ts';
 import { useServiceContexts } from './helpers.ts';
 
@@ -39,9 +39,13 @@ describe('開啟第 1 系', () => {
 
     expect(await listLineSlots(context)).toEqual([{ position: 1 }, ...EMPTY_SLOTS]);
     const counts = await countGameRecords(context.database, game.id);
-    expect([counts.lines, counts.horses, counts.stallionDuties, counts.events]).toEqual([
-      0, 0, 0, 0,
-    ]);
+    expect([
+      counts.lines,
+      counts.horses,
+      counts.stallionDuties,
+      counts.systemMap,
+      counts.events,
+    ]).toEqual([0, 0, 0, 0, 0]);
   });
 
   it('以單一交易建立系位置、零代市場種牡馬、現任任期、系統對照表與事件', async () => {
@@ -177,6 +181,66 @@ describe('開啟第 1 系', () => {
     expect([counts.lines, counts.horses, counts.stallionDuties, counts.events]).toEqual([
       0, 0, 0, 0,
     ]);
+  });
+
+  it('馬名只有 (外)、[地] 前綴時拒絕，不寫入任何資料', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '八系局', startYear: 1968 });
+    const input: OpenFirstLineInput = {
+      ...INPUT,
+      founder: { ...INPUT.founder, fullName: '(外)[地]' },
+    };
+
+    expect((await checkOpenFirstLine(context, input)).issues).toEqual([
+      '馬名不能只有 (外)、[地] 前綴',
+    ]);
+    await expect(openFirstLine(context, input)).rejects.toMatchObject({ code: 'invalidInput' });
+    const counts = await countGameRecords(context.database, game.id);
+    expect([
+      counts.lines,
+      counts.horses,
+      counts.stallionDuties,
+      counts.systemMap,
+      counts.events,
+    ]).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it('代表色不分大小寫，保存為小寫 #rrggbb', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '八系局', startYear: 1968 });
+    const input: OpenFirstLineInput = { ...INPUT, color: '#C62828' };
+
+    expect(await checkOpenFirstLine(context, input)).toEqual({ issues: [], warnings: [] });
+    const line = await openFirstLine(context, input);
+
+    expect(line.color).toBe('#c62828');
+    expect((await readRecords(context.database, game.id, 'lines'))[0]?.color).toBe('#c62828');
+  });
+
+  it('寫入交易失敗時整筆退回，遊戲局更新時間不變', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '八系局', startYear: 1968 });
+    // sequentialIds 依呼叫順序產生 id：createGame 用掉 id-0001；openFirstLine 依序產生零代種牡馬
+    // id-0002、系位置 id-0003、任期 id-0004、系統對照表 id-0005（對照表還沒有這個子系統），
+    // 接著第一筆事件 horseCreated 為 id-0006。預先放入同 id 的事件，讓 events.add 以 ConstraintError 中止交易。
+    const blocker = {
+      id: 'id-0006',
+      subjectId: 'game',
+      type: 'gameYearChanged',
+      gameYear: 1968,
+      source: 'user',
+      occurredAt: '2026-09-14T00:00:00.000Z',
+    };
+    await putRecords(context.database, game.id, 'events', [blocker]);
+
+    await expect(openFirstLine(context, INPUT)).rejects.toMatchObject({ name: 'ConstraintError' });
+
+    const counts = await countGameRecords(context.database, game.id);
+    expect([counts.lines, counts.horses, counts.stallionDuties, counts.systemMap]).toEqual([
+      0, 0, 0, 0,
+    ]);
+    expect(await readRecords(context.database, game.id, 'events')).toEqual([blocker]);
+    expect((await getCurrentGame(context))?.updatedAt).toBe(game.updatedAt);
   });
 
   it('寫入時在交易內讀出遊戲局再合併更新時間與版本，不覆蓋操作開始後才寫入的最近備份', async () => {

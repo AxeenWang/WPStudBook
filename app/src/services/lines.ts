@@ -95,6 +95,8 @@ export interface OpenFirstLineCheck {
 interface Inspection extends OpenFirstLineCheck {
   readonly subsystem: string;
   readonly parentSystem: string;
+  /** 資料契約的代表色是小寫 #rrggbb。 */
+  readonly color: string;
   readonly fullName: string;
   readonly abilityNo: number | undefined;
   readonly mapEntry: SystemMapEntry | undefined;
@@ -107,6 +109,7 @@ async function inspectOpenFirstLine(
 ): Promise<Inspection> {
   const subsystem = normalizeSystemInput(input.subsystem);
   const parentSystem = normalizeSystemInput(input.parentSystem);
+  const color = input.color.toLowerCase();
   const fullName = input.founder.fullName.trim();
   const abilityText = input.founder.abilityNo.trim();
   const abilityNo = abilityText === '' ? undefined : parseAbilityNo(abilityText);
@@ -122,11 +125,13 @@ async function inspectOpenFirstLine(
   if (parentSystem === '') {
     issues.push('請輸入親系統');
   }
-  if (!LINE_COLORS.some((option) => option.value === input.color)) {
+  if (!LINE_COLORS.some((option) => option.value === color)) {
     issues.push('請選擇代表色');
   }
   if (fullName === '') {
     issues.push('請輸入零代市場種牡馬的馬名');
+  } else if (toBaseName(fullName) === '') {
+    issues.push('馬名不能只有 (外)、[地] 前綴');
   }
   if (abilityText !== '' && abilityNo === undefined) {
     issues.push('能力番号必須是 0x0000～0xFFFF 的十六進位');
@@ -157,7 +162,7 @@ async function inspectOpenFirstLine(
           },
         ]
       : [];
-  return { issues, warnings, subsystem, parentSystem, fullName, abilityNo, mapEntry };
+  return { issues, warnings, subsystem, parentSystem, color, fullName, abilityNo, mapEntry };
 }
 
 export async function checkOpenFirstLine(
@@ -184,7 +189,7 @@ export async function openFirstLine(
   }
   requireAcceptedWarnings(inspection.warnings, input.acceptedWarnings ?? []);
 
-  const { subsystem, parentSystem, fullName, abilityNo, mapEntry, warnings } = inspection;
+  const { subsystem, parentSystem, color, fullName, abilityNo, mapEntry, warnings } = inspection;
   const { birthYear } = input.founder;
   const sireName = input.founder.sireName.trim();
   const damName = input.founder.damName.trim();
@@ -209,7 +214,7 @@ export async function openFirstLine(
     position: 1,
     subsystem,
     parentSystem,
-    color: input.color,
+    color,
     branch: { targetGeneration: 1, openedYear: gameYear },
     establishedGenerations: [],
   };
