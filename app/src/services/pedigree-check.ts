@@ -8,7 +8,7 @@ import {
   type PedigreeCheck,
 } from '../domain/pedigree-check.ts';
 import { parentSystemOf, type SystemMapEntry } from '../domain/system-map.ts';
-import type { TaskPhase } from '../domain/task.ts';
+import { FIRST_CYCLE_GENERATION, type TaskPhase } from '../domain/task.ts';
 import { listLines } from '../storage/lines.ts';
 import { listMares } from '../storage/mares.ts';
 import { listStallionDuties } from '../storage/stallion-duties.ts';
@@ -19,6 +19,9 @@ import { loadAncestors } from './pedigree.ts';
 
 /** 產出的幼駒往上 3 代就是 8 匹曾祖父母（需求規格 4.3）。 */
 const GREAT_GRANDPARENT_DEPTH = 3;
+
+/** 建系期產出的最後一代（需求規格 7.3）：與 4 代內重複的檢查範圍無關，只是恰好同為 4。 */
+const LAST_BUILDING_GENERATION = FIRST_CYCLE_GENERATION - 1;
 
 /**
  * 建系期的市場馬（需求規格 10.2、PED-11）：第 1 系起點母馬、建系分支用的替代母馬，
@@ -37,14 +40,17 @@ async function loadBuildingPhaseMarketIds(
   for (const mare of mares) {
     if (mare.group.kind === 'starter') {
       ids.add(mare.id);
-    } else if (mare.group.kind === 'substitute' && mare.group.generation < INBREEDING_GENERATIONS) {
+    } else if (
+      mare.group.kind === 'substitute' &&
+      mare.group.generation < LAST_BUILDING_GENERATION
+    ) {
       // 替代第 q 系 N 代的市場母馬產出 N+1 代；建系只到產出 4 代。
       ids.add(mare.id);
     }
   }
   const buildingPositions = new Set(
     lines
-      .filter((line) => line.branch.targetGeneration <= INBREEDING_GENERATIONS)
+      .filter((line) => line.branch.targetGeneration <= LAST_BUILDING_GENERATION)
       .map((line) => line.position),
   );
   for (const duty of duties) {

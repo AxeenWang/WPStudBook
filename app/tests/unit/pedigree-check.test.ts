@@ -74,7 +74,8 @@ describe('血統檢查（需求規格 10.1、10.2）', () => {
     expect(pedigreeWarningCodes(check)).toEqual([]);
   });
 
-  it('[PED-02] 八系親系統互不相同、無重複也無缺漏時預估 8 種，不警告', () => {
+  // PED-02 要求依 7.3 建系並循環到產出 6 代，需子計畫 3-3 的長期模擬才算驗證；這裡只固定計算方式。
+  it('八系親系統互不相同、無重複也無缺漏時預估 8 種，不警告', () => {
     const check = checkPedigree('cycling', tree());
     expect(check.activationCount).toBe(8);
     expect(check.duplicateAncestors).toEqual([]);
