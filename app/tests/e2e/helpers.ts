@@ -40,13 +40,31 @@ export async function gotoPage(page: Page, name: string): Promise<void> {
   await expect(button).toHaveAttribute('aria-current', 'page');
 }
 
+/** 系位置由總覽的任務看板開啟（需求規格 7.3、13.2）。 */
+export async function openLineViaUi(
+  page: Page,
+  position: number,
+  subsystem: string,
+  founderName: string,
+): Promise<void> {
+  await gotoPage(page, '總覽');
+  const heading = `開啟第 ${String(position)} 系`;
+  const board = page.getByRole('region', { name: '任務看板' });
+  const trigger = board.getByRole('button', { name: heading });
+  if ((await trigger.count()) > 0) {
+    await trigger.first().click();
+  }
+  const form = page.getByRole('form', { name: heading });
+  await form.getByLabel('目前子系統').fill(subsystem);
+  await form.getByLabel('親系統', { exact: true }).fill(subsystem);
+  await form.getByLabel('零代市場種牡馬馬名').fill(founderName);
+  await form.getByRole('button', { name: heading }).click();
+  await expect(page.getByTestId(`overview-line-${String(position)}`)).toContainText(subsystem);
+}
+
 export async function openFirstLineViaUi(page: Page): Promise<void> {
+  await openLineViaUi(page, 1, 'ネアルコ', 'テストシュボバ');
   await gotoPage(page, '八系');
-  const form = page.getByRole('form', { name: '開啟第 1 系' });
-  await form.getByLabel('目前子系統').fill('ネアルコ');
-  await form.getByLabel('親系統', { exact: true }).fill('ネアルコ');
-  await form.getByLabel('零代市場種牡馬馬名').fill('テストシュボバ');
-  await form.getByRole('button', { name: '開啟第 1 系' }).click();
   await expect(page.getByTestId('line-slot-1')).toContainText('テストシュボバ');
 }
 

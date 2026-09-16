@@ -157,7 +157,7 @@ test.describe('種牡馬', () => {
   }) => {
     await openApp(page);
     await createGameViaUi(page, '提醒局', 1968);
-    await gotoPage(page, '八系');
+    await gotoPage(page, '總覽');
     const form = page.getByRole('form', { name: '開啟第 1 系' });
     await form.getByLabel('目前子系統').fill('ネアルコ');
     await form.getByLabel('親系統', { exact: true }).fill('ネアルコ');
@@ -166,7 +166,12 @@ test.describe('種牡馬', () => {
     await birthYear.fill('1942');
     await birthYear.blur();
     await form.getByRole('button', { name: '開啟第 1 系' }).click();
+    await expect(page.getByRole('form', { name: '開啟第 1 系' })).toHaveCount(0);
 
+    // 總覽的提醒區與八系頁的種牡馬區都顯示準備後繼提醒（需求規格 13.2）。
+    await expect(page.getByRole('list', { name: '提醒' })).toContainText('達到種牡馬提醒年齡');
+
+    await gotoPage(page, '八系');
     const reminders = stallionCard(page).getByRole('list', { name: '提醒' });
     await expect(reminders).toHaveText(
       '第 1 系 0 代現任「テストシュボバ」已 26 歲，達到種牡馬提醒年齡，請準備後繼',

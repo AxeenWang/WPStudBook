@@ -183,6 +183,16 @@ export function isHighAge(age: number | undefined, reminderAge: number): boolean
   return age !== undefined && age >= reminderAge;
 }
 
+/** 達定年（需求規格 8.5、MARE-11）：不列入任務，引退由五月匯入判定。 */
+export function reachesRetirementAge(age: number | undefined, retirementAge: number): boolean {
+  return age !== undefined && age >= retirementAge;
+}
+
+/** 最後值得配種的年齡（需求規格 4.6、8.5、MARE-11）：定年減 1 歲，只提示。 */
+export function atLastBreedingAge(age: number | undefined, retirementAge: number): boolean {
+  return age !== undefined && age === retirementAge - 1;
+}
+
 export function effectiveYearPlan(
   yearPlan: MareYearPlan | undefined,
   currentYear: number,

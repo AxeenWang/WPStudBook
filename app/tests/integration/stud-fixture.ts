@@ -2,7 +2,7 @@ import { saveBreeding } from '../../src/services/breedings.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
 import { nameFoal, registerFoal, type FoalInput } from '../../src/services/foals.ts';
 import { changeCurrentYear, createGame } from '../../src/services/games.ts';
-import { openFirstLine } from '../../src/services/lines.ts';
+import { openLine } from '../../src/services/lines.ts';
 import { addMarketMare } from '../../src/services/mares.ts';
 import { convertFoalToMare } from '../../src/services/succession.ts';
 import { listStallionDuties } from '../../src/storage/stallion-duties.ts';
@@ -62,7 +62,8 @@ export interface Stud {
  */
 export async function raiseStud(context: ServiceContext): Promise<Stud> {
   const game = await createGame(context, { name: '種牡馬局', startYear: 1968 });
-  await openFirstLine(context, {
+  await openLine(context, {
+    position: 1,
     subsystem: 'ネアルコ',
     parentSystem: 'ネアルコ',
     color: '#c62828',

@@ -10,18 +10,21 @@ test.describe('八系位置', () => {
       await expect(page.getByTestId(`line-slot-${String(position)}`)).toContainText('尚未開啟');
     }
 
+    // 系位置由總覽的任務看板開啟（需求規格 7.3、13.2）。
+    await gotoPage(page, '總覽');
     const form = page.getByRole('form', { name: '開啟第 1 系' });
     await form.getByLabel('目前子系統').fill('ネアルコ系');
     await form.getByLabel('親系統', { exact: true }).fill('ネアルコ');
     await form.getByLabel('零代市場種牡馬馬名').fill('(外)テストシュボバ');
     await form.getByLabel('能力番号（選填，例如 0x0000）').fill('0x0000');
     await form.getByRole('button', { name: '開啟第 1 系' }).click();
+    await expect(page.getByRole('form', { name: '開啟第 1 系' })).toHaveCount(0);
 
+    await gotoPage(page, '八系');
     const first = page.getByTestId('line-slot-1');
     await expect(first).toContainText('ネアルコ');
     await expect(first).toContainText('(外)テストシュボバ');
     await expect(first).toContainText('紅');
-    await expect(page.getByRole('form', { name: '開啟第 1 系' })).toHaveCount(0);
     await expect(page.getByTestId('line-slot-2')).toContainText('尚未開啟');
     await expect(page.getByTestId('status-records')).toHaveText('8 筆');
 
@@ -43,7 +46,7 @@ test.describe('八系位置', () => {
       'ファラリス',
     );
 
-    await gotoPage(page, '八系');
+    await gotoPage(page, '總覽');
     const form = page.getByRole('form', { name: '開啟第 1 系' });
     await form.getByLabel('目前子系統').fill('ネアルコ');
     await form.getByLabel('目前子系統').blur();
@@ -55,6 +58,7 @@ test.describe('八系位置', () => {
     const dialog = page.getByRole('dialog', { name: '確認開啟第 1 系' });
     await expect(dialog).toContainText('確認後會改為「ネアルコ」');
     await dialog.getByRole('button', { name: '確認並開啟' }).click();
+    await gotoPage(page, '八系');
     await expect(page.getByTestId('line-slot-1')).toContainText('テストシュボバ');
 
     await gotoPage(page, '系統對照表');

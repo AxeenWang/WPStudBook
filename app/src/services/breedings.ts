@@ -20,6 +20,7 @@ import { getMare } from '../storage/mares.ts';
 import { listStallionDuties } from '../storage/stallion-duties.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { loadHorseNames } from './horse-names.ts';
+import { requireRuleSnapshot } from './tasks.ts';
 import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
@@ -76,6 +77,8 @@ export interface BreedingInput {
   readonly stallionName: string;
   /** undefined＝尚未登記受胎狀態（事先登記）。 */
   readonly conception: Conception | undefined;
+  /** 依任務看板登記的八系指定配種才有；保存規則快照（需求規格 7.4）。 */
+  readonly taskId?: string | undefined;
 }
 
 const RECORD_FIELDS = [
@@ -87,7 +90,7 @@ const RECORD_FIELDS = [
   'foalId',
 ] as const;
 
-/** 事件保存的前後值：紀錄中有值的欄位（不含 id、母馬與年份）。 */
+/** 事件保存的前後值：紀錄中有值的欄位（不含 id、母馬與年份）；規則快照以任務代號表示。 */
 export function breedingValue(record: Breeding): JsonObject {
   const value: Record<string, string | number> = {};
   for (const field of RECORD_FIELDS) {
@@ -95,6 +98,9 @@ export function breedingValue(record: Breeding): JsonObject {
     if (item !== undefined) {
       value[field] = item;
     }
+  }
+  if (record.ruleSnapshot !== undefined) {
+    value.taskId = record.ruleSnapshot.taskId;
   }
   return value;
 }
@@ -175,9 +181,15 @@ export async function saveBreeding(
   } else if (breedingType === 'designated' && mare.group.kind === 'unassigned') {
     issues.push('待指定用途的母馬不能登記八系指定配種');
   }
+  if (input.taskId !== undefined && breedingType !== 'designated') {
+    issues.push('只有八系指定配種可以依任務登記');
+  }
   if (issues.length > 0 || gameYear === undefined) {
     throw new ServiceError('invalidInput', issues.join('；'));
   }
+  // 規則快照在登記當下解析；之後規則改變不重算已保存的快照（需求規格 7.4、LINE-16）。
+  const snapshot =
+    input.taskId === undefined ? undefined : await requireRuleSnapshot(context, input.taskId);
   const fields = {
     breedingType,
     ...(stallionId === undefined ? {} : { stallionId }),
@@ -186,6 +198,9 @@ export async function saveBreeding(
   };
   const draft = (stored: Breeding | undefined): Breeding => {
     const expectedBirthYear = expectedBirthYearFor(gameYear, conception);
+    // 沒有指定任務時沿用既有快照，讓後續更正受胎狀態不會抹掉登記當下的規則。
+    const ruleSnapshot =
+      breedingType === 'designated' ? (snapshot ?? stored?.ruleSnapshot) : undefined;
     return {
       id: stored?.id ?? '',
       mareId,
@@ -193,6 +208,7 @@ export async function saveBreeding(
       ...fields,
       ...(expectedBirthYear === undefined ? {} : { expectedBirthYear }),
       ...(stored?.foalId === undefined ? {} : { foalId: stored.foalId }),
+      ...(ruleSnapshot === undefined ? {} : { ruleSnapshot }),
     };
   };
   const existing = await getBreeding(context.database, game.id, mareId, gameYear);

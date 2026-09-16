@@ -13,6 +13,8 @@ export type HistoryEventType =
   | 'horseCreated'
   /** 開啟系位置；subjectId 為系位置 id。 */
   | 'lineOpened'
+  /** 目前子系統或親系統更新，保存舊名與新名；subjectId 為系位置 id（需求規格 7.1、LINE-06）。 */
+  | 'lineSystemsChanged'
   /** 種牡馬開始任期；subjectId 為馬匹 id。 */
   | 'stallionDutyStarted'
   /** 繁殖牝馬加入母馬群；subjectId 為馬匹 id。 */

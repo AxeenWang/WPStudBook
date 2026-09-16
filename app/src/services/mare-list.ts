@@ -4,10 +4,12 @@ import type { Horse } from '../domain/horse.ts';
 import type { LinePosition } from '../domain/line.ts';
 import {
   ageInYear,
+  atLastBreedingAge,
   effectiveYearPlan,
   isHighAge,
   isPendingSuccession,
   mareGeneration,
+  reachesRetirementAge,
   type LeftReason,
   type Mare,
   type MareGroup,
@@ -40,6 +42,10 @@ export interface MareCard {
   readonly site: MareSite;
   readonly age: number | undefined;
   readonly highAge: boolean;
+  /** 達定年減 1 歲：最後值得配種的年齡（需求規格 8.5、MARE-11）。 */
+  readonly lastBreedingAge: boolean;
+  /** 已達定年：不列入任務（需求規格 8.5、MARE-11）。 */
+  readonly atRetirementAge: boolean;
   readonly vitality: VitalityReading;
   readonly belowThreshold: boolean;
   readonly conception: Conception | undefined;
@@ -64,7 +70,10 @@ export interface MareCardSource {
   readonly yearly: readonly MareYearly[];
   readonly conception: Conception | undefined;
   readonly currentYear: number;
-  readonly settings: Pick<GameSettings, 'highAgeReminderAge' | 'vitalityThreshold'>;
+  readonly settings: Pick<
+    GameSettings,
+    'highAgeReminderAge' | 'vitalityThreshold' | 'retirementAge'
+  >;
   /** 沒有馬名的自家母馬顯示追蹤名。 */
   readonly trackingName?: string | undefined;
   readonly hasUnnamedFoal?: boolean | undefined;
@@ -97,6 +106,9 @@ export function buildMareCard(source: MareCardSource): MareCard {
     site: mare.site,
     age,
     highAge: mare.status === 'producing' && isHighAge(age, settings.highAgeReminderAge),
+    lastBreedingAge: mare.status === 'producing' && atLastBreedingAge(age, settings.retirementAge),
+    atRetirementAge:
+      mare.status === 'producing' && reachesRetirementAge(age, settings.retirementAge),
     vitality,
     belowThreshold: isBelowThreshold(vitality.vitality, settings.vitalityThreshold),
     conception: source.conception,

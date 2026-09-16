@@ -18,7 +18,7 @@ import {
   type FoalInput,
 } from '../../src/services/foals.ts';
 import { changeCurrentYear, createGame } from '../../src/services/games.ts';
-import { openFirstLine } from '../../src/services/lines.ts';
+import { openLine } from '../../src/services/lines.ts';
 import { addMarketMare, loadMareHerd, sellMare } from '../../src/services/mares.ts';
 import { getHorse } from '../../src/storage/horses.ts';
 import { readRecords, type StoredRecord } from '../../src/storage/records.ts';
@@ -34,7 +34,8 @@ interface Setup {
 /** 1968 年開局：第 1 系零代種牡馬與一匹起點母馬。 */
 async function setup(context: ServiceContext): Promise<Setup> {
   const game = await createGame(context, { name: '產駒局', startYear: 1968 });
-  await openFirstLine(context, {
+  await openLine(context, {
+    position: 1,
     subsystem: 'ネアルコ',
     parentSystem: 'ネアルコ',
     color: '#c62828',

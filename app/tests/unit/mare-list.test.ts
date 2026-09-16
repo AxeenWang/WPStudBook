@@ -27,6 +27,8 @@ function card(id: string, overrides: Partial<MareCard> = {}): MareCard {
     site: 32,
     age: undefined,
     highAge: false,
+    lastBreedingAge: false,
+    atRetirementAge: false,
     vitality: { vitality: { state: 'pending' }, month: undefined },
     belowThreshold: false,
     conception: undefined,
@@ -89,7 +91,7 @@ const MARE: Mare = {
   yearPlan: { plan: 'rest', gameYear: 1968 },
 };
 
-const SETTINGS = { highAgeReminderAge: 18, vitalityThreshold: 50 };
+const SETTINGS = { highAgeReminderAge: 18, vitalityThreshold: 50, retirementAge: 25 };
 
 describe('卡片資料', () => {
   it('[UI-01] 卡片含馬名、代數、自身父系與用途、據點、年齡、今年活力、本年度受胎、今年計畫、狀態與來源', () => {
@@ -120,6 +122,8 @@ describe('卡片資料', () => {
       site: 34,
       age: 18,
       highAge: true,
+      lastBreedingAge: false,
+      atRetirementAge: false,
       vitality: confirmed(40),
       belowThreshold: true,
       conception: '受胎',
@@ -145,7 +149,9 @@ describe('卡片資料', () => {
       settings: SETTINGS,
     };
     expect(buildMareCard(source).highAge).toBe(true);
-    expect(buildMareCard({ ...source, settings: { highAgeReminderAge: 19 } }).highAge).toBe(false);
+    expect(
+      buildMareCard({ ...source, settings: { ...SETTINGS, highAgeReminderAge: 19 } }).highAge,
+    ).toBe(false);
     expect(
       buildMareCard({ ...source, mare: { ...MARE, status: 'left', leftReason: 'sold' } }).highAge,
     ).toBe(false);
@@ -328,5 +334,43 @@ describe('排序、分頁與代數按鈕', () => {
       pendingSuccession: 1,
       left: 1,
     });
+  });
+});
+
+describe('定年提示（需求規格 8.5、MARE-11）', () => {
+  const base = {
+    mare: MARE,
+    yearly: [],
+    conception: undefined,
+    settings: SETTINGS,
+  } as const;
+
+  it('[MARE-11] 定年 25 歲時 24 歲提示最後配種年齡、25 歲提示已達定年', () => {
+    const at = (age: number) =>
+      buildMareCard({
+        ...base,
+        horse: { ...HORSE, birthYear: 1968 - age },
+        currentYear: 1968,
+      });
+    expect([at(23).lastBreedingAge, at(23).atRetirementAge]).toEqual([false, false]);
+    expect([at(24).lastBreedingAge, at(24).atRetirementAge]).toEqual([true, false]);
+    expect([at(25).lastBreedingAge, at(25).atRetirementAge]).toEqual([false, true]);
+    expect([at(26).lastBreedingAge, at(26).atRetirementAge]).toEqual([false, true]);
+  });
+
+  it('已離圈與沒有出生年的母馬不提示', () => {
+    const left = buildMareCard({
+      ...base,
+      mare: { ...MARE, status: 'left', leftReason: 'retired' },
+      horse: { ...HORSE, birthYear: 1943 },
+      currentYear: 1968,
+    });
+    expect([left.lastBreedingAge, left.atRetirementAge]).toEqual([false, false]);
+    const unknown = buildMareCard({
+      ...base,
+      horse: HORSE_WITHOUT_BIRTH_YEAR,
+      currentYear: 1968,
+    });
+    expect([unknown.lastBreedingAge, unknown.atRetirementAge]).toEqual([false, false]);
   });
 });

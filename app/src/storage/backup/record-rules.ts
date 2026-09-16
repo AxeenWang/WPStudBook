@@ -6,6 +6,8 @@ import type {
 } from '../../domain/stallion-duty.ts';
 import type { HistoryEventSource, HistoryEventType } from '../../domain/history-event.ts';
 import type { BreedingType, Conception } from '../../domain/breeding.ts';
+import type { PairDistance } from '../../domain/lineage.ts';
+import type { TaskKind, TaskPhase } from '../../domain/task.ts';
 import type { Aptitude, Disposition, SubParamGrade, SubParamKey } from '../../domain/foal.ts';
 import type { AliasKind, LifeStage, RecordSource, Sex } from '../../domain/horse.ts';
 import type { HorseFate } from '../../domain/horse.ts';
@@ -88,6 +90,7 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   systemMapChanged: true,
   horseCreated: true,
   lineOpened: true,
+  lineSystemsChanged: true,
   stallionDutyStarted: true,
   mareAdded: true,
   mareSold: true,
@@ -148,6 +151,10 @@ const CONCEPTION_VALUES = enumSet<Conception>({
   未確認: true,
 });
 const BREEDING_TYPE_VALUES = enumSet<BreedingType>({ designated: true, free: true });
+const TASK_PHASE_VALUES = enumSet<TaskPhase>({ building: true, cycling: true });
+const TASK_KIND_VALUES = enumSet<TaskKind>({ advance: true, found: true, cycle: true });
+/** 配對距離只有 1、2、4（需求規格 4.3）。 */
+const PAIR_DISTANCES: readonly PairDistance[] = [1, 2, 4];
 const DISPOSITION_VALUES = enumSet<Disposition>({ keep: true, forSale: true, sold: true });
 const APTITUDE_VALUES = enumSet<Aptitude>({ '◎': true, '○': true, '△': true, '×': true });
 const SUB_PARAM_KEY_VALUES = enumSet<SubParamKey>({
@@ -490,7 +497,30 @@ function checkBreeding(record: StoredRecord): string | undefined {
       : [!('expectedBirthYear' in record), '未受胎時不可有 expectedBirthYear'],
     [optional(record, 'foalId', isNonEmptyString), 'foalId 必須是非空字串'],
     [!('foalId' in record) || conceived, '只有受胎的紀錄可以連結產駒'],
+    [
+      optional(record, 'ruleSnapshot', isRuleSnapshot),
+      'ruleSnapshot 必須含 taskId、phase、kind、sire、dam 與 target',
+    ],
+    [
+      !('ruleSnapshot' in record) || record.breedingType === 'designated',
+      '只有八系指定配種可以有 ruleSnapshot',
+    ],
   ]);
+}
+
+/** 指定配種的規則快照（需求規格 7.4）：種牡馬與母馬側可為零代市場馬，產出至少 1 代。 */
+function isRuleSnapshot(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    isNonEmptyString(value.taskId) &&
+    isOneOf(TASK_PHASE_VALUES, value.phase) &&
+    isOneOf(TASK_KIND_VALUES, value.kind) &&
+    (!('pairDistance' in value) ||
+      PAIR_DISTANCES.some((distance) => distance === value.pairDistance)) &&
+    isLineageFrom(value.sire, 0) &&
+    isLineageFrom(value.dam, 0) &&
+    isLineage(value.target)
+  );
 }
 
 function isSubParams(value: unknown): boolean {
@@ -507,12 +537,17 @@ function isSubParams(value: unknown): boolean {
   );
 }
 
-function isLineage(value: unknown): boolean {
+/** 系與代數；`minGeneration` 為 0 時接受零代市場馬（需求規格 8.2）。 */
+function isLineageFrom(value: unknown, minGeneration: number): boolean {
   return (
     isPlainRecord(value) &&
     isIntegerIn(value.position, 1, 8) &&
-    isIntegerIn(value.generation, 1, 9999)
+    isIntegerIn(value.generation, minGeneration, 9999)
   );
+}
+
+function isLineage(value: unknown): boolean {
+  return isLineageFrom(value, 1);
 }
 
 function checkFoal(record: StoredRecord): string | undefined {

@@ -11,7 +11,7 @@ import {
   type MareGroupView,
 } from '../../src/services/mare-list.ts';
 import { addMarketMare, loadMareDetail, loadMareHerd, sellMare } from '../../src/services/mares.ts';
-import { openFirstLine } from '../../src/services/lines.ts';
+import { openLine } from '../../src/services/lines.ts';
 import {
   checkConvertFoal,
   confirmSuccession,
@@ -55,7 +55,8 @@ function foalInput(damId: string, birthYear: number, overrides: Partial<FoalInpu
 /** 第 1 系零代 × 起點母馬，1969、1970 年各生一匹母駒；目前遊戲年 1970。 */
 async function raiseFamily(context: ServiceContext): Promise<Family> {
   const game = await createGame(context, { name: '接替局', startYear: 1968 });
-  await openFirstLine(context, {
+  await openLine(context, {
+    position: 1,
     subsystem: 'ネアルコ',
     parentSystem: 'ネアルコ',
     color: '#c62828',

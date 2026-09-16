@@ -4,7 +4,7 @@ import { saveBreeding } from '../../src/services/breedings.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
 import { loadFoalList, nameFoal, registerFoal } from '../../src/services/foals.ts';
 import { changeCurrentYear, createGame, getCurrentGame } from '../../src/services/games.ts';
-import { openFirstLine } from '../../src/services/lines.ts';
+import { openLine } from '../../src/services/lines.ts';
 import { loadMareHerd, sellMare } from '../../src/services/mares.ts';
 import { loadMareMatingRatings, saveMatingRating } from '../../src/services/mating-ratings.ts';
 import { loadPedigree } from '../../src/services/pedigree.ts';
@@ -60,7 +60,8 @@ describe('關卡 C：第 1 系生命週期（開發計畫階段 2 完成條件�
   it('[BLD-03] 零代種牡馬 × 起點母馬 → 受胎 → 產駒 → 母駒轉入成立 1 代 → 公駒接任 → 母馬賣出；識別不變、歷程完整，JSON.GZ 往返後關聯一致', async () => {
     const context = await open();
     const game = await createGame(context, { name: '生命週期局', startYear: 1968 });
-    const line = await openFirstLine(context, {
+    const line = await openLine(context, {
+      position: 1,
       subsystem: 'ネアルコ',
       parentSystem: 'ネアルコ',
       color: '#c62828',
