@@ -70,3 +70,64 @@ export async function insertOpenedLine(
     ]);
   });
 }
+
+export interface LineSystemsUpdate {
+  readonly gameId: string;
+  readonly touch: GameTouch;
+  readonly position: number;
+  readonly subsystem: string;
+  readonly parentSystem: string;
+  /** 需要新增或更新對照時才有。 */
+  readonly systemMapEntry?: SystemMapEntry | undefined;
+  /** 以交易內讀到的系位置建立事件；回傳 undefined 表示沒有變更。 */
+  readonly buildEvents: (line: Line) => readonly HistoryEvent[] | undefined;
+}
+
+/**
+ * 更新系位置目前的子系統與親系統（需求規格 7.1、LINE-06）：只改名稱，位置、分支、已成立世代、
+ * 種牡馬任期與配種紀錄都不動。
+ */
+export async function writeLineSystems(
+  database: AppDatabase,
+  update: LineSystemsUpdate,
+): Promise<Line> {
+  const { gameId, systemMapEntry } = update;
+  const transaction = database.transaction(['games', 'lines', 'systemMap', 'events'], 'readwrite');
+  const games = transaction.objectStore('games');
+  const lines = transaction.objectStore('lines');
+  let saved: Line | undefined;
+  await completeTransaction(transaction, async () => {
+    const current = await readLineAt(
+      (name) => transaction.objectStore(name),
+      gameId,
+      update.position,
+    );
+    if (current === undefined) {
+      throw new Error(`第 ${String(update.position)} 系尚未開啟`);
+    }
+    const events = update.buildEvents(current);
+    if (events === undefined) {
+      saved = current;
+      return;
+    }
+    const next: Line = {
+      ...current,
+      subsystem: update.subsystem,
+      parentSystem: update.parentSystem,
+    };
+    saved = next;
+    const game = await readGameForWrite(games, gameId);
+    await Promise.all([
+      games.put({ ...game, ...update.touch }),
+      lines.put(withGameId(gameId, next)),
+      ...(systemMapEntry === undefined
+        ? []
+        : [transaction.objectStore('systemMap').put(withGameId(gameId, systemMapEntry))]),
+      ...events.map((event) => transaction.objectStore('events').add(withGameId(gameId, event))),
+    ]);
+  });
+  if (saved === undefined) {
+    throw new Error('系位置更新失敗');
+  }
+  return saved;
+}

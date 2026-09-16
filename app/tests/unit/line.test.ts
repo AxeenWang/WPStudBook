@@ -3,6 +3,7 @@ import {
   DEFAULT_LINE_COLOR,
   LINE_COLORS,
   isLinePosition,
+  parentSystemStatus,
   pickLineColor,
 } from '../../src/domain/line.ts';
 import { parentSystemOf, stripSystemSuffix } from '../../src/domain/system-map.ts';
@@ -42,5 +43,43 @@ describe('系統對照表', () => {
     ];
     expect(parentSystemOf(entries, 'マンノウォー')).toBe('マッチェム');
     expect(parentSystemOf(entries, 'ハンプトン')).toBeUndefined();
+  });
+});
+
+describe('八系親系統狀態（需求規格 4.3、13.2）', () => {
+  it('[LINE-04] 八系親系統互不相同時種類數為 8、沒有重複的系', () => {
+    const lines = ([1, 2, 3, 4, 5, 6, 7, 8] as const).map((position) => ({
+      position,
+      parentSystem: `親系統${String(position)}`,
+    }));
+    expect(parentSystemStatus(lines)).toEqual({ parentSystemCount: 8, duplicates: [] });
+  });
+
+  it('[LINE-04] 同一個親系統出現在兩個系位置時列為重複', () => {
+    const status = parentSystemStatus([
+      { position: 1, parentSystem: 'エクリプス' },
+      { position: 2, parentSystem: 'ヘロド' },
+      { position: 5, parentSystem: 'エクリプス' },
+    ]);
+    expect(status.parentSystemCount).toBe(2);
+    expect(status.duplicates).toEqual([{ parentSystem: 'エクリプス', positions: [1, 5] }]);
+  });
+
+  it('[LINE-04] 對照表升格讓親系統不同後，重複解除', () => {
+    const status = parentSystemStatus([
+      { position: 1, parentSystem: 'エクリプス' },
+      { position: 2, parentSystem: 'ヘロド' },
+      { position: 5, parentSystem: 'ファラリス' },
+    ]);
+    expect(status.parentSystemCount).toBe(3);
+    expect(status.duplicates).toEqual([]);
+  });
+
+  it('尚未取得的親系統不計入種類數', () => {
+    const status = parentSystemStatus([
+      { position: 1, parentSystem: 'エクリプス' },
+      { position: 2, parentSystem: '' },
+    ]);
+    expect(status).toEqual({ parentSystemCount: 1, duplicates: [] });
   });
 });

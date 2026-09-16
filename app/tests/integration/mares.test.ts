@@ -3,7 +3,7 @@ import type { Horse } from '../../src/domain/horse.ts';
 import type { Mare } from '../../src/domain/mare.ts';
 import { exportBackup, restoreBackupAsNewGame } from '../../src/services/backup.ts';
 import { createGame, getCurrentGame } from '../../src/services/games.ts';
-import { openFirstLine, type OpenFirstLineInput } from '../../src/services/lines.ts';
+import { openLine, type OpenLineInput } from '../../src/services/lines.ts';
 import {
   addMarketMare,
   checkAddMarketMare,
@@ -17,7 +17,8 @@ import { putRecords, readRecords } from '../../src/storage/records.ts';
 import { stripNameKeys } from '../fixtures/synthetic-game.ts';
 import { useServiceContexts } from './helpers.ts';
 
-const LINE_INPUT: OpenFirstLineInput = {
+const LINE_INPUT: OpenLineInput = {
+  position: 1,
   subsystem: 'ネアルコ',
   parentSystem: 'ネアルコ',
   color: '#c62828',
@@ -71,8 +72,8 @@ describe('新增市場母馬', () => {
   it('[MARE-01][LINE-07] 只有第 1 系時可新增起點母馬與不同代數的替代母馬，市場母馬記為起點用或替代', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '母馬局', startYear: 1968 });
-    // createGame 用掉 id-0001；openFirstLine 用掉 id-0002～id-0009，時間 00:00:02。
-    await openFirstLine(context, LINE_INPUT);
+    // createGame 用掉 id-0001；openLine 用掉 id-0002～id-0009，時間 00:00:02。
+    await openLine(context, LINE_INPUT);
 
     const starter = await addMarketMare(context, MARE_INPUT);
 
@@ -156,7 +157,7 @@ describe('新增市場母馬', () => {
   it('[LINE-29] 替代母馬自身父系的親系統與該系不同時要確認；確認後保存並在事件記錄確認', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '母馬局', startYear: 1968 });
-    await openFirstLine(context, LINE_INPUT);
+    await openLine(context, LINE_INPUT);
     await saveSystemMapEntry(context, { subsystem: 'マンノウォー', parentSystem: 'マッチェム' });
     await saveSystemMapEntry(context, {
       subsystem: 'ロイヤルチャージャー',
@@ -212,7 +213,7 @@ describe('新增市場母馬', () => {
   it('[LINE-29] 自身父系留空、該系尚未成立或對照表查不到時只提示，不要求確認；起點母馬不判斷', async () => {
     const context = await openContext();
     await createGame(context, { name: '母馬局', startYear: 1968 });
-    await openFirstLine(context, LINE_INPUT);
+    await openLine(context, LINE_INPUT);
 
     const cases: readonly (readonly [MarketMareInput, string])[] = [
       [substituteInput(1, 2, 'テストイチ'), '自身父系未填，無法判斷是否屬於第 1 系'],
@@ -347,7 +348,7 @@ describe('新增市場母馬', () => {
   it('備份還原為新遊戲局後，母馬、馬匹與事件一致（寫入的紀錄符合欄位規則）', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '母馬局', startYear: 1968 });
-    await openFirstLine(context, LINE_INPUT);
+    await openLine(context, LINE_INPUT);
     await addMarketMare(context, MARE_INPUT);
     await addMarketMare(
       context,

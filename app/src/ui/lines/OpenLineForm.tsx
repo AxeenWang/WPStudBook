@@ -12,10 +12,10 @@ import {
 } from 'react-aria-components';
 import {
   LINE_COLOR_OPTIONS,
-  checkOpenFirstLine,
-  defaultLineColor,
-  openFirstLine,
-  type OpenFirstLineInput,
+  checkOpenLine,
+  openLine,
+  type OpenableLine,
+  type OpenLineInput,
   type OpenLineWarning,
 } from '../../services/lines.ts';
 import { findParentSystem } from '../../services/system-map.ts';
@@ -25,11 +25,12 @@ import { useServices } from '../ServicesContext.tsx';
 
 const YEAR_FORMAT = { useGrouping: false, maximumFractionDigits: 0 } as const;
 
-export function OpenFirstLineForm() {
+/** 開啟系位置（需求規格 7.1、7.3、LINE-02）：位置由規則指定，表單只填名稱、種牡馬與代表色。 */
+export function OpenLineForm({ slot }: { readonly slot: OpenableLine }) {
   const { context, notifyChanged } = useServices();
   const [subsystem, setSubsystem] = useState('');
   const [parentSystem, setParentSystem] = useState('');
-  const [color, setColor] = useState(defaultLineColor);
+  const [color, setColor] = useState(slot.suggestedColor);
   const [fullName, setFullName] = useState('');
   const [abilityNo, setAbilityNo] = useState('');
   const [birthYear, setBirthYear] = useState<number>();
@@ -38,8 +39,10 @@ export function OpenFirstLineForm() {
   const [warnings, setWarnings] = useState<readonly OpenLineWarning[]>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const heading = `開啟第 ${String(slot.position)} 系`;
 
-  const currentInput = (): OpenFirstLineInput => ({
+  const currentInput = (): OpenLineInput => ({
+    position: slot.position,
     subsystem,
     parentSystem,
     color,
@@ -61,10 +64,10 @@ export function OpenFirstLineForm() {
     }
   };
 
-  const open = async (acceptedWarnings: OpenFirstLineInput['acceptedWarnings']) => {
+  const open = async (acceptedWarnings: OpenLineInput['acceptedWarnings']) => {
     setBusy(true);
     try {
-      await openFirstLine(context, { ...currentInput(), acceptedWarnings });
+      await openLine(context, { ...currentInput(), acceptedWarnings });
       setError(undefined);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -80,7 +83,7 @@ export function OpenFirstLineForm() {
     }
     setBusy(true);
     try {
-      const check = await checkOpenFirstLine(context, currentInput());
+      const check = await checkOpenLine(context, currentInput());
       if (check.issues.length > 0) {
         setError(check.issues.join('；'));
         setBusy(false);
@@ -108,8 +111,12 @@ export function OpenFirstLineForm() {
           void submit();
         }}
       >
-        <h3 id="open-line-heading">開啟第 1 系</h3>
-        <p>填寫第 1 系目前的子系統、親系統與零代市場種牡馬；代表色已自動分配，可以改選。</p>
+        <h3 id="open-line-heading">{heading}</h3>
+        <p>
+          {slot.damPosition === undefined
+            ? `填寫第 ${String(slot.position)} 系目前的子系統、親系統與零代市場種牡馬；代表色已自動分配，可以改選。`
+            : `建立新系：第 ${String(slot.position)} 系零代市場種牡馬 × 第 ${String(slot.damPosition)} 系 ${String(slot.damGeneration ?? 0)} 代母馬 → 第 ${String(slot.position)} 系 ${String(slot.targetGeneration)} 代。代表色已自動分配，可以改選。`}
+        </p>
         <TextField
           value={subsystem}
           onChange={setSubsystem}
@@ -170,12 +177,12 @@ export function OpenFirstLineForm() {
         </fieldset>
         {error !== undefined && <p role="alert">{error}</p>}
         <Button type="submit" isDisabled={busy}>
-          開啟第 1 系
+          {heading}
         </Button>
       </Form>
       {warnings !== undefined && (
         <ConfirmDialog
-          title="確認開啟第 1 系"
+          title={`確認${heading}`}
           confirmLabel="確認並開啟"
           onCancel={() => {
             setWarnings(undefined);

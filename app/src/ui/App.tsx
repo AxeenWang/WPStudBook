@@ -11,6 +11,7 @@ import { FoalsPage } from './foals/FoalsPage.tsx';
 import { errorMessage } from './format.ts';
 import { LinesPage } from './lines/LinesPage.tsx';
 import { MaresPage } from './mares/MaresPage.tsx';
+import { OverviewPage } from './overview/OverviewPage.tsx';
 import { ServicesProvider, useServiceQuery } from './ServicesContext.tsx';
 import { StatusBar } from './StatusBar.tsx';
 import { SystemMapPage } from './system-map/SystemMapPage.tsx';
@@ -20,9 +21,10 @@ type Boot =
   | { readonly state: 'ready'; readonly context: ServiceContext }
   | { readonly state: 'failed'; readonly message: string };
 
-type PageKey = 'lines' | 'mares' | 'foals' | 'systemMap' | 'data';
+type PageKey = 'overview' | 'lines' | 'mares' | 'foals' | 'systemMap' | 'data';
 
 const PAGES = [
+  ['overview', '總覽'],
   ['lines', '八系'],
   ['mares', '母馬群'],
   ['foals', '產駒'],
@@ -32,7 +34,7 @@ const PAGES = [
 
 function AppShell() {
   const { data: status, error } = useServiceQuery(loadAppStatus);
-  // 總覽頁出現前預設顯示資料管理（建立遊戲局、備份與檢查點都在這裡）。
+  // 開啟時預設顯示資料管理：建立遊戲局、備份與檢查點都在這裡，沒有遊戲局時總覽只會顯示提示。
   const [page, setPage] = useState<PageKey>('data');
   const currentGame = status?.currentGame;
   return (
@@ -53,6 +55,7 @@ function AppShell() {
         ))}
       </nav>
       <main>
+        {page === 'overview' && <OverviewPage currentGame={currentGame} />}
         {page === 'lines' && <LinesPage currentGame={currentGame} />}
         {page === 'mares' && <MaresPage currentGame={currentGame} />}
         {page === 'foals' && <FoalsPage currentGame={currentGame} />}

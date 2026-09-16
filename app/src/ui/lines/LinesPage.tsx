@@ -3,7 +3,7 @@ import { lineColorLabel, listLineSlots, type LineSlot } from '../../services/lin
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery } from '../ServicesContext.tsx';
 import { StallionsSection } from '../stallions/StallionsSection.tsx';
-import { OpenFirstLineForm } from './OpenFirstLineForm.tsx';
+import { LineSystemsForm } from './LineSystemsForm.tsx';
 
 function LineCard({ slot }: { readonly slot: LineSlot }) {
   const { line } = slot;
@@ -47,6 +47,13 @@ function LineCard({ slot }: { readonly slot: LineSlot }) {
           </div>
         </dl>
       )}
+      {line !== undefined && (
+        <LineSystemsForm
+          position={line.position}
+          subsystem={line.subsystem}
+          parentSystem={line.parentSystem}
+        />
+      )}
     </li>
   );
 }
@@ -56,18 +63,16 @@ function LinesView() {
   if (slots === undefined) {
     return error === undefined ? <p role="status">載入中…</p> : <p role="alert">{error}</p>;
   }
-  const firstLineOpened = slots.some((slot) => slot.position === 1 && slot.line !== undefined);
   return (
     <section aria-labelledby="lines-heading">
       <h2 id="lines-heading">八系位置</h2>
-      <p>開局時八個位置全部空白。先開啟第 1 系；其他系在建系分支開啟時建立。</p>
+      <p>開局時八個位置全部空白。系位置在總覽的任務看板依建系分支開啟。</p>
       {error !== undefined && <p role="alert">{error}</p>}
       <ul className="line-grid">
         {slots.map((slot) => (
           <LineCard key={slot.position} slot={slot} />
         ))}
       </ul>
-      {!firstLineOpened && <OpenFirstLineForm />}
       <StallionsSection />
     </section>
   );

@@ -120,6 +120,16 @@ export function MareCardItem({ card, vitalityThreshold, onOpen, onSell }: MareCa
             </div>
           )}
         </dl>
+        {card.atRetirementAge && (
+          <p className="notice" data-testid="mare-retirement-age">
+            已達定年，不列入任務
+          </p>
+        )}
+        {card.lastBreedingAge && (
+          <p className="notice" data-testid="mare-last-breeding-age">
+            最後值得配種的年齡
+          </p>
+        )}
         {card.highAge && <p className="notice">產駒素質可能下降，可考慮出售</p>}
         {card.suggestSellMother && (
           <p className="notice" data-testid="mare-sell-mother">

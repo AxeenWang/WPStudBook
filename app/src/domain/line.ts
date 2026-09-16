@@ -69,3 +69,47 @@ export function pickLineColor(usedColors: readonly string[]): string {
   const used = new Set(usedColors.map((color) => color.toLowerCase()));
   return LINE_COLORS.find((color) => !used.has(color.value))?.value ?? DEFAULT_LINE_COLOR;
 }
+
+/** 同一個親系統出現在兩個以上的系位置（需求規格 7.2、13.2、LINE-03、LINE-04）。 */
+export interface DuplicateParentSystem {
+  readonly parentSystem: string;
+  readonly positions: readonly LinePosition[];
+}
+
+/** 八系親系統狀態（需求規格 13.2）：種類數與重複的系。 */
+export interface ParentSystemStatus {
+  readonly parentSystemCount: number;
+  readonly duplicates: readonly DuplicateParentSystem[];
+}
+
+export interface LineParentSystemEntry {
+  readonly position: LinePosition;
+  readonly parentSystem: string;
+}
+
+/**
+ * 八系親系統種類數與重複的系（需求規格 4.3、13.2）：只計已開啟的系，空白親系統不計入。
+ * 八種互不相同才能維持 8 種活血（4.3）。
+ */
+export function parentSystemStatus(lines: readonly LineParentSystemEntry[]): ParentSystemStatus {
+  const byParentSystem = new Map<string, LinePosition[]>();
+  for (const line of lines) {
+    if (line.parentSystem === '') {
+      continue;
+    }
+    const positions = byParentSystem.get(line.parentSystem);
+    if (positions === undefined) {
+      byParentSystem.set(line.parentSystem, [line.position]);
+    } else {
+      positions.push(line.position);
+    }
+  }
+  const duplicates = [...byParentSystem.entries()]
+    .filter(([, positions]) => positions.length > 1)
+    .map(([parentSystem, positions]) => ({
+      parentSystem,
+      positions: [...positions].sort((a, b) => a - b),
+    }))
+    .sort((a, b) => (a.positions[0] ?? 0) - (b.positions[0] ?? 0));
+  return { parentSystemCount: byParentSystem.size, duplicates };
+}

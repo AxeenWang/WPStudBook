@@ -1,3 +1,5 @@
+import type { Lineage, PairDistance } from './lineage.ts';
+import type { TaskKind, TaskPhase } from './task.ts';
 import type { Timing } from './timing.ts';
 
 /** 受胎狀態（設計決策 5.3、6.3 節）：欄位不存在＝未登記，否則存日文原文。不建立流產狀態（需求規格 9.1）。 */
@@ -11,8 +13,26 @@ export const BREEDING_TYPES = ['designated', 'free'] as const;
 export type BreedingType = (typeof BREEDING_TYPES)[number];
 
 /**
+ * 指定配種的規則快照（需求規格 7.4）：登記當下的配對距離、雙方的系與代數與預計產出。
+ * 規則之後改變時未執行任務重算，已保存的快照不變（LINE-16）；這是「可推導的資料不存」的例外
+ * （設計決策 5.1）。實際種牡馬與母馬記在紀錄本身的 `stallionId` 與 `mareId`。
+ */
+export interface BreedingRuleSnapshot {
+  /** 登記時的任務代號（`domain/task.ts` 的 `LineTask.id`）。 */
+  readonly taskId: string;
+  readonly phase: TaskPhase;
+  readonly kind: TaskKind;
+  /** 第 1 系起點沒有配對距離。 */
+  readonly pairDistance?: PairDistance;
+  readonly sire: Lineage;
+  readonly dam: Lineage;
+  /** 預計產出的系與代數。 */
+  readonly target: Lineage;
+}
+
+/**
  * 年度繁殖紀錄（設計決策 5.2 節 `breedings`）：每匹母馬每年一筆。實際種牡馬為內部 id 或外部名稱；
- * 規則快照、血統檢查與偏離規則在階段 3 加入。
+ * 血統檢查與偏離規則在後續子計畫加入。
  */
 export interface Breeding {
   readonly id: string;
@@ -26,6 +46,8 @@ export interface Breeding {
   readonly expectedBirthYear?: number;
   /** 確認出生後連結的產駒。 */
   readonly foalId?: string;
+  /** 依任務登記的八系指定配種才有（需求規格 7.4）。 */
+  readonly ruleSnapshot?: BreedingRuleSnapshot;
 }
 
 /** 前一年受胎的幼駒在 4 月 1 週誕生（需求規格 4.1、9.1）。 */

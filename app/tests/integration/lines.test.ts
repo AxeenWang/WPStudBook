@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { exportBackup, restoreBackupAsNewGame } from '../../src/services/backup.ts';
 import { createGame, getCurrentGame } from '../../src/services/games.ts';
 import {
-  checkOpenFirstLine,
+  checkOpenLine,
   listLineSlots,
-  openFirstLine,
-  type OpenFirstLineInput,
+  openLine,
+  type OpenLineInput,
 } from '../../src/services/lines.ts';
 import { listSystemMap, saveSystemMapEntry } from '../../src/services/system-map.ts';
 import { countGameRecords } from '../../src/storage/games.ts';
@@ -17,7 +17,8 @@ import { useServiceContexts } from './helpers.ts';
 
 const EMPTY_SLOTS = [2, 3, 4, 5, 6, 7, 8].map((position) => ({ position }));
 
-const INPUT: OpenFirstLineInput = {
+const INPUT: OpenLineInput = {
+  position: 1,
   subsystem: 'ネアルコ系',
   parentSystem: 'ネアルコ',
   color: '#c62828',
@@ -52,7 +53,7 @@ describe('開啟第 1 系', () => {
     const context = await openContext();
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
 
-    const line = await openFirstLine(context, INPUT);
+    const line = await openLine(context, INPUT);
 
     expect(line).toEqual({
       id: 'id-0003',
@@ -119,7 +120,7 @@ describe('開啟第 1 系', () => {
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
     await saveSystemMapEntry(context, { subsystem: 'ネアルコ', parentSystem: 'ネアルコ' });
 
-    await openFirstLine(context, INPUT);
+    await openLine(context, INPUT);
 
     expect(await listSystemMap(context)).toHaveLength(1);
     const types = (await readRecords(context.database, game.id, 'events')).map((e) => e.type);
@@ -131,7 +132,7 @@ describe('開啟第 1 系', () => {
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
     await saveSystemMapEntry(context, { subsystem: 'ネアルコ', parentSystem: 'ファラリス' });
 
-    expect(await checkOpenFirstLine(context, INPUT)).toEqual({
+    expect(await checkOpenLine(context, INPUT)).toEqual({
       issues: [],
       warnings: [
         {
@@ -140,12 +141,12 @@ describe('開啟第 1 系', () => {
         },
       ],
     });
-    await expect(openFirstLine(context, INPUT)).rejects.toMatchObject({
+    await expect(openLine(context, INPUT)).rejects.toMatchObject({
       code: 'confirmationRequired',
     });
     expect((await countGameRecords(context.database, game.id)).lines).toBe(0);
 
-    await openFirstLine(context, { ...INPUT, acceptedWarnings: ['parentSystemDiffersFromMap'] });
+    await openLine(context, { ...INPUT, acceptedWarnings: ['parentSystemDiffersFromMap'] });
 
     expect((await listSystemMap(context))[0]?.parentSystem).toBe('ネアルコ');
     const events = await readRecords(context.database, game.id, 'events');
@@ -161,14 +162,15 @@ describe('開啟第 1 系', () => {
   it('輸入錯誤一次列出，不寫入任何資料', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
-    const input: OpenFirstLineInput = {
+    const input: OpenLineInput = {
+      position: 1,
       subsystem: ' ',
       parentSystem: '系',
       color: 'red',
       founder: { fullName: '  ', abilityNo: '0x10000', birthYear: 1969, sireName: '', damName: '' },
     };
 
-    expect((await checkOpenFirstLine(context, input)).issues).toEqual([
+    expect((await checkOpenLine(context, input)).issues).toEqual([
       '請輸入目前子系統',
       '請輸入親系統',
       '請選擇代表色',
@@ -176,7 +178,7 @@ describe('開啟第 1 系', () => {
       '能力番号必須是 0x0000～0xFFFF 的十六進位',
       '出生年必須是 1000～1968 的整數',
     ]);
-    await expect(openFirstLine(context, input)).rejects.toMatchObject({ code: 'invalidInput' });
+    await expect(openLine(context, input)).rejects.toMatchObject({ code: 'invalidInput' });
     const counts = await countGameRecords(context.database, game.id);
     expect([counts.lines, counts.horses, counts.stallionDuties, counts.events]).toEqual([
       0, 0, 0, 0,
@@ -188,11 +190,11 @@ describe('開啟第 1 系', () => {
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
 
     for (const fullName of ['(外)[地]', '(外) [地]', '[地] ']) {
-      const input: OpenFirstLineInput = { ...INPUT, founder: { ...INPUT.founder, fullName } };
-      expect((await checkOpenFirstLine(context, input)).issues, fullName).toEqual([
+      const input: OpenLineInput = { ...INPUT, founder: { ...INPUT.founder, fullName } };
+      expect((await checkOpenLine(context, input)).issues, fullName).toEqual([
         '馬名不能只有 (外)、[地] 前綴',
       ]);
-      await expect(openFirstLine(context, input)).rejects.toMatchObject({ code: 'invalidInput' });
+      await expect(openLine(context, input)).rejects.toMatchObject({ code: 'invalidInput' });
     }
     const counts = await countGameRecords(context.database, game.id);
     expect([
@@ -207,10 +209,10 @@ describe('開啟第 1 系', () => {
   it('代表色不分大小寫，保存為小寫 #rrggbb', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
-    const input: OpenFirstLineInput = { ...INPUT, color: '#C62828' };
+    const input: OpenLineInput = { ...INPUT, color: '#C62828' };
 
-    expect(await checkOpenFirstLine(context, input)).toEqual({ issues: [], warnings: [] });
-    const line = await openFirstLine(context, input);
+    expect(await checkOpenLine(context, input)).toEqual({ issues: [], warnings: [] });
+    const line = await openLine(context, input);
 
     expect(line.color).toBe('#c62828');
     expect((await readRecords(context.database, game.id, 'lines'))[0]?.color).toBe('#c62828');
@@ -219,7 +221,7 @@ describe('開啟第 1 系', () => {
   it('寫入交易失敗時整筆退回，遊戲局更新時間不變', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
-    // sequentialIds 依呼叫順序產生 id：createGame 用掉 id-0001；openFirstLine 依序產生零代種牡馬
+    // sequentialIds 依呼叫順序產生 id：createGame 用掉 id-0001；openLine 依序產生零代種牡馬
     // id-0002、系位置 id-0003、任期 id-0004、系統對照表 id-0005（對照表還沒有這個子系統），
     // 接著第一筆事件 horseCreated 為 id-0006。預先放入同 id 的事件，讓 events.add 以 ConstraintError 中止交易。
     const blocker = {
@@ -232,7 +234,7 @@ describe('開啟第 1 系', () => {
     };
     await putRecords(context.database, game.id, 'events', [blocker]);
 
-    await expect(openFirstLine(context, INPUT)).rejects.toMatchObject({ name: 'ConstraintError' });
+    await expect(openLine(context, INPUT)).rejects.toMatchObject({ name: 'ConstraintError' });
 
     const counts = await countGameRecords(context.database, game.id);
     expect([counts.lines, counts.horses, counts.stallionDuties, counts.systemMap]).toEqual([
@@ -304,20 +306,20 @@ describe('開啟第 1 系', () => {
       }),
     );
 
-    expect((await checkOpenFirstLine(context, INPUT)).issues).toEqual([
+    expect((await checkOpenLine(context, INPUT)).issues).toEqual([
       '能力番号 0x0000 與出生年 1960 已屬於「キソンバ」',
     ]);
-    await openFirstLine(context, { ...INPUT, founder: { ...INPUT.founder, abilityNo: '' } });
+    await openLine(context, { ...INPUT, founder: { ...INPUT.founder, abilityNo: '' } });
 
-    expect((await checkOpenFirstLine(context, INPUT)).issues).toContain('第 1 系已經開啟');
-    await expect(openFirstLine(context, INPUT)).rejects.toMatchObject({ code: 'invalidInput' });
+    expect((await checkOpenLine(context, INPUT)).issues).toContain('第 1 系已經開啟');
+    await expect(openLine(context, INPUT)).rejects.toMatchObject({ code: 'invalidInput' });
     expect((await countGameRecords(context.database, game.id)).lines).toBe(1);
   });
 
   it('備份還原為新遊戲局後，系位置、零代種牡馬、任期、對照表與事件一致', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '八系局', startYear: 1968 });
-    await openFirstLine(context, INPUT);
+    await openLine(context, INPUT);
 
     const file = await exportBackup(context);
     const restored = await restoreBackupAsNewGame(context, { bytes: file.bytes });
