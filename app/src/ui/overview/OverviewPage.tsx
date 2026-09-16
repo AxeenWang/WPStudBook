@@ -3,6 +3,8 @@ import { loadStallionOverview } from '../../services/stallions.ts';
 import { loadTaskBoard, type LineCardView } from '../../services/tasks.ts';
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery } from '../ServicesContext.tsx';
+import { BLOCKER_LABELS } from './labels.ts';
+import { RecoveryPanel } from './RecoveryPanel.tsx';
 import { TaskBoard } from './TaskBoard.tsx';
 
 function LineCard({
@@ -49,7 +51,26 @@ function LineCard({
             <dt>各代現任種牡馬</dt>
             <dd>{currents.length === 0 ? '尚未指定' : currents.join('、')}</dd>
           </div>
+          {card.waitingYears !== undefined && card.waitingYears > 0 && (
+            <div>
+              <dt>等待年數</dt>
+              <dd data-testid="line-waiting-years">{card.waitingYears} 年</dd>
+            </div>
+          )}
+          {card.missing.length > 0 && (
+            <div>
+              <dt>缺項</dt>
+              <dd data-testid="line-missing">
+                {card.missing.map((blocker) => BLOCKER_LABELS[blocker]).join('、')}
+              </dd>
+            </div>
+          )}
         </dl>
+      )}
+      {card.needsReplenish && (
+        <p className="notice" data-testid="line-needs-replenish">
+          已成立，母馬群待補
+        </p>
       )}
     </li>
   );
@@ -61,7 +82,11 @@ function OverviewView() {
   if (board === undefined) {
     return error === undefined ? <p role="status">載入中…</p> : <p role="alert">{error}</p>;
   }
-  const reminders = (stallions?.lines ?? []).flatMap((line) => line.reminders);
+  // 提醒區合併八系任務的提醒（母馬群待補、缺少種牡馬、等待年數）與種牡馬提醒年齡（需求規格 13.2）。
+  const reminders = [
+    ...board.reminders,
+    ...(stallions?.lines ?? []).flatMap((line) => line.reminders),
+  ];
   const currentsOf = (position: number) =>
     (stallions?.lines.find((line) => line.position === position)?.current ?? [])
       .filter((item) => item.dutyStatus === 'onDuty')
@@ -105,6 +130,8 @@ function OverviewView() {
           </ul>
         )}
       </section>
+
+      <RecoveryPanel />
 
       <section aria-labelledby="line-cards-heading">
         <h3 id="line-cards-heading">八系卡片</h3>
