@@ -1,7 +1,7 @@
 import { useCallback, useId, useState } from 'react';
 import { Button, Form, Input, Label, TextField } from 'react-aria-components';
 import type { Breeding, BreedingType, Conception } from '../../domain/breeding.ts';
-import { formatLineage, PEDIGREE_WARNING_LABELS } from '../overview/labels.ts';
+import { formatLineage, PEDIGREE_WARNING_LABELS } from '../lineage-labels.ts';
 import {
   BREEDING_TYPE_OPTIONS,
   CONCEPTION_OPTIONS,

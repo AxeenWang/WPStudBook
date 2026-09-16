@@ -6,6 +6,7 @@ import {
   type Recovery,
   type RecoverySide,
 } from '../domain/recovery.ts';
+import { getFoal, listFoals } from '../storage/foals.ts';
 import { listLines } from '../storage/lines.ts';
 import { getRecovery, listRecoveries, writeRecovery } from '../storage/recoveries.ts';
 import type { ServiceContext } from './context.ts';
@@ -13,6 +14,7 @@ import { trackWrite } from './context.ts';
 import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
+import { loadHorseNames } from './horse-names.ts';
 
 export const RECOVERY_SIDE_OPTIONS: readonly RecoverySide[] = RECOVERY_SIDES;
 
@@ -185,8 +187,23 @@ export async function finishRecovery(
   input: FinishRecoveryInput,
 ): Promise<Recovery> {
   const game = await requireCurrentGame(context);
-  const now = context.now().toISOString();
   const cancelled = input.cancelled === true;
+  if (!cancelled && input.foalId !== undefined) {
+    // 重新加入的產駒必須是這個系、補系產出代數的自家產駒（需求規格 7.6）。
+    const stored = await getRecovery(context.database, game.id, input.recoveryId);
+    const foal = await getFoal(context.database, game.id, input.foalId);
+    const target = stored === undefined ? undefined : recoveryTargetGeneration(stored);
+    if (
+      stored !== undefined &&
+      (foal?.lineage?.position !== stored.position || foal.lineage.generation !== target)
+    ) {
+      throw new ServiceError(
+        'invalidInput',
+        `重新加入的產駒必須是第 ${String(stored.position)} 系 ${String(target ?? 0)} 代的自家產駒`,
+      );
+    }
+  }
+  const now = context.now().toISOString();
   return trackWrite(context, () =>
     writeRecovery(context.database, {
       gameId: game.id,
@@ -232,10 +249,17 @@ export async function finishRecovery(
   );
 }
 
+export interface RecoveryFoalOption {
+  readonly id: string;
+  readonly name: string;
+}
+
 export interface RecoveryView {
   readonly recovery: Recovery;
   /** 補系要產出的代數（需求規格 7.6）。 */
   readonly targetGeneration: number;
+  /** 可作為「重新加入的產駒」的自家產駒：補系的系、產出代數，非自由配種。 */
+  readonly foalOptions: readonly RecoveryFoalOption[];
 }
 
 /** 目前進行中的補系（需求規格 7.6、LINE-21）；沒有時為 undefined。 */
@@ -244,9 +268,26 @@ export async function loadActiveRecovery(
 ): Promise<RecoveryView | undefined> {
   const game = await requireCurrentGame(context);
   const recovery = (await listRecoveries(context.database, game.id)).find(isRecoveryInProgress);
-  return recovery === undefined
-    ? undefined
-    : { recovery, targetGeneration: recoveryTargetGeneration(recovery) };
+  if (recovery === undefined) {
+    return undefined;
+  }
+  const targetGeneration = recoveryTargetGeneration(recovery);
+  const foals = (await listFoals(context.database, game.id)).filter(
+    (foal) =>
+      !foal.freeBred &&
+      foal.lineage?.position === recovery.position &&
+      foal.lineage.generation === targetGeneration,
+  );
+  const names = await loadHorseNames(
+    context.database,
+    game.id,
+    foals.map((foal) => foal.id),
+  );
+  return {
+    recovery,
+    targetGeneration,
+    foalOptions: foals.map((foal) => ({ id: foal.id, name: names.get(foal.id) ?? foal.id })),
+  };
 }
 
 /** 一個系的補系歷程（需求規格 7.6）：原支線歷史保留，其餘七系不受影響。 */

@@ -156,19 +156,35 @@ export function RecoveryPanel() {
           <p className="notice">
             補系進行中：暫停新增下一系與循環換代，補系將產出 {active.targetGeneration} 代。
           </p>
-          <TextField value={foalId} onChange={setFoalId}>
-            <Label>重新加入的產駒內部識別</Label>
-            <Input />
-          </TextField>
+          {active.foalOptions.length === 0 ? (
+            <p className="notice">
+              第 {active.recovery.position} 系還沒有 {active.targetGeneration}{' '}
+              代的自家產駒，先依補系的配對登記產駒再完成補系。
+            </p>
+          ) : (
+            <SelectField
+              label="重新加入的產駒"
+              value={foalId === '' ? (active.foalOptions[0]?.id ?? '') : foalId}
+              options={active.foalOptions.map((option) => ({
+                value: option.id,
+                label: option.name,
+              }))}
+              onChange={(next) => {
+                if (next !== undefined) {
+                  setFoalId(next);
+                }
+              }}
+            />
+          )}
           <div className="actions">
             <Button
               type="button"
-              isDisabled={action.busy || foalId.trim() === ''}
+              isDisabled={action.busy || active.foalOptions.length === 0}
               onPress={() => {
                 void action.run(async () => {
                   await finishRecovery(context, {
                     recoveryId: active.recovery.id,
-                    foalId: foalId.trim(),
+                    foalId: foalId === '' ? active.foalOptions[0]?.id : foalId,
                   });
                   setFoalId('');
                   return `已完成第 ${String(active.recovery.position)} 系的補系`;

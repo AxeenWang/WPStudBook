@@ -10,6 +10,7 @@ import {
   loadActiveRecovery,
   setRecoveryParents,
 } from '../../src/services/recoveries.ts';
+import { registerFoal } from '../../src/services/foals.ts';
 import { assignCurrentStallion } from '../../src/services/stallions.ts';
 import { loadTaskBoard } from '../../src/services/tasks.ts';
 import { listEventsForSubject } from '../../src/storage/events.ts';
@@ -68,7 +69,10 @@ describe('斷血補系（需求規格 7.6）', () => {
     expect(declared.endYear).toBeUndefined();
 
     // 第 1 系 1 代斷血：補系產出 2 代。
-    expect((await loadActiveRecovery(context))?.targetGeneration).toBe(2);
+    const active = await loadActiveRecovery(context);
+    expect(active?.targetGeneration).toBe(2);
+    // 重新加入的產駒由該系該代的自家產駒選，不要使用者輸入內部識別；此時還沒有 2 代產駒。
+    expect(active?.foalOptions).toEqual([]);
 
     const market = await addMarket(context, 1, 1, 'テストホケイ', 'marketRecovery');
     const withParents = await setRecoveryParents(context, {
@@ -77,14 +81,45 @@ describe('斷血補系（需求規格 7.6）', () => {
     });
     expect(withParents.damId).toBe(market.mare.id);
 
+    // 補入的市場母馬配第 1 系 1 代現任，產出的第 1 系 2 代產駒就是重新加入的產駒。
+    await saveBreeding(context, {
+      mareId: market.mare.id,
+      gameYear: 1970,
+      breedingType: 'designated',
+      stallionId: stud.elderId,
+      stallionName: '',
+      conception: '受胎',
+    });
     await changeCurrentYear(context, 1971);
+    const rejoined = await registerFoal(context, {
+      damId: market.mare.id,
+      birthYear: 1971,
+      sex: 'female',
+      sireName: '',
+      disposition: undefined,
+      sp: undefined,
+      st: undefined,
+      subParams: {},
+      turf: undefined,
+      dirt: undefined,
+      distanceText: '',
+      kodashi: undefined,
+      note: '',
+    });
+    expect(rejoined.foal.lineage).toEqual({ position: 1, generation: 2 });
+
+    // 重新加入的產駒必須是該系補系產出代數的自家產駒。
+    await expect(
+      finishRecovery(context, { recoveryId: declared.id, foalId: stud.daughterId }),
+    ).rejects.toMatchObject({ code: 'invalidInput' });
+
     const finished = await finishRecovery(context, {
       recoveryId: declared.id,
-      foalId: stud.daughterId,
+      foalId: rejoined.foal.id,
     });
     expect(finished.status).toBe('completed');
     expect(finished.endYear).toBe(1971);
-    expect(finished.foalId).toBe(stud.daughterId);
+    expect(finished.foalId).toBe(rejoined.foal.id);
 
     // 原支線歷史保留。
     expect((await listLineRecoveries(context, 1)).map((item) => item.id)).toEqual([declared.id]);

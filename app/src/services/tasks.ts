@@ -17,6 +17,7 @@ import {
 } from '../domain/mare.ts';
 import {
   checkLineageAgainstRule,
+  checkPedigree,
   pedigreeNotices,
   pedigreeWarningCodes,
   type LineageMismatch,
@@ -132,6 +133,14 @@ interface BoardData {
   readonly recorded: ReadonlySet<string>;
   readonly recoveryInProgress: boolean;
 }
+
+/** 種牡馬側缺席時用的空祖先樹：只會得到「未計算」或「資料不足」，不再多讀一次資料庫。 */
+const EMPTY_TREE = {
+  greatGrandparents: [],
+  duplicateAncestors: [],
+  unlinkedAncestors: 1,
+  buildingPhaseGaps: 0,
+} as const;
 
 function dutyKey(lineage: Lineage): string {
   return `${String(lineage.position)}-${String(lineage.generation)}`;
@@ -311,7 +320,9 @@ function buildReminders(lines: readonly LineCardView[]): string[] {
  */
 export async function loadTaskBoard(context: ServiceContext): Promise<TaskBoard> {
   const data = await loadBoardData(context);
-  const mareIds = data.tasks.flatMap((task) => damMares(data, task.dam).map((mare) => mare.id));
+  // 每筆任務的可配母馬只算一次：先取名字，再組畫面資料。
+  const damsByTask = new Map(data.tasks.map((task) => [task.id, damMares(data, task.dam)]));
+  const mareIds = [...damsByTask.values()].flatMap((mares) => mares.map((mare) => mare.id));
   const sireIds = data.tasks.flatMap((task) => {
     const duty = data.onDuty.get(dutyKey(task.sire));
     return duty === undefined ? [] : [duty.horseId];
@@ -334,7 +345,7 @@ export async function loadTaskBoard(context: ServiceContext): Promise<TaskBoard>
       sireId,
       sireName: sireId === undefined ? undefined : (names.get(sireId) ?? sireId),
       highPriority: duty?.startYear === data.currentYear,
-      mares: damMares(data, task.dam).map((mare) => ({
+      mares: (damsByTask.get(task.id) ?? []).map((mare) => ({
         id: mare.id,
         name: names.get(mare.id) ?? '（沒有馬名）',
         lastBreedingAge: atLastBreedingAge(data.ages.get(mare.id), data.retirementAge),
@@ -503,12 +514,15 @@ async function inspectTaskBreeding(
     issues.push(describeMismatch(damMismatch));
   }
 
-  // 系或代數不符時仍算一次血統檢查，讓畫面可以同時看到阻止原因與血統狀況。
-  const pedigreeCheck = await checkBreedingPedigree(context, {
-    phase: snapshot.phase,
-    sireId: input.stallionId ?? '',
-    damId: input.mareId,
-  });
+  // 種牡馬沒有系與代數時血統檢查只會回報「資料不足」，沒有參考價值；阻止原因已經足夠。
+  const pedigreeCheck =
+    input.stallionId === undefined
+      ? checkPedigree(snapshot.phase, EMPTY_TREE)
+      : await checkBreedingPedigree(context, {
+          phase: snapshot.phase,
+          sireId: input.stallionId,
+          damId: input.mareId,
+        });
   const warnings = pedigreeWarningCodes(pedigreeCheck).map((code) => ({
     code,
     message: PEDIGREE_WARNING_MESSAGES[code](pedigreeCheck),
