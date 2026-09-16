@@ -8,7 +8,7 @@ import {
   type LineColor,
   type LinePosition,
 } from '../domain/line.ts';
-import type { StallionDuty } from '../domain/stallion-duty.ts';
+import type { CurrentDuty, StallionDuty } from '../domain/stallion-duty.ts';
 import type { SystemMapEntry } from '../domain/system-map.ts';
 import { findHorseByIdentity, getHorse } from '../storage/horses.ts';
 import { insertOpenedLine, listLines } from '../storage/lines.ts';
@@ -52,7 +52,8 @@ export async function listLineSlots(context: ServiceContext): Promise<LineSlot[]
         return { position };
       }
       const founderDuty = duties.find(
-        (duty) => duty.position === position && duty.generation === 0 && duty.role === 'current',
+        (duty): duty is CurrentDuty =>
+          duty.position === position && duty.generation === 0 && duty.role === 'current',
       );
       const founder =
         founderDuty === undefined

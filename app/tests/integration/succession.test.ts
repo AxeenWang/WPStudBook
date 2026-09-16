@@ -202,7 +202,7 @@ describe('自家母駒轉入與世代成立（需求規格 8.2、8.4、9.6）', 
     expect(card).toMatchObject({ status: 'left', succession: 'sold' });
   });
 
-  it('自由配種、公駒、已售出、已轉入或系與代數與父母不符的產駒不能轉入', async () => {
+  it('[PED-08] 自由配種、公駒、已售出、已轉入或系與代數與父母不符的產駒不能轉入', async () => {
     const context = await open();
     const family = await raiseFamily(context);
     const issuesOf = async (foalId: string, site = 32) =>

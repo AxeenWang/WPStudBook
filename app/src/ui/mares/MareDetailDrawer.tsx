@@ -13,6 +13,7 @@ import {
 } from 'react-aria-components';
 import type { ServiceContext } from '../../services/context.ts';
 import { loadMareDetail, type MareDetail } from '../../services/mares.ts';
+import { PedigreeView } from '../pedigree/PedigreeView.tsx';
 import { useServiceQuery } from '../ServicesContext.tsx';
 import { MareBreeding } from './MareBreeding.tsx';
 import { MareFoals } from './MareFoals.tsx';
@@ -50,7 +51,7 @@ function PedigreeBrief({ detail }: { readonly detail: MareDetail }) {
           <dd>{detail.card.sireSubsystem ?? '未填'}</dd>
         </div>
       </dl>
-      <p>完整血緣表在血緣功能完成後提供。</p>
+      <PedigreeView horseId={detail.card.id} />
     </>
   );
 }

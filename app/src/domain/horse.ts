@@ -24,6 +24,15 @@ export interface HorseAlias {
   readonly gameYear: number;
 }
 
+/**
+ * 自家產駒的去向（需求規格 9.7）：成為種牡馬。只作紀錄，不影響八系任務、代數或後繼；
+ * 在其他牧場成為繁殖牝馬（11.10）於階段 4 加入。
+ */
+export interface HorseFate {
+  readonly kind: 'becameStallion';
+  readonly gameYear: number;
+}
+
 /** 設計決策 5.2、6.3 節。父母可以同時有內部 id 與匯入的外部名稱。 */
 export interface Horse {
   readonly id: string;
@@ -42,6 +51,20 @@ export interface Horse {
   readonly femaleLine?: string;
   readonly stageNumbers: readonly StageNumber[];
   readonly aliases: readonly HorseAlias[];
+  readonly fate?: HorseFate;
+}
+
+/** 取得新階段馬番号（需求規格 6.4）：同一階段已有相同馬番号時不重複記錄，回傳原馬匹。 */
+export function withStageNumber(horse: Horse, stageNumber: StageNumber): Horse {
+  const exists = horse.stageNumbers.some(
+    (item) => item.stage === stageNumber.stage && item.number === stageNumber.number,
+  );
+  return exists ? horse : { ...horse, stageNumbers: [...horse.stageNumbers, stageNumber] };
+}
+
+/** 繁殖牝馬與種牡馬馬名唯讀（需求規格 6.4）；此處判斷已成為種牡馬的馬。 */
+export function isStallionHorse(horse: Horse): boolean {
+  return horse.fate?.kind === 'becameStallion';
 }
 
 export const ABILITY_NO_MAX = 0xffff;

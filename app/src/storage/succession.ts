@@ -8,14 +8,9 @@ import type { AppDatabase } from './database.ts';
 import { readSireRecords, toFoal, type SireRecords } from './foals.ts';
 import { readGameForWrite, type GameTouch } from './games.ts';
 import { toHorse } from './horses.ts';
+import { readLineAt } from './lines.ts';
 import { toMare } from './mares.ts';
-import {
-  completeTransaction,
-  isPlainRecord,
-  withGameId,
-  withoutGameId,
-  type ReadableStore,
-} from './records.ts';
+import { completeTransaction, withGameId, type ReadableStore } from './records.ts';
 
 const SUCCESSION_STORES = ['mares', 'horses', 'foals', 'lines', 'stallionDuties'] as const;
 
@@ -50,16 +45,6 @@ async function readSisters(
   });
 }
 
-async function readLine(
-  objectStore: SuccessionStoreOf,
-  gameId: string,
-  position: number,
-): Promise<Line | undefined> {
-  const value: unknown = await objectStore('lines').index('position').get([gameId, position]);
-  // 本機資料由本程式寫入；備份匯入的系位置由 validateCollections 驗證。
-  return isPlainRecord(value) ? (withoutGameId(value) as unknown as Line) : undefined;
-}
-
 /** 從產駒轉入繁殖牝馬前要核對的資料（需求規格 8.4、9.6）。 */
 export interface OwnMareState {
   readonly foal: Foal | undefined;
@@ -90,7 +75,7 @@ async function readOwnMareState(
     horse?.damId === undefined ? undefined : objectStore('mares').get([gameId, horse.damId]),
     horse?.sireId === undefined ? undefined : readSireRecords(objectStore, gameId, horse.sireId),
     horse === undefined ? [] : readSisters(objectStore, gameId, horse),
-    position === undefined ? undefined : readLine(objectStore, gameId, position),
+    position === undefined ? undefined : readLineAt(objectStore, gameId, position),
   ]);
   return {
     foal,

@@ -46,7 +46,7 @@ export async function readRecords(
 /** 交易內的資料表；只列出用到的請求，讓唯讀與讀寫交易都能傳入同一個讀取函式。 */
 export interface ReadableIndex {
   get(query: IDBValidKey): Promise<unknown>;
-  getAll(query: IDBValidKey): Promise<unknown[]>;
+  getAll(query: IDBValidKey | IDBKeyRange): Promise<unknown[]>;
 }
 
 export interface ReadableStore {

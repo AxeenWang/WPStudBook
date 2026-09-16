@@ -115,6 +115,7 @@ export const MARE_EVENT_LABELS: Readonly<Partial<Record<HistoryEventType, string
   foalChanged: '更正產駒資料',
   horseNamed: '更正正式馬名',
   successionChanged: '接替狀態變更',
+  matingRatingRecorded: '登記配種評價',
 };
 
 /** 姊妹接替狀態（需求規格 8.9）。 */

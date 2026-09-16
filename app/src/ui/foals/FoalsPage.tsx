@@ -69,6 +69,7 @@ function FoalRow({ card }: { readonly card: FoalCard }) {
         </span>
         <span>{DISPOSITION_LABELS[card.disposition]}</span>
         {!card.named && <span className="badge">未命名</span>}
+        {card.isStallion && <span className="badge">已成為種牡馬</span>}
       </div>
       {managing && <FoalPanel card={card} />}
     </li>
