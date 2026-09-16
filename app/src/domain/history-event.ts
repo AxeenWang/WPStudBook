@@ -39,6 +39,8 @@ export type HistoryEventType =
   | 'successionChanged'
   /** 母馬世代成立；subjectId 為系位置 id。 */
   | 'lineGenerationEstablished'
+  /** 斷血補系宣告、補入親馬或結束，保存前後值；subjectId 為補系紀錄 id（需求規格 7.6）。 */
+  | 'recoveryChanged'
   /** 自家產駒成為種牡馬（需求規格 9.7），含種牡馬馬番号；subjectId 為馬匹 id。 */
   | 'becameStallion'
   /** 現任任期狀態變更或被更換，保存前後值；subjectId 為馬匹 id。 */

@@ -193,4 +193,69 @@ test.describe('總覽與任務看板（需求規格 13.2）', () => {
     await expect(row.getByTestId('breeding-pedigree')).toHaveCount(0);
     await closeDrawer(page, drawer);
   });
+  test('[LINE-18][LINE-19][LINE-21] 母馬群降為 0 時列出三個選擇；宣告斷血後暫停建立新系，取消後解除', async ({
+    page,
+  }) => {
+    test.slow();
+    await openApp(page);
+    await createGameViaUi(page, '補系局', 1968);
+    await openLineViaUi(page, 1, 'ネアルコ', 'テストシュボバ');
+    await gotoPage(page, '母馬群');
+    await addMareViaUi(page, {
+      position: 1,
+      generation: 0,
+      name: 'オオトリモナーコス',
+      site: '日本',
+    });
+
+    await breedConceived(page, 'オオトリモナーコス');
+    await confirmBirth(page, 'オオトリモナーコス', 1968, '牝');
+    const filly = await openFoalRow(page, 'オオトリモナーコス1969');
+    const namedFilly = await nameFoal(page, filly, 'テストムスメ');
+    const convert = namedFilly.getByRole('form', { name: '轉入為繁殖牝馬' });
+    await convert.getByLabel('轉入據點').selectOption({ label: '日本' });
+    await convert.getByRole('button', { name: '轉入母馬群' }).click();
+    await expect(convert.getByRole('status')).toContainText('該代已成立');
+
+    // 賣掉第 1 系 1 代唯一的自家母馬：已成立但母馬群降為 0。
+    await gotoPage(page, '母馬群');
+    const region = herd(page);
+    await region
+      .getByRole('article', { name: 'テストムスメ' })
+      .getByRole('button', { name: '賣出' })
+      .click();
+    await page
+      .getByRole('alertdialog', { name: '賣出繁殖牝馬' })
+      .getByRole('button', { name: '確認賣出' })
+      .click();
+    await expect(region.getByRole('status')).toContainText('已賣出');
+
+    await gotoPage(page, '總覽');
+    await expect(
+      page.getByTestId('overview-line-1').getByTestId('line-needs-replenish'),
+    ).toHaveText('已成立，母馬群待補');
+    await expect(page.getByRole('list', { name: '提醒' })).toContainText('母馬群待補');
+
+    // 系統只列出三個選擇，不代選（LINE-19）。
+    const choices = page.getByRole('list', { name: '第 1 系的處理選擇' });
+    await expect(choices.getByRole('listitem')).toHaveCount(3);
+    await expect(choices).toContainText('原階段重試');
+    await expect(choices).toContainText('市場補血');
+    await expect(choices).toContainText('宣告斷血並補系');
+
+    const declare = page.getByRole('form', { name: '宣告第 1 系斷血' });
+    await declare.getByLabel('原因').fill('母馬群全部離圈');
+    await declare.getByRole('button', { name: '宣告斷血' }).click();
+    await expect(page.getByTestId('recovery-active')).toContainText('補系進行中');
+    await expect(page.getByTestId('recovery-active')).toContainText('補系將產出 2 代');
+
+    // 補系進行中暫停建立新系（LINE-21）。
+    await expect(board(page)).toContainText('斷血補系進行中');
+
+    await page.getByTestId('recovery-active').getByRole('button', { name: '取消補系' }).click();
+    await expect(page.getByTestId('recovery-feedback').getByRole('status')).toContainText(
+      '已取消第 1 系的補系',
+    );
+    await expect(board(page)).not.toContainText('斷血補系進行中');
+  });
 });

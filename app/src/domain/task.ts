@@ -33,8 +33,16 @@ export function pairedPosition(position: LinePosition, distance: PairDistance): 
   return isLinePosition(paired) ? paired : position;
 }
 
-/** 任務尚未就緒或暫停的原因（需求規格 7.3、7.7、13.2）。 */
-export type TaskBlocker = 'lineNotOpened' | 'noCurrentStallion' | 'noMares';
+/** 任務尚未就緒或暫停的原因（需求規格 7.3、7.6、7.7、13.2）。 */
+export type TaskBlocker =
+  | 'lineNotOpened'
+  /** 缺少現任種牡馬：現任離場且未指定後任（需求規格 7.7、LINE-23）。 */
+  | 'noCurrentStallion'
+  /** 缺少目標種牡馬：建立新系的零代市場種牡馬被遊戲提前引退，等使用者替換（需求規格 7.7）。 */
+  | 'missingTargetStallion'
+  | 'noMares'
+  /** 補系進行中：暫停新增下一系與循環換代（需求規格 7.6、LINE-21）。 */
+  | 'recoveryInProgress';
 
 /** 任務的母馬側：第 q 系 N 代母馬群（需求規格 10.3，含替代母馬）。 */
 export interface TaskDam {
@@ -90,6 +98,8 @@ export interface TaskSource {
   readonly stallions: readonly TaskStallion[];
   readonly mares: readonly TaskMare[];
   readonly retirementAge: number;
+  /** 有進行中的斷血補系：暫停新增下一系與循環換代（需求規格 7.6、LINE-21）。 */
+  readonly recoveryInProgress?: boolean | undefined;
 }
 
 /**
@@ -129,15 +139,25 @@ function hasOnDutyStallion(source: TaskSource, sire: Lineage): boolean {
   );
 }
 
-function blockersFor(source: TaskSource, sire: Lineage, dam: TaskDam): TaskBlocker[] {
+function blockersFor(
+  source: TaskSource,
+  kind: TaskKind,
+  sire: Lineage,
+  dam: TaskDam,
+): TaskBlocker[] {
   const blockers: TaskBlocker[] = [];
   if (findLine(source, sire.position)?.opened !== true) {
     blockers.push('lineNotOpened');
   } else if (!hasOnDutyStallion(source, sire)) {
-    blockers.push('noCurrentStallion');
+    // 建立新系用的是零代市場種牡馬，缺的時候要換市場馬而不是指定後任（需求規格 7.7）。
+    blockers.push(kind === 'found' ? 'missingTargetStallion' : 'noCurrentStallion');
   }
   if (!hasEligibleMare(source, dam)) {
     blockers.push('noMares');
+  }
+  // 補系進行中暫停新增下一系與循環換代；推進原系不受影響（需求規格 7.6）。
+  if (source.recoveryInProgress === true && (kind === 'found' || kind === 'cycle')) {
+    blockers.push('recoveryInProgress');
   }
   return blockers;
 }
@@ -164,7 +184,7 @@ function makeTask(
     sire,
     dam,
     target,
-    blockers: blockersFor(source, sire, dam),
+    blockers: blockersFor(source, kind, sire, dam),
   };
 }
 

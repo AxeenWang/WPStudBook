@@ -1,7 +1,7 @@
-import type { Lineage } from '../../domain/lineage.ts';
 import type { PedigreeCheck } from '../../domain/pedigree-check.ts';
 import type { TaskBlocker, TaskDam, TaskPhase } from '../../domain/task.ts';
 import type { TaskView } from '../../services/tasks.ts';
+import { formatLineage } from '../lineage-labels.ts';
 
 export const PHASE_LABELS: Readonly<Record<TaskPhase, string>> = {
   building: '建系期',
@@ -11,17 +11,10 @@ export const PHASE_LABELS: Readonly<Record<TaskPhase, string>> = {
 export const BLOCKER_LABELS: Readonly<Record<TaskBlocker, string>> = {
   lineNotOpened: '系位置尚未開啟',
   noCurrentStallion: '缺少現任種牡馬',
+  missingTargetStallion: '缺少目標種牡馬',
   noMares: '母馬群沒有可配母馬',
+  recoveryInProgress: '斷血補系進行中，暫停新增下一系與循環換代',
 };
-
-/** 代數文字（需求規格 3 章）：任務標題沿用規格的「第 2 系零代」、「第 1 系 1 代」寫法。 */
-function generationText(generation: number): string {
-  return generation === 0 ? '零代' : ` ${String(generation)} 代`;
-}
-
-export function formatLineage(lineage: Lineage): string {
-  return `第 ${String(lineage.position)} 系${generationText(lineage.generation)}`;
-}
 
 /** 母馬側（需求規格 7.3、8.3）：替代母馬不顯示為屬於該系，起點母馬群另外標示。 */
 function formatDam(dam: TaskDam): string {
@@ -69,10 +62,3 @@ export function describePedigreeCheck(check: PedigreeCheck): string {
   }
   return `${parts.join('・')}。`;
 }
-
-/** 確認紀錄的介面文字（需求規格 10.2）。 */
-export const PEDIGREE_WARNING_LABELS: Readonly<Record<string, string | undefined>> = {
-  activationBelowFull: '活血少於 8 種',
-  duplicateAncestors: '4 代內有重複的馬',
-  insufficientPedigree: '血統資料不足',
-};
