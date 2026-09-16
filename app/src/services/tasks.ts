@@ -24,6 +24,7 @@ import {
   type PedigreeWarningCode,
 } from '../domain/pedigree-check.ts';
 import { stallionLineage } from '../domain/foal.ts';
+import { isRecoveryInProgress, needsReplenish } from '../domain/recovery.ts';
 import { isOnDuty } from '../domain/stallion-duty.ts';
 import {
   buildLineTasks,
@@ -42,6 +43,7 @@ import { readGameSettings } from '../storage/games.ts';
 import { getHorsesByIds } from '../storage/horses.ts';
 import { listLines } from '../storage/lines.ts';
 import { getMare, listMares } from '../storage/mares.ts';
+import { listRecoveries } from '../storage/recoveries.ts';
 import { listStallionDuties } from '../storage/stallion-duties.ts';
 import type { ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
@@ -93,6 +95,15 @@ export interface LineCardView {
   /** 最新世代生產中的母馬數與目標數（需求規格 7.5）。 */
   readonly mareCount: number;
   readonly mareTarget: number;
+  /** 已成立世代的母馬降為 0：顯示「已成立，母馬群待補」（需求規格 7.6、LINE-18）。 */
+  readonly needsReplenish: boolean;
+  /**
+   * 母馬群已推進而種牡馬未就緒時的等待年數（需求規格 7.8、LINE-24）：
+   * 目前遊戲年減最新世代成立的年份，不退代、不判定斷血。
+   */
+  readonly waitingYears: number | undefined;
+  /** 這個系的任務缺項，去除重複（需求規格 13.2）。 */
+  readonly missing: readonly TaskBlocker[];
 }
 
 export interface TaskBoard {
@@ -100,6 +111,10 @@ export interface TaskBoard {
   readonly tasks: readonly TaskView[];
   readonly lines: readonly LineCardView[];
   readonly parentSystem: ParentSystemStatus;
+  /** 總覽提醒區（需求規格 13.2）：母馬群待補、缺少現任或目標種牡馬、等待目標種牡馬。 */
+  readonly reminders: readonly string[];
+  /** 進行中的斷血補系（需求規格 7.6、LINE-21）。 */
+  readonly recoveryInProgress: boolean;
 }
 
 interface BoardData {
@@ -115,6 +130,7 @@ interface BoardData {
   readonly onDuty: ReadonlyMap<string, { readonly horseId: string; readonly startYear: number }>;
   /** 本年度已登記的任務代號 → 母馬 id。 */
   readonly recorded: ReadonlySet<string>;
+  readonly recoveryInProgress: boolean;
 }
 
 function dutyKey(lineage: Lineage): string {
@@ -127,13 +143,15 @@ function recordKey(taskId: string, mareId: string): string {
 
 async function loadBoardData(context: ServiceContext): Promise<BoardData> {
   const game = await requireCurrentGame(context);
-  const [lines, duties, mares, breedings, settings] = await Promise.all([
+  const [lines, duties, mares, breedings, settings, recoveries] = await Promise.all([
     listLines(context.database, game.id),
     listStallionDuties(context.database, game.id),
     listMares(context.database, game.id),
     listBreedings(context.database, game.id),
     readGameSettings(context.database, game.id),
+    listRecoveries(context.database, game.id),
   ]);
+  const recoveryInProgress = recoveries.some(isRecoveryInProgress);
   const horses = await getHorsesByIds(
     context.database,
     game.id,
@@ -173,6 +191,7 @@ async function loadBoardData(context: ServiceContext): Promise<BoardData> {
       age: ages.get(mare.id),
     })),
     retirementAge,
+    recoveryInProgress,
   });
   const recorded = new Set(
     breedings
@@ -193,6 +212,7 @@ async function loadBoardData(context: ServiceContext): Promise<BoardData> {
     ages,
     onDuty,
     recorded,
+    recoveryInProgress,
   };
 }
 
@@ -231,6 +251,58 @@ function latestGenerationOf(line: Line | undefined): number | undefined {
   return line === undefined || line.establishedGenerations.length === 0
     ? undefined
     : Math.max(...line.establishedGenerations.map((item) => item.generation));
+}
+
+/**
+ * 等待目標種牡馬的年數（需求規格 7.8、LINE-24）：母馬群已推進到最新世代、但那一代缺種牡馬時，
+ * 以目前遊戲年減該世代成立的年份。不退代、不判定斷血；種牡馬就緒後就不再顯示。
+ */
+function waitingYearsFor(
+  data: BoardData,
+  line: Line | undefined,
+  latestGeneration: number | undefined,
+  missing: readonly TaskBlocker[],
+): number | undefined {
+  if (line === undefined || latestGeneration === undefined) {
+    return undefined;
+  }
+  if (!missing.includes('noCurrentStallion') && !missing.includes('missingTargetStallion')) {
+    return undefined;
+  }
+  const established = line.establishedGenerations.find(
+    (item) => item.generation === latestGeneration,
+  );
+  return established === undefined
+    ? undefined
+    : Math.max(data.currentYear - established.gameYear, 0);
+}
+
+/** 總覽提醒區（需求規格 13.2）：母馬群待補、缺少現任或目標種牡馬、等待目標種牡馬。 */
+function buildReminders(lines: readonly LineCardView[]): string[] {
+  const reminders: string[] = [];
+  for (const card of lines) {
+    if (!card.opened) {
+      continue;
+    }
+    const label = `第 ${String(card.position)} 系`;
+    if (card.needsReplenish) {
+      reminders.push(
+        `${label} ${String(card.latestGeneration ?? 0)} 代已成立，母馬群待補（0／${String(card.mareTarget)}），建議補血`,
+      );
+    }
+    if (card.missing.includes('noCurrentStallion')) {
+      reminders.push(`${label}缺少現任種牡馬，相關任務已暫停`);
+    }
+    if (card.missing.includes('missingTargetStallion')) {
+      reminders.push(`${label}缺少目標種牡馬，請從市場選同系其他種牡馬替換`);
+    }
+    if (card.waitingYears !== undefined && card.waitingYears > 0) {
+      reminders.push(
+        `${label} ${String(card.latestGeneration ?? 0)} 代母馬群已等待目標種牡馬 ${String(card.waitingYears)} 年`,
+      );
+    }
+  }
+  return reminders;
 }
 
 /**
@@ -274,6 +346,15 @@ export async function loadTaskBoard(context: ServiceContext): Promise<TaskBoard>
   const lines = LINE_POSITIONS.map((position): LineCardView => {
     const line = byPosition.get(position);
     const latestGeneration = latestGenerationOf(line);
+    const mareCount =
+      latestGeneration === undefined ? 0 : mareCountFor(data, position, latestGeneration);
+    const missing = [
+      ...new Set(
+        tasks
+          .filter((task) => task.sire.position === position || task.target.position === position)
+          .flatMap((task) => task.blockers),
+      ),
+    ];
     return {
       position,
       opened: line !== undefined,
@@ -281,15 +362,19 @@ export async function loadTaskBoard(context: ServiceContext): Promise<TaskBoard>
       parentSystem: line?.parentSystem,
       color: line?.color,
       latestGeneration,
-      mareCount:
-        latestGeneration === undefined ? 0 : mareCountFor(data, position, latestGeneration),
+      mareCount,
       mareTarget: MARE_GROUP_TARGET,
+      needsReplenish: needsReplenish(latestGeneration !== undefined, mareCount),
+      waitingYears: waitingYearsFor(data, line, latestGeneration, missing),
+      missing,
     };
   });
   return {
     currentYear: data.currentYear,
     tasks,
     lines,
+    reminders: buildReminders(lines),
+    recoveryInProgress: data.recoveryInProgress,
     parentSystem: parentSystemStatus(
       data.lines.map((line) => ({ position: line.position, parentSystem: line.parentSystem })),
     ),

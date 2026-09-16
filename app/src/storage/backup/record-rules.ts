@@ -104,6 +104,7 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   horseNamed: true,
   successionChanged: true,
   lineGenerationEstablished: true,
+  recoveryChanged: true,
   becameStallion: true,
   stallionDutyChanged: true,
   plannedSuccessorChanged: true,
