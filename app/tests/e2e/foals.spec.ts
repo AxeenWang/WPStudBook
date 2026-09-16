@@ -156,8 +156,11 @@ test.describe('配種與產駒', () => {
     const nameForm = foal.getByRole('form', { name: '正式馬名' });
     await nameForm.getByLabel('正式馬名').fill('オオトリヒメ');
     await nameForm.getByRole('button', { name: '保存馬名' }).click();
-    await expect(nameForm.getByRole('status')).toHaveText('已登記正式馬名「オオトリヒメ」');
+    // 補名後產駒卡的名稱就會換成正式馬名，所以改以新名稱定位，不能沿用原本的卡片。
     const named = drawer.getByRole('article', { name: 'オオトリヒメ' });
+    await expect(named.getByRole('form', { name: '正式馬名' }).getByRole('status')).toHaveText(
+      '已登記正式馬名「オオトリヒメ」',
+    );
     await expect(named).toContainText('追蹤名：オオトリモナーコス1969');
     await expect(named.getByTestId('foal-abilities')).toHaveText('SP 72・芝 ◎・ダ △（芝型）');
 
