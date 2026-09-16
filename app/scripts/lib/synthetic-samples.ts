@@ -8,7 +8,7 @@ import {
   JAN2YO_COLUMNS,
   STALLION_COLUMNS,
   type ColumnMap,
-} from './sample-columns.ts';
+} from '../../src/import/columns.ts';
 
 /**
  * 合成樣本（設計決策 7.4）：內容全部虛構，只依附錄 A 的欄數與欄位位置組出 TSV，

@@ -35,8 +35,8 @@ function firstRow(sample: SyntheticSample, rows: readonly SourceRow[]): SourceRo
 }
 
 /**
- * 產生器與解析器共用 `src/import/formats.ts` 的欄位位置（設計決策 7.4），
- * 這裡列出解析器目前還不驗證、只有產生器用到的位置，避免打錯欄位序號時靜默通過。
+ * 欄位位置由 `src/import/columns.ts` 統一提供（設計決策 7.4）；這裡確認那份表沒有打錯序號，
+ * 列出的是表頭還不驗證的位置。
  */
 const UNVALIDATED_POSITIONS: Readonly<Record<string, readonly number[]>> = {
   broodmare: [2],

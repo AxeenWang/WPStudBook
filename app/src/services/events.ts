@@ -13,8 +13,14 @@ export interface UserEventInput {
   readonly after?: JsonValue | undefined;
 }
 
-/** 使用者操作產生的事件；沒有時點、前值或後值時不寫該欄位（設計決策 5.3 節）。 */
-export function userEvent(context: ServiceContext, input: UserEventInput): HistoryEvent {
+/**
+ * 使用者操作產生的事件；沒有時點、前值或後值時不寫該欄位（設計決策 5.3 節）。
+ * 只需要 newId，讓寫入交易內的同步 build 也能用（匯入的處理器）。
+ */
+export function userEvent(
+  context: Pick<ServiceContext, 'newId'>,
+  input: UserEventInput,
+): HistoryEvent {
   return {
     id: context.newId(),
     subjectId: input.subjectId,

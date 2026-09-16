@@ -1,8 +1,9 @@
 /**
- * 合成樣本的欄位位置（需求規格附錄 A）。欄位序號從 1 起算。
+ * 各匯入格式的欄位位置（需求規格附錄 A）。欄位序號從 1 起算。
  *
- * 解析器驗證的欄位位置在 `src/import/formats.ts`，產生器與解析器共用那一份表（設計決策 7.4）；
- * 這裡只替同一批位置取個名字讓樣本定義讀得懂，並補上解析器目前還不驗證的欄位（例如 `国`）。
+ * 解析器與合成樣本產生器共用這一份表（設計決策 7.4），兩邊不會各自寫一次欄位序號。
+ * `src/import/formats.ts` 負責驗證欄數與關鍵表頭，這裡負責「哪個欄位在第幾欄」，
+ * 也含解析器會讀、但表頭還不驗證的欄位（例如繁殖牝馬總表的 `国`）。
  */
 
 export const BROODMARE_COLUMNS = {
@@ -140,3 +141,8 @@ export const APR_FOALS_COLUMNS = {
 } as const;
 
 export type ColumnMap = Readonly<Record<string, number>>;
+
+export type BroodmareColumn = keyof typeof BROODMARE_COLUMNS;
+export type StallionColumn = keyof typeof STALLION_COLUMNS;
+export type Jan2yoColumn = keyof typeof JAN2YO_COLUMNS;
+export type AprFoalsColumn = keyof typeof APR_FOALS_COLUMNS;

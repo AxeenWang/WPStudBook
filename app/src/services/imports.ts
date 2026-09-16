@@ -140,6 +140,8 @@ export interface ApplyImportOptions {
   readonly confirmAdvanceYear?: boolean;
   /** 已確認檔案早於目前進度仍要套用（IMP-09）。 */
   readonly confirmBehindProgress?: boolean;
+  /** 已確認預覽裡的警告列（需求規格 5.2「警告並要求確認」）。 */
+  readonly confirmWarnings?: boolean;
   /** 只套用這些行號；省略時套用全部可套用的列（候選 TXT 的勾選，CAND-02）。 */
   readonly selectedLineNumbers?: readonly number[];
 }
@@ -184,6 +186,12 @@ function requireConfirmations<TRow extends PreviewRow>(
       '檔案早於目前進度，建議先回溯到對應的檢查點；確認後才會套用',
     );
   }
+  if (prepared.summary.warn > 0 && options.confirmWarnings !== true) {
+    throw new ServiceError(
+      'confirmationRequired',
+      `有 ${String(prepared.summary.warn)} 列警告，請先確認後再套用`,
+    );
+  }
 }
 
 function selectRows<TRow extends PreviewRow>(
@@ -191,9 +199,11 @@ function selectRows<TRow extends PreviewRow>(
   options: ApplyImportOptions,
 ): readonly TRow[] {
   const selected = options.selectedLineNumbers;
+  // 預覽分類就是處置：可套用與（確認過的）警告會寫入，略過、待核對不寫，錯誤讓整份停止。
   return prepared.rows.filter(
     (row) =>
-      row.outcome === 'apply' && (selected === undefined || selected.includes(row.lineNumber)),
+      (row.outcome === 'apply' || row.outcome === 'warn') &&
+      (selected === undefined || selected.includes(row.lineNumber)),
   );
 }
 
