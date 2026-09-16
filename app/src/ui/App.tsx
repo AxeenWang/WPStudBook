@@ -8,6 +8,7 @@ import {
 } from '../services/context.ts';
 import { DataManagementPage } from './data-management/DataManagementPage.tsx';
 import { FoalsPage } from './foals/FoalsPage.tsx';
+import { ImportsPage } from './imports/ImportsPage.tsx';
 import { errorMessage } from './format.ts';
 import { LinesPage } from './lines/LinesPage.tsx';
 import { MaresPage } from './mares/MaresPage.tsx';
@@ -21,13 +22,14 @@ type Boot =
   | { readonly state: 'ready'; readonly context: ServiceContext }
   | { readonly state: 'failed'; readonly message: string };
 
-type PageKey = 'overview' | 'lines' | 'mares' | 'foals' | 'systemMap' | 'data';
+type PageKey = 'overview' | 'lines' | 'mares' | 'foals' | 'imports' | 'systemMap' | 'data';
 
 const PAGES = [
   ['overview', '總覽'],
   ['lines', '八系'],
   ['mares', '母馬群'],
   ['foals', '產駒'],
+  ['imports', '年度匯入'],
   ['systemMap', '系統對照表'],
   ['data', '資料管理'],
 ] as const satisfies ReadonlyArray<readonly [PageKey, string]>;
@@ -59,6 +61,7 @@ function AppShell() {
         {page === 'lines' && <LinesPage currentGame={currentGame} />}
         {page === 'mares' && <MaresPage currentGame={currentGame} />}
         {page === 'foals' && <FoalsPage currentGame={currentGame} />}
+        {page === 'imports' && <ImportsPage currentGame={currentGame} />}
         {page === 'systemMap' && <SystemMapPage currentGame={currentGame} />}
         {page === 'data' && <DataManagementPage status={status} />}
       </main>

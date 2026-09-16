@@ -61,6 +61,7 @@ export const RELATIONS: readonly Relation[] = [
   { collection: 'breedings', field: 'foalId', target: 'foals' },
   { collection: 'matingRatings', field: 'stallionId', target: 'horses' },
   { collection: 'matingRatings', field: 'mareId', target: 'horses' },
+  { collection: 'imports', field: 'correctionOf', target: 'imports' },
 ];
 
 /** 含 gameId 或可由其他欄位重建、不收錄於備份的欄位（設計決策 5.4 節）。 */

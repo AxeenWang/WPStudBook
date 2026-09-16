@@ -15,6 +15,7 @@
     "test:references": "vitest run --project references && npm run build && playwright test --grep @references",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
+    "samples": "node scripts/generate-samples.ts",
     "scenarios": "node scripts/scenarios.ts",
     "check": "npm run lint && npm run typecheck && npm test && npm run test:e2e"
   },
@@ -34,6 +35,7 @@
     "eslint": "10.10.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "fake-indexeddb": "6.2.5",
+    "iconv-lite": "0.7.3",
     "prettier": "3.9.6",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.0",

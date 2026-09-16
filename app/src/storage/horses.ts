@@ -109,3 +109,51 @@ export async function getHorsesByIds(
   }
   return horses;
 }
+
+export interface IdentityQuery {
+  readonly abilityNo?: number | undefined;
+  readonly birthYear?: number | undefined;
+  /** 精確比對用的名稱（完整馬名與基本馬名）；前後空白會被忽略。 */
+  readonly names: readonly string[];
+}
+
+/**
+ * 以單一唯讀交易查出每一筆匯入列的候選馬匹：能力番号＋出生年一筆，加上精確名稱相符的馬
+ * （需求規格 6.2）。逐列各開一個交易在數千筆的總表上太慢，所以一次排入全部請求。
+ */
+export async function findIdentityCandidates(
+  database: AppDatabase,
+  gameId: string,
+  queries: readonly IdentityQuery[],
+): Promise<Horse[][]> {
+  const transaction = database.transaction('horses', 'readonly');
+  const store = transaction.objectStore('horses');
+  const byIdentity = store.index('abilityNo+birthYear');
+  const byName = store.index('nameKeys');
+  const requests = queries.map((query) => ({
+    identity:
+      query.abilityNo === undefined || query.birthYear === undefined
+        ? undefined
+        : (byIdentity.get([gameId, query.abilityNo, query.birthYear]) as Promise<unknown>),
+    names: [...new Set(query.names.map((name) => name.trim()).filter((name) => name !== ''))].map(
+      (name) => byName.getAll(nameKey(gameId, name)) as Promise<unknown[]>,
+    ),
+  }));
+  const settled = await Promise.all(
+    requests.map(async (request) => ({
+      identity: request.identity === undefined ? undefined : await request.identity,
+      names: await Promise.all(request.names),
+    })),
+  );
+  await transaction.done;
+  return settled.map(({ identity, names }) => {
+    const found = new Map<string, Horse>();
+    for (const value of [identity, ...names.flat()]) {
+      const horse = toHorse(value);
+      if (horse !== undefined) {
+        found.set(horse.id, horse);
+      }
+    }
+    return [...found.values()];
+  });
+}
