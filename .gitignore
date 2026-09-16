@@ -10,4 +10,5 @@ node_modules/
 dist/
 test-results/
 playwright-report/
-tests/fixtures/generated/
+# 中間有斜線的 pattern 會錨定在本檔所在目錄，所以要寫完整路徑，不能只寫 tests/...
+app/tests/fixtures/generated/
