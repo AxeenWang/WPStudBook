@@ -22,7 +22,7 @@ CodeLab-Governance: optional
 
 ## Repository 版面
 
-- Repository 根目錄只放專案規則（`AGENTS.md`、`AGENTS_cht.md`、`CLAUDE.md`）、`.gitignore`、`.github/`（GitHub 規定必須放在根目錄）、`docs/`、`app/`（應用程式專案）、`.references/` 與 Agent 暫存區。
+- Repository 根目錄只放專案規則（`AGENTS.md`、`AGENTS_cht.md`、`CLAUDE.md`、`CLAUDE_cht.md`）、`.gitignore`、`.github/`（GitHub 規定必須放在根目錄）、`docs/`、`app/`（應用程式專案）、`.references/` 與 Agent 暫存區。
 - 所有程式碼、工具設定、依賴與建置或測試產出都放在 `app/`，包括 `package.json`、lockfile、工具設定檔、`src/`、`tests/`、`scripts/`、`node_modules/`、`dist/`、`test-results/` 與 `playwright-report/`。
 - npm、建置、程式檢查與測試指令都在 `app/` 內執行。絕不可在根目錄執行 `npm install` 或建立工具設定。
 - 未經使用者明確同意，不得新增根目錄檔案或資料夾。

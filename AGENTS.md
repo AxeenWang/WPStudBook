@@ -22,7 +22,7 @@ Change the marker to `CodeLab-Governance: required` when failed managed-mode ver
 
 ## Repository Layout
 
-- The repository root holds only the project rules (`AGENTS.md`, `AGENTS_cht.md`, `CLAUDE.md`), `.gitignore`, `.github/` (GitHub requires it at the root), `docs/`, `app/` (the application project), `.references/`, and the agent temp areas.
+- The repository root holds only the project rules (`AGENTS.md`, `AGENTS_cht.md`, `CLAUDE.md`, `CLAUDE_cht.md`), `.gitignore`, `.github/` (GitHub requires it at the root), `docs/`, `app/` (the application project), `.references/`, and the agent temp areas.
 - All application code, tool configuration, dependencies, and build or test outputs live under `app/`. This includes `package.json`, the lockfile, tool configuration files, `src/`, `tests/`, `scripts/`, `node_modules/`, `dist/`, `test-results/`, and `playwright-report/`.
 - Run npm, build, lint, and test commands from `app/`. Never run `npm install` or create tool configuration at the repository root.
 - Do not add a new top-level file or directory without explicit user approval.
