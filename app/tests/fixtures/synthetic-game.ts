@@ -162,7 +162,17 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
     },
   ],
   recoveries: [
-    { id: 'recovery-1', position: 1, status: 'closed', gameYear: 1968, reason: '測試用' },
+    {
+      id: 'recovery-1',
+      position: 1,
+      generation: 1,
+      gameYear: 1968,
+      side: 'dam',
+      reason: '測試用',
+      status: 'completed',
+      damId: 'horse-dam',
+      endYear: 1969,
+    },
   ],
   imports: [
     {

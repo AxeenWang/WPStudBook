@@ -13,6 +13,7 @@ import type { AliasKind, LifeStage, RecordSource, Sex } from '../../domain/horse
 import type { HorseFate } from '../../domain/horse.ts';
 import type { ImportType } from '../../domain/import-type.ts';
 import type { OverallGrade } from '../../domain/mating-rating.ts';
+import type { RecoverySide, RecoveryStatus } from '../../domain/recovery.ts';
 import type {
   AssignedGroupKind,
   LeftReason,
@@ -155,6 +156,12 @@ const TASK_PHASE_VALUES = enumSet<TaskPhase>({ building: true, cycling: true });
 const TASK_KIND_VALUES = enumSet<TaskKind>({ advance: true, found: true, cycle: true });
 /** 配對距離只有 1、2、4（需求規格 4.3）。 */
 const PAIR_DISTANCES: readonly PairDistance[] = [1, 2, 4];
+const RECOVERY_SIDE_VALUES = enumSet<RecoverySide>({ sire: true, dam: true, both: true });
+const RECOVERY_STATUS_VALUES = enumSet<RecoveryStatus>({
+  inProgress: true,
+  completed: true,
+  cancelled: true,
+});
 const DISPOSITION_VALUES = enumSet<Disposition>({ keep: true, forSale: true, sold: true });
 const APTITUDE_VALUES = enumSet<Aptitude>({ '◎': true, '○': true, '△': true, '×': true });
 const SUB_PARAM_KEY_VALUES = enumSet<SubParamKey>({
@@ -551,6 +558,36 @@ function isRuleSnapshot(value: unknown): boolean {
   );
 }
 
+/** 斷血補系（需求規格 7.6）：補入的親馬與產駒都是選填，補系完成時才會齊。 */
+function checkRecovery(record: StoredRecord): string | undefined {
+  const { gameYear, endYear } = record;
+  return firstProblem([
+    [isIntegerIn(record.position, 1, 8), 'position 必須是 1～8 的整數'],
+    [isIntegerIn(record.generation, 1, 9999), 'generation 必須是 1 以上的整數'],
+    [isYear(gameYear), 'gameYear 必須是 1000～9999 的整數'],
+    [isOneOf(RECOVERY_SIDE_VALUES, record.side), 'side 必須是 sire、dam 或 both'],
+    [isNonEmptyString(record.reason), 'reason 必須是非空字串'],
+    [
+      isOneOf(RECOVERY_STATUS_VALUES, record.status),
+      'status 必須是 inProgress、completed 或 cancelled',
+    ],
+    [optional(record, 'sireId', isNonEmptyString), 'sireId 必須是非空字串'],
+    [optional(record, 'damId', isNonEmptyString), 'damId 必須是非空字串'],
+    [
+      optional(record, 'bloodFromPosition', (value) => isIntegerIn(value, 1, 8)),
+      'bloodFromPosition 必須是 1～8 的整數',
+    ],
+    [optional(record, 'foalId', isNonEmptyString), 'foalId 必須是非空字串'],
+    [optional(record, 'endYear', isYear), 'endYear 必須是 1000～9999 的整數'],
+    [record.status === 'inProgress' ? !('endYear' in record) : true, '進行中的補系不可有 endYear'],
+    [
+      record.status === 'inProgress' ||
+        (isInteger(gameYear) && isInteger(endYear) && endYear >= gameYear),
+      '結束的補系必須有不早於 gameYear 的 endYear',
+    ],
+  ]);
+}
+
 function isSubParams(value: unknown): boolean {
   if (!isPlainRecord(value)) {
     return false;
@@ -631,6 +668,7 @@ export const RECORD_RULES: Readonly<Partial<Record<RecordCollection, RecordRule>
   mares: checkMare,
   mareYearly: checkMareYearly,
   breedings: checkBreeding,
+  recoveries: checkRecovery,
   foals: checkFoal,
   matingRatings: checkMatingRating,
   events: checkEvent,

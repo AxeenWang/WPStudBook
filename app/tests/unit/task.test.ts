@@ -373,3 +373,56 @@ describe('列入任務的母馬（需求規格 8.5、8.9）', () => {
     expect(withSubstitute.find((task) => task.kind === 'advance')?.blockers).toEqual([]);
   });
 });
+
+describe('補系與缺少目標種牡馬（需求規格 7.6、7.7）', () => {
+  it('[LINE-21] 補系進行中時暫停新增下一系與循環換代，推進原系不受影響', () => {
+    const building = buildLineTasks(
+      source({
+        lines: slots([line(1, [1])]),
+        stallions: [stallion(1, 1)],
+        mares: [ownMare(1, 1), substituteMare(2, 1)],
+        recoveryInProgress: true,
+      }),
+    );
+    const advance = building.find((task) => task.kind === 'advance');
+    const found = building.find((task) => task.kind === 'found');
+    expect(advance?.blockers).toEqual([]);
+    expect(found?.blockers).toContain('recoveryInProgress');
+
+    const cycling = buildLineTasks(
+      source({
+        lines: slots([line(1, [1, 2, 3, 4]), line(2, [2, 3, 4])]),
+        stallions: [stallion(1, 4)],
+        mares: [ownMare(2, 4)],
+        recoveryInProgress: true,
+      }),
+    );
+    expect(cycleTask(cycling, 1)?.blockers).toEqual(['recoveryInProgress']);
+  });
+
+  it('[LINE-21] 沒有進行中的補系時不暫停', () => {
+    const tasks = buildLineTasks(
+      source({
+        lines: slots([line(1, [1])]),
+        stallions: [stallion(1, 1)],
+        mares: [ownMare(1, 1), substituteMare(2, 1)],
+      }),
+    );
+    expect(tasks.every((task) => !task.blockers.includes('recoveryInProgress'))).toBe(true);
+  });
+
+  it('建立新系缺種牡馬時標示缺少目標種牡馬，不是缺少現任', () => {
+    // 第 2 系已開啟但零代市場種牡馬離場：要換市場馬，不是指定後任。
+    const tasks = buildLineTasks(
+      source({
+        lines: slots([line(1, [1]), line(2, [])]),
+        stallions: [stallion(1, 1)],
+        mares: [ownMare(1, 1), substituteMare(2, 1)],
+      }),
+    );
+    expect(tasks.find((task) => task.kind === 'found')?.blockers).toEqual([
+      'missingTargetStallion',
+    ]);
+    expect(tasks.find((task) => task.kind === 'advance')?.blockers).toEqual([]);
+  });
+});

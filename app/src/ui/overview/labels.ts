@@ -11,7 +11,9 @@ export const PHASE_LABELS: Readonly<Record<TaskPhase, string>> = {
 export const BLOCKER_LABELS: Readonly<Record<TaskBlocker, string>> = {
   lineNotOpened: '系位置尚未開啟',
   noCurrentStallion: '缺少現任種牡馬',
+  missingTargetStallion: '缺少目標種牡馬',
   noMares: '母馬群沒有可配母馬',
+  recoveryInProgress: '斷血補系進行中，暫停新增下一系與循環換代',
 };
 
 /** 代數文字（需求規格 3 章）：任務標題沿用規格的「第 2 系零代」、「第 1 系 1 代」寫法。 */
