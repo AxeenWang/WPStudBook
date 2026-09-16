@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export const APP_URL = pathToFileURL(resolve('dist/WPStudBook.html')).href;
 
@@ -30,6 +30,15 @@ export async function changeYearViaUi(page: Page, year: number): Promise<void> {
     .getByRole('button', { name: '確認更新' })
     .click();
   await expect(page.getByTestId('status-year')).toHaveText(`${String(year)} 年`);
+}
+
+/**
+ * 關閉詳情欄並等它真的消失。只按 Esc 就繼續操作時，`.drawer-overlay` 還在的話會攔截點擊，
+ * 是與速度相依的競態（main 推送 CI 的 Edge 曾因此失敗）。
+ */
+export async function closeDrawer(page: Page, drawer: Locator): Promise<void> {
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeHidden();
 }
 
 export async function gotoPage(page: Page, name: string): Promise<void> {
