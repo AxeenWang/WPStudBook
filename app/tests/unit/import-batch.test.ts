@@ -30,7 +30,7 @@ function batch(overrides: Partial<ImportBatch> = {}): ImportBatch {
 }
 
 describe('匯入預覽與歷程（需求規格 11.1）', () => {
-  it('摘要分列五種預覽分類（IMP-05）', () => {
+  it('[IMP-05] 摘要分列五種預覽分類', () => {
     const rows = [
       row(2, 'apply'),
       row(3, 'apply'),
@@ -43,12 +43,12 @@ describe('匯入預覽與歷程（需求規格 11.1）', () => {
     expect(hasBlockingError([...rows, row(7, 'error')])).toBe(true);
   });
 
-  it('年度總表是一月、四月、五月繁殖牝馬、五月種牡馬與七月（IMP-12）', () => {
+  it('[IMP-12] 年度總表是一月、四月、五月繁殖牝馬、五月種牡馬與七月（IMP-12）', () => {
     const yearly = IMPORT_TYPES.filter((type) => isYearlyTotal(type));
     expect(yearly).toEqual(['jan2yo', 'aprFoals', 'mayMares', 'julMares', 'mayStallions']);
   });
 
-  it('同雜湊為重複，不同內容為資料更正並指向最後一次（IMP-07、IMP-08）', () => {
+  it('[IMP-07][IMP-08] 同雜湊為重複，不同內容為資料更正並指向最後一次', () => {
     const first = batch({ id: 'import-1', appliedAt: '2026-09-16T00:00:00.000Z' });
     const second = batch({
       id: 'import-2',
@@ -66,7 +66,7 @@ describe('匯入預覽與歷程（需求規格 11.1）', () => {
     });
   });
 
-  it('檔案年份較晚時推進，晚兩年以上另外警告（IMP-14、IMP-15）', () => {
+  it('[IMP-14][IMP-15] 檔案年份較晚時推進，晚兩年以上另外警告', () => {
     expect(decideYear(1969, { month: 5, week: 1 }, 1968, [])).toEqual({
       kind: 'advance',
       to: 1969,
@@ -84,7 +84,7 @@ describe('匯入預覽與歷程（需求規格 11.1）', () => {
     expect(decideYear(1968, { month: 5, week: 1 }, 1968, [])).toEqual({ kind: 'current' });
   });
 
-  it('檔案早於已套用的年度總表時提示回溯（IMP-09）', () => {
+  it('[IMP-09] 檔案早於已套用的年度總表時提示回溯', () => {
     const july = batch({ type: 'julMares', timing: { month: 7, week: 1 } });
     expect(decideYear(1968, { month: 5, week: 1 }, 1968, [july])).toEqual({
       kind: 'behind',

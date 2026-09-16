@@ -8,7 +8,12 @@ import { parseHexNo, parseInteger, stripSystemSuffix } from '../../src/import/va
 import { listGameCheckpoints } from '../../src/services/checkpoints.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
 import { ServiceError } from '../../src/services/errors.ts';
-import { createGame, getCurrentGame, switchGame } from '../../src/services/games.ts';
+import {
+  changeCurrentYear,
+  createGame,
+  getCurrentGame,
+  switchGame,
+} from '../../src/services/games.ts';
 import {
   applyImport,
   listImportHistory,
@@ -114,7 +119,7 @@ async function runImport(
 describe('匯入流程（需求規格 11.1）', () => {
   const openContext = useServiceContexts();
 
-  it('套用後只保存檔名、雜湊、年、時點、類型與摘要（IMP-05、IMP-11）', async () => {
+  it('[IMP-05][IMP-11] 套用後只保存檔名、雜湊、年、時點、類型與摘要', async () => {
     const context = await openContext();
     const game = await setUp(context);
     const result = await runImport(context, testHandler('mayMares'), SAMPLE, MAY);
@@ -136,7 +141,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(await listEventsOfType(context.database, game.id, 'horseCreated')).toHaveLength(3);
   });
 
-  it('年度總表套用後自動建立檢查點（IMP-12、CKPT-01）', async () => {
+  it('[IMP-12][CKPT-01] 年度總表套用後自動建立檢查點', async () => {
     const context = await openContext();
     await setUp(context);
     const result = await runImport(context, testHandler('mayMares'), SAMPLE, MAY);
@@ -145,10 +150,13 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(checkpoints).toHaveLength(1);
     expect(checkpoints[0]?.id).toBe(result.checkpointId);
     expect(checkpoints[0]?.gameYear).toBe(1968);
+    // 需求規格 12.4：檢查點記錄年、時點、時間與雜湊。
+    expect(checkpoints[0]?.timing).toEqual({ month: 5, week: 1 });
+    expect(checkpoints[0]?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(checkpoints[0]?.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('候選 TXT 不建立檢查點（IMP-12、CAND-05）', async () => {
+  it('[CAND-05] 候選 TXT 不建立檢查點', async () => {
     const context = await openContext();
     await setUp(context);
     const result = await runImport(context, testHandler('candidateFile'), SAMPLE, {
@@ -160,7 +168,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(await listGameCheckpoints(context)).toHaveLength(0);
   });
 
-  it('同局同年同時點同類型同雜湊再次匯入為重複，不重複建立歷程（IMP-07）', async () => {
+  it('[IMP-07] 同局同年同時點同類型同雜湊再次匯入為重複，不重複建立歷程', async () => {
     const context = await openContext();
     await setUp(context);
     const handler = testHandler('mayMares');
@@ -174,7 +182,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(await listImportHistory(context)).toHaveLength(1);
   });
 
-  it('同年同時點內容不同要確認資料更正，並指回前一次匯入（IMP-08）', async () => {
+  it('[IMP-08] 同年同時點內容不同要確認資料更正，並指回前一次匯入', async () => {
     const context = await openContext();
     await setUp(context);
     const handler = testHandler('mayMares');
@@ -193,7 +201,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(history.map((batch) => batch.fileName)).toEqual([SAMPLE.fileName, SAMPLE.fileName]);
   });
 
-  it('同一時點不同類型各自套用，不視為重複或更正（IMP-16）', async () => {
+  it('[IMP-16] 同一時點不同類型各自套用，不視為重複或更正', async () => {
     const context = await openContext();
     await setUp(context);
     await runImport(context, testHandler('mayMares'), SAMPLE, MAY);
@@ -207,7 +215,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(await listImportHistory(context)).toHaveLength(1);
   });
 
-  it('有阻擋錯誤時資料與歷程都不變（IMP-06）', async () => {
+  it('[IMP-06] 有阻擋錯誤時資料與歷程都不變', async () => {
     const context = await openContext();
     const game = await setUp(context);
     const handler = testHandler('mayMares', { errorOnLine: 3 });
@@ -221,7 +229,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(await listImportHistory(context)).toHaveLength(0);
   });
 
-  it('選錯類型時依欄數停止，不寫入（IMP-04）', async () => {
+  it('[IMP-04] 選錯類型時依欄數停止，不寫入', async () => {
     const context = await openContext();
     const game = await setUp(context);
     const handler = testHandler('jan2yo');
@@ -232,7 +240,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(await readRecords(context.database, game.id, 'horses')).toHaveLength(0);
   });
 
-  it('檔案年份較晚時要確認推進，確認後先推進再套用（IMP-14）', async () => {
+  it('[IMP-14] 檔案年份較晚時要確認推進，確認後先推進再套用', async () => {
     const context = await openContext();
     await setUp(context);
     const handler = testHandler('mayMares');
@@ -255,7 +263,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     }
   });
 
-  it('檔案年份晚兩年以上另外警告（IMP-15）', async () => {
+  it('[IMP-15] 檔案年份晚兩年以上另外警告', async () => {
     const context = await openContext();
     await setUp(context);
     const prepared = await prepareImport(context, testHandler('mayMares'), source(SAMPLE), {
@@ -265,7 +273,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(prepared.year).toEqual({ kind: 'advance', to: 1970, farFuture: true });
   });
 
-  it('檔案早於目前進度時提示回溯，確認後才套用（IMP-09）', async () => {
+  it('[IMP-09] 檔案早於目前進度時提示回溯，確認後才套用', async () => {
     const context = await openContext();
     await setUp(context);
     await runImport(context, testHandler('julMares'), syntheticSample('julMares'), {
@@ -287,7 +295,7 @@ describe('匯入流程（需求規格 11.1）', () => {
     expect(result.appliedRows).toBe(3);
   });
 
-  it('只套用勾選的列（CAND-02）', async () => {
+  it('[CAND-02] 只套用勾選的列', async () => {
     const context = await openContext();
     const game = await setUp(context);
     const handler = testHandler('candidateFile');
@@ -299,11 +307,48 @@ describe('匯入流程（需求規格 11.1）', () => {
     const result = await applyImport(context, handler, prepared, { selectedLineNumbers: [2, 4] });
     expect(result.appliedRows).toBe(2);
     expect(await readRecords(context.database, game.id, 'horses')).toHaveLength(2);
-    // 摘要記錄的是預覽結果，勾選與否不改變它。
-    expect(result.batch.summary.apply).toBe(3);
+    // 結果摘要記的是實際發生的事：沒勾選的那一筆算略過（IMP-11）。
+    expect(result.batch.summary).toEqual({ apply: 2, skip: 1, review: 0, warn: 0, error: 0 });
   });
 
-  it('兩個遊戲局完全隔離，匯入只影響目前局（DATA-08）', async () => {
+  it('處理器與使用者選的匯入類型不一致時拒絕', async () => {
+    const context = await openContext();
+    await setUp(context);
+    await expect(
+      prepareImport(context, testHandler('mayMares'), source(SAMPLE), { ...MAY, type: 'julMares' }),
+    ).rejects.toMatchObject({ code: 'invalidInput' });
+  });
+
+  it('預覽產生後換了遊戲局就不套用，要求重新產生預覽', async () => {
+    const context = await openContext();
+    await setUp(context);
+    const handler = testHandler('mayMares');
+    const prepared = await prepareImport(context, handler, source(SAMPLE), MAY);
+
+    const other = await createGame(context, { name: '另一局', startYear: 1968 });
+    await switchGame(context, other.id);
+    await expect(applyImport(context, handler, prepared)).rejects.toMatchObject({
+      code: 'invalidInput',
+    });
+    expect(await readRecords(context.database, other.id, 'horses')).toHaveLength(0);
+  });
+
+  it('期間遊戲年已經更晚時不把年份拉回來', async () => {
+    const context = await openContext();
+    await setUp(context);
+    const handler = testHandler('mayMares');
+    const prepared = await prepareImport(context, handler, source(SAMPLE), {
+      ...MAY,
+      gameYear: 1969,
+    });
+
+    await changeCurrentYear(context, 1971);
+    const result = await applyImport(context, handler, prepared, { confirmAdvanceYear: true });
+    expect(result.advancedToYear).toBe(1969);
+    expect((await getCurrentGame(context))?.currentYear).toBe(1971);
+  });
+
+  it('[DATA-08] 兩個遊戲局完全隔離，匯入只影響目前局', async () => {
     const context = await openContext();
     const first = await setUp(context);
     const second = await createGame(context, { name: '另一局', startYear: 1968 });

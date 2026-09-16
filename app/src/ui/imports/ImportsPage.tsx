@@ -1,5 +1,6 @@
 import { useState, type DragEvent } from 'react';
 import type { Game } from '../../domain/game.ts';
+import type { MareSite } from '../../domain/mare.ts';
 import type { ImportType } from '../../domain/import-type.ts';
 import {
   candidateImportHandler,
@@ -37,7 +38,7 @@ const TYPE_OPTIONS: readonly SelectOption<ImportType>[] = (
   Object.keys(IMPORT_TYPE_LABELS) as ImportType[]
 ).map((value) => ({ value, label: IMPORT_TYPE_LABELS[value] }));
 
-const SITE_OPTIONS: readonly SelectOption<number>[] = MARE_SITE_OPTIONS.map((value) => ({
+const SITE_OPTIONS: readonly SelectOption<MareSite>[] = MARE_SITE_OPTIONS.map((value) => ({
   value,
   label: SITE_LABELS[value],
 }));
@@ -110,7 +111,7 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
   const [position, setPosition] = useState<number>();
   const [generation, setGeneration] = useState<number>();
-  const [site, setSite] = useState<number>(32);
+  const [site, setSite] = useState<MareSite>(32);
   const [origin, setOrigin] = useState(defaultOriginFor(1, 1, []) ?? 'marketMixed');
 
   const openedPositions = (slots ?? [])
@@ -146,7 +147,7 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
   const target: CandidateTarget = {
     group:
       position === undefined || generation === undefined ? undefined : { position, generation },
-    site: site === 33 || site === 34 || site === 35 ? site : 32,
+    site,
     origin,
   };
 

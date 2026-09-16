@@ -64,7 +64,7 @@ async function horsesByName(context: ServiceContext, gameId: string): Promise<Ma
 describe('候選 TXT 匯入（需求規格 11.7）', () => {
   const openContext = useServiceContexts();
 
-  it('以 61 欄格式解析並分類，可套用的筆數等於檔案筆數（CAND-01）', async () => {
+  it('[CAND-01] 以 61 欄格式解析並分類，可套用的筆數等於檔案筆數', async () => {
     const context = await openContext();
     await setUp(context);
     const handler = candidateImportHandler(UNASSIGNED);
@@ -79,7 +79,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
     expect(first?.birthYear).toBe(1965);
   });
 
-  it('只建立勾選的母馬（CAND-02）', async () => {
+  it('[CAND-02] 只建立勾選的母馬', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
     const { result } = await run(context, UNASSIGNED, { selectedLineNumbers: [2, 3, 5] });
@@ -89,7 +89,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
     expect(mares).toHaveLength(3);
   });
 
-  it('已在圈的馬再次出現時略過，不重複匯入（CAND-03）', async () => {
+  it('[CAND-03] 已在圈的馬再次出現時略過，不重複匯入', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
     await run(context, UNASSIGNED, { selectedLineNumbers: [2, 3] });
@@ -108,7 +108,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
     expect(await listMares(context.database, gameId)).toHaveLength(30);
   });
 
-  it('原牧場只記為來源，據點由使用者選（CAND-04）', async () => {
+  it('[CAND-04] 原牧場只記為來源，據點由使用者選', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
     await run(
@@ -126,7 +126,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
     expect(mare?.origin).toBe('marketMixed');
   });
 
-  it('候選匯入不建立檢查點，也不算年度總表（CAND-05）', async () => {
+  it('[CAND-05] 候選匯入不建立檢查點，也不算年度總表', async () => {
     const context = await openContext();
     await setUp(context);
     const { prepared, result } = await run(context, UNASSIGNED, { selectedLineNumbers: [2] });
@@ -136,7 +136,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
     expect(await listGameCheckpoints(context)).toHaveLength(0);
   });
 
-  it('指定母馬群時記為替代第 q 系 N 代，未指定時為待指定用途（MARE-05）', async () => {
+  it('[MARE-05][MARE-06] 指定母馬群時記為替代第 q 系 N 代，未指定時為待指定用途', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
     await run(
@@ -155,7 +155,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
     expect(unassigned?.group).toEqual({ kind: 'unassigned' });
   });
 
-  it('父馬、母馬、父系與牝系立即保存，父系去掉結尾「系」（MARE-21、IMP-17）', async () => {
+  it('[MARE-21][IMP-17] 父馬、母馬、父系與牝系立即保存，父系去掉結尾「系」', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
     await run(context, UNASSIGNED, { selectedLineNumbers: [2, 3] });
@@ -178,7 +178,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
     ]);
   });
 
-  it('檔案內能力番号重複時整份拒絕（需求規格 11.7、ID-06）', async () => {
+  it('[ID-06] 檔案內能力番号重複時整份拒絕（需求規格 11.7）', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
     const [first, second, ...rest] = SAMPLE.rows;

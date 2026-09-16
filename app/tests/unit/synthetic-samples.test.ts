@@ -57,7 +57,7 @@ describe('合成樣本（設計決策 7.4）', () => {
     }
   });
 
-  it('每份樣本都是無 BOM 的 CP932、Tab 分隔，且欄數與附錄 A 相符', () => {
+  it('[IMP-01] 每份樣本都是無 BOM 的 CP932、Tab 分隔，且欄數與附錄 A 相符', () => {
     for (const sample of SYNTHETIC_SAMPLES) {
       const { file } = parseSample(sample.id);
       expect(file.encoding).toBe('cp932');

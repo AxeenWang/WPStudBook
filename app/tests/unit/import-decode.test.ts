@@ -17,7 +17,7 @@ function problemOf(result: DecodeResult): string {
 }
 
 describe('匯入檔解碼（需求規格 11.1、IMP-01）', () => {
-  it('無 BOM 的 CP932 以 CP932 解碼', () => {
+  it('[IMP-01] 無 BOM 的 CP932 以 CP932 解碼', () => {
     expect(decodeImportFile(CP932_SAMPLE)).toEqual({
       ok: true,
       text: SAMPLE_TEXT,

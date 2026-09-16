@@ -43,7 +43,7 @@ function row(overrides: Partial<IdentityRow> = {}): IdentityRow {
 describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
   const openContext = useServiceContexts();
 
-  it('能力番号為 0x0000 的馬正常配對，不視為空白或未知（ID-12）', async () => {
+  it('[ID-12] 能力番号為 0x0000 的馬正常配對，不視為空白或未知', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '身分測試局', startYear: 1968 });
     await seed(context, game.id, [
@@ -56,7 +56,7 @@ describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
     expect(resolved).toMatchObject({ kind: 'same', horse: { id: 'h-1', abilityNo: 0 } });
   });
 
-  it('能力番号相同、出生年不同時建立新馬，既有馬不變（ID-02）', async () => {
+  it('[ID-02] 能力番号相同、出生年不同時建立新馬，既有馬不變', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '身分測試局', startYear: 1968 });
     await seed(context, game.id, [
@@ -69,7 +69,7 @@ describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
     expect(resolved).toEqual({ kind: 'new' });
   });
 
-  it('能力番号與出生年相同但馬名或父母不符時為衝突（ID-03）', async () => {
+  it('[ID-03] 能力番号與出生年相同但馬名或父母不符時為衝突', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '身分測試局', startYear: 1968 });
     await seed(context, game.id, [
@@ -96,7 +96,7 @@ describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
     expect(byParent).toMatchObject({ kind: 'conflict', reason: 'parentMismatch' });
   });
 
-  it('只有馬番号相同、能力番号不同時不合併（ID-05）', async () => {
+  it('[ID-05] 只有馬番号相同、能力番号不同時不合併', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '身分測試局', startYear: 1968 });
     await seed(context, game.id, [
@@ -116,7 +116,7 @@ describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
     expect(resolved).toEqual({ kind: 'new' });
   });
 
-  it('同一檔案內能力番号重複時回報，交由呼叫端整份停止（ID-06）', () => {
+  it('[ID-06] 同一檔案內能力番号重複時回報，交由呼叫端整份停止', () => {
     expect(
       duplicateAbilityNosIn([
         row({ lineNumber: 2, abilityNo: 0x1001 }),
@@ -127,7 +127,7 @@ describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
     expect(duplicateAbilityNosIn([row({ abilityNo: 0 }), row({ lineNumber: 3 })])).toEqual([]);
   });
 
-  it('手動新增、沒有能力番号的母馬以唯一馬名補入；既有能力番号不同則衝突（ID-07）', async () => {
+  it('[ID-07] 手動新增、沒有能力番号的母馬以唯一馬名補入；既有能力番号不同則衝突', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '身分測試局', startYear: 1968 });
     await seed(context, game.id, [
@@ -143,7 +143,7 @@ describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
     expect(conflict).toMatchObject({ kind: 'conflict', reason: 'abilityNoMismatch' });
   });
 
-  it('帶 (外) 前綴的馬以完整馬名或基本馬名都配對得到（ID-09）', async () => {
+  it('[ID-09] 帶 (外) 前綴的馬以完整馬名或基本馬名都配對得到', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '身分測試局', startYear: 1968 });
     await seed(context, game.id, [
@@ -167,7 +167,7 @@ describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
     expect(byBase).toMatchObject({ kind: 'fillAbilityNo', horse: { id: 'h-1' } });
   });
 
-  it('兩個遊戲局有相同能力番号、出生年與馬名時互不配對（ID-10）', async () => {
+  it('[ID-10][DATA-08] 兩個遊戲局有相同能力番号、出生年與馬名時互不配對', async () => {
     const context = await openContext();
     const first = await createGame(context, { name: '第一局', startYear: 1968 });
     const second = await createGame(context, { name: '第二局', startYear: 1968 });
@@ -182,7 +182,7 @@ describe('匯入的身分配對（需求規格 6.2、6.4）', () => {
     expect(resolved).toEqual({ kind: 'new' });
   });
 
-  it('各匯入類型的馬番号記在對應的生命階段歷程（ID-01、需求規格 6.4）', () => {
+  it('各匯入類型的馬番号記在對應的生命階段歷程（ID-01 的一部分，需求規格 6.4）', () => {
     expect(stageOfImport('aprFoals')).toBe('foal');
     expect(stageOfImport('jan2yo')).toBe('racehorse');
     expect(stageOfImport('candidateFile')).toBe('broodmare');

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { buildSampleBytes, syntheticSample } from '../../scripts/lib/synthetic-samples.ts';
-import { createGameViaUi, gotoPage, openApp } from './helpers.ts';
+import { closeDrawer, createGameViaUi, gotoPage, openApp } from './helpers.ts';
 
 const SAMPLE = syntheticSample('candidateFile');
 const BYTES = buildSampleBytes(SAMPLE);
@@ -68,7 +68,19 @@ test.describe('年度匯入：候選 TXT', () => {
     await expect(page.getByTestId('import-history')).toContainText(SAMPLE.fileName);
 
     await gotoPage(page, '母馬群');
-    await expect(page.getByRole('region', { name: '繁殖牝馬群' })).toContainText('テスト候補002');
+    const herd = page.getByRole('region', { name: '繁殖牝馬群' });
+    await expect(herd).toContainText('テスト候補002');
+
+    // [MARE-21] 父馬、母馬、父系立即顯示；沒有內部馬匹時標示「尚未連結內部馬匹」。
+    await herd
+      .getByRole('button', { name: /テスト候補002/ })
+      .first()
+      .click();
+    const drawer = page.getByRole('dialog', { name: '「テスト候補002」詳情' });
+    await expect(drawer.getByRole('tabpanel')).toContainText('ヘロド');
+    await drawer.getByRole('tab', { name: '血緣' }).click();
+    await expect(drawer.getByRole('tabpanel')).toContainText('尚未連結內部馬匹');
+    await closeDrawer(page, drawer);
   });
 
   test('[IMP-13] 拖放檔案進入與選檔相同的預覽流程', async ({ page }) => {

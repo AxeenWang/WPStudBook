@@ -83,7 +83,7 @@ describe('匯入檔解析（需求規格 11.1、IMP-04、IMP-06）', () => {
     expect(file.rows).toHaveLength(1);
   });
 
-  it('選錯類型時依欄數與必要欄位停止（IMP-04）', () => {
+  it('[IMP-04] 選錯類型時依欄數與必要欄位停止', () => {
     const bytes = sampleFile('broodmare', { 1: 'テストウマ003' });
     const problems = problemsOf(parseImportFile(bytes, 'jan2yo'));
     expect(problems[0]).toContain('欄數應為 78');

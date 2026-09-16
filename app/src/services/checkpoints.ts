@@ -5,6 +5,7 @@ import {
   type Checkpoint,
 } from '../domain/checkpoint.ts';
 import { DEFAULT_GAME_SETTINGS, type Game } from '../domain/game.ts';
+import type { Timing } from '../domain/timing.ts';
 import { decodeBackup } from '../storage/backup/decode.ts';
 import {
   getCheckpoint,
@@ -42,6 +43,8 @@ export async function listGameCheckpoints(context: ServiceContext): Promise<Chec
 
 export interface NewCheckpointInput {
   readonly note?: string | undefined;
+  /** 年度總表匯入自動建立時的時點（需求規格 12.4、CKPT-01）；手動建立不記錄時點。 */
+  readonly timing?: Timing | undefined;
 }
 
 /** 手動建立檢查點（CKPT-02）；內容就是該局的備份文件（設計決策 5.5 節）。 */
@@ -57,6 +60,7 @@ export async function createCheckpoint(
   const checkpoint: Checkpoint = {
     id: context.newId(),
     gameYear: document.game.currentYear,
+    ...(input.timing === undefined ? {} : { timing: input.timing }),
     createdAt: document.exportedAt,
     ...(note === undefined ? {} : { note }),
     pinned: false,

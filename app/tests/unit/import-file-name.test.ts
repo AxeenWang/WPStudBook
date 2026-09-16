@@ -40,7 +40,7 @@ describe('匯入檔名解析（需求規格 11.1、IMP-02、IMP-03）', () => {
     });
   });
 
-  it('檔名無法解析時回傳 undefined，不從其他地方猜測（IMP-03）', () => {
+  it('[IMP-03] 檔名無法解析時回傳 undefined，不從其他地方猜測（IMP-03）', () => {
     expect(parseImportFileName('候補.txt')).toBeUndefined();
     expect(parseImportFileName('繁殖牝馬_1968.txt')).toBeUndefined();
     expect(parseImportFileName('1968年13月1週_繁殖牝馬.txt')).toBeUndefined();

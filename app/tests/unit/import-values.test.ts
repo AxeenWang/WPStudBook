@@ -16,7 +16,7 @@ describe('欄位值正規化（需求規格 11.1、附錄 A）', () => {
     expect(mainValue('45')).toBe('45');
   });
 
-  it('父系去掉結尾「系」（IMP-17）', () => {
+  it('[IMP-17] 父系去掉結尾「系」', () => {
     expect(stripSystemSuffix('エクリプス系')).toBe('エクリプス');
     expect(stripSystemSuffix('エクリプス')).toBe('エクリプス');
     expect(stripSystemSuffix('系')).toBeUndefined();
@@ -31,7 +31,7 @@ describe('欄位值正規化（需求規格 11.1、附錄 A）', () => {
     expect(parseInteger('－')).toBeUndefined();
   });
 
-  it('能力番号與馬番号為十六進位，`0x0000` 是有效值（ID-12）', () => {
+  it('[ID-12] 能力番号與馬番号為十六進位，`0x0000` 是有效值', () => {
     expect(parseHexNo('0x0000')).toBe(0);
     expect(parseHexNo('0x030F')).toBe(783);
     expect(parseHexNo('0x7FFF')).toBe(32767);

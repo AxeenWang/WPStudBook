@@ -78,6 +78,8 @@ export interface ImportHandler<TRow extends PreviewRow> {
 }
 
 export interface PreparedImport<TRow extends PreviewRow> {
+  /** 產生這份預覽時的遊戲局；套用前確認沒有換局。 */
+  readonly gameId: string;
   readonly fileName: string;
   readonly sha256: string;
   readonly choice: ImportChoice;
@@ -103,6 +105,9 @@ export async function prepareImport<TRow extends PreviewRow>(
   source: ImportSource,
   choice: ImportChoice,
 ): Promise<PreparedImport<TRow>> {
+  if (handler.type !== choice.type) {
+    throw new ServiceError('invalidInput', '匯入類型與處理器不一致');
+  }
   const game = await requireCurrentGame(context);
   const parsed = parseImportFile(source.bytes, FORMAT_OF_IMPORT_TYPE[handler.type]);
   if (!parsed.ok) {
@@ -117,6 +122,7 @@ export async function prepareImport<TRow extends PreviewRow>(
     listImports(context.database, game.id),
   ]);
   return {
+    gameId: game.id,
     fileName: source.fileName,
     sha256,
     choice,
@@ -194,6 +200,24 @@ function requireConfirmations<TRow extends PreviewRow>(
   }
 }
 
+/**
+ * 結果摘要（IMP-11）記的是實際發生的事：沒有勾選的可套用列在這次匯入裡就是略過，
+ * 不能沿用預覽的分類，否則歷程會說套用了 30 筆而實際只寫了 2 筆。
+ */
+function appliedSummary<TRow extends PreviewRow>(
+  prepared: PreparedImport<TRow>,
+  applied: readonly TRow[],
+): ImportSummary {
+  const lineNumbers = new Set(applied.map((row) => row.lineNumber));
+  return summarise(
+    prepared.rows.map((row) =>
+      (row.outcome === 'apply' || row.outcome === 'warn') && !lineNumbers.has(row.lineNumber)
+        ? { ...row, outcome: 'skip' as const }
+        : row,
+    ),
+  );
+}
+
 function selectRows<TRow extends PreviewRow>(
   prepared: PreparedImport<TRow>,
   options: ApplyImportOptions,
@@ -218,6 +242,9 @@ export async function applyImport<TRow extends PreviewRow>(
   options: ApplyImportOptions = {},
 ): Promise<ImportResult> {
   const game = await requireCurrentGame(context);
+  if (game.id !== prepared.gameId) {
+    throw new ServiceError('invalidInput', '預覽是在另一個遊戲局產生的，請重新產生預覽');
+  }
   requireConfirmations(prepared, options);
   const rows = selectRows(prepared, options);
   const occurredAt = context.now().toISOString();
@@ -233,7 +260,8 @@ export async function applyImport<TRow extends PreviewRow>(
       collections: handler.collections,
       build: (stored) => {
         // 先推進年份再套用（需求規格 11.1）：同一個交易內兩件事都會發生。
-        const advancing = advancedToYear !== undefined && advancedToYear !== stored.currentYear;
+        // 只往前推進：期間若已經推到更晚的年份，這次匯入不把它拉回來。
+        const advancing = advancedToYear !== undefined && advancedToYear > stored.currentYear;
         const withYear: Game = advancing ? { ...stored, currentYear: advancedToYear } : stored;
         const built = handler.build({
           game: withYear,
@@ -263,7 +291,7 @@ export async function applyImport<TRow extends PreviewRow>(
           timing: choice.timing,
           fileName: prepared.fileName,
           sha256: prepared.sha256,
-          summary: prepared.summary,
+          summary: appliedSummary(prepared, rows),
           appliedAt: occurredAt,
           ...(previous === undefined ? {} : { correctionOf: previous.id }),
         };
@@ -301,6 +329,7 @@ async function createCheckpointAfterImport(
   try {
     const { checkpoint } = await createCheckpoint(context, {
       note: `匯入 ${batch.fileName}`,
+      timing: batch.timing,
     });
     return { checkpointId: checkpoint.id };
   } catch (error) {
