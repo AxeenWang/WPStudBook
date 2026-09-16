@@ -31,8 +31,22 @@ export interface BreedingRuleSnapshot {
 }
 
 /**
+ * 保存在繁殖紀錄的血統檢查結果（需求規格 7.4、10.2）。建系期不計算活血（10.1、PED-01），
+ * 所以只有循環期依任務登記的指定配種才有這個欄位。
+ */
+export interface BreedingPedigreeCheck {
+  /** 活血種數預估，0～8（需求規格 4.3）。 */
+  readonly activationCount: number;
+  /** 4 代內重複的馬。 */
+  readonly duplicateAncestors: readonly string[];
+  readonly insufficientPedigree: boolean;
+  /** 資料不足只因祖先含建系期的市場馬，所以沒有要求確認（需求規格 10.2、PED-11）。 */
+  readonly gapsOnlyFromBuildingPhase: boolean;
+}
+
+/**
  * 年度繁殖紀錄（設計決策 5.2 節 `breedings`）：每匹母馬每年一筆。實際種牡馬為內部 id 或外部名稱；
- * 血統檢查與偏離規則在後續子計畫加入。
+ * 偏離規則在階段 4 的匯入加入。
  */
 export interface Breeding {
   readonly id: string;
@@ -48,6 +62,10 @@ export interface Breeding {
   readonly foalId?: string;
   /** 依任務登記的八系指定配種才有（需求規格 7.4）。 */
   readonly ruleSnapshot?: BreedingRuleSnapshot;
+  /** 循環期指定配種的血統檢查結果（需求規格 10.2）。 */
+  readonly pedigreeCheck?: BreedingPedigreeCheck;
+  /** 使用者確認過的警告代號；沒有需要確認的警告時不存（需求規格 5.2、10.2）。 */
+  readonly confirmations?: readonly string[];
 }
 
 /** 前一年受胎的幼駒在 4 月 1 週誕生（需求規格 4.1、9.1）。 */

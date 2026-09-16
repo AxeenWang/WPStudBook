@@ -12,6 +12,7 @@ import { horseDisplayName, nameForTracking } from '../domain/horse.ts';
 import { MIN_GAME_YEAR } from '../domain/game.ts';
 import type { JsonObject } from '../domain/json.ts';
 import type { Lineage } from '../domain/lineage.ts';
+import type { PedigreeWarningCode } from '../domain/pedigree-check.ts';
 import type { Timing } from '../domain/timing.ts';
 import { getBreeding, listBreedingsForMare, writeBreeding } from '../storage/breedings.ts';
 import { getFoal, listFoalsForDam } from '../storage/foals.ts';
@@ -20,7 +21,7 @@ import { getMare } from '../storage/mares.ts';
 import { listStallionDuties } from '../storage/stallion-duties.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { loadHorseNames } from './horse-names.ts';
-import { requireRuleSnapshot } from './tasks.ts';
+import { resolveTaskBreeding } from './tasks.ts';
 import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
@@ -79,6 +80,8 @@ export interface BreedingInput {
   readonly conception: Conception | undefined;
   /** 依任務看板登記的八系指定配種才有；保存規則快照（需求規格 7.4）。 */
   readonly taskId?: string | undefined;
+  /** 使用者已確認的血統警告（需求規格 5.2、10.2）。 */
+  readonly acceptedWarnings?: readonly PedigreeWarningCode[] | undefined;
 }
 
 const RECORD_FIELDS = [
@@ -101,6 +104,12 @@ export function breedingValue(record: Breeding): JsonObject {
   }
   if (record.ruleSnapshot !== undefined) {
     value.taskId = record.ruleSnapshot.taskId;
+  }
+  if (record.pedigreeCheck !== undefined) {
+    value.activationCount = record.pedigreeCheck.activationCount;
+  }
+  if (record.confirmations !== undefined) {
+    value.confirmations = record.confirmations.join('、');
   }
   return value;
 }
@@ -188,8 +197,16 @@ export async function saveBreeding(
     throw new ServiceError('invalidInput', issues.join('；'));
   }
   // 規則快照在登記當下解析；之後規則改變不重算已保存的快照（需求規格 7.4、LINE-16）。
-  const snapshot =
-    input.taskId === undefined ? undefined : await requireRuleSnapshot(context, input.taskId);
+  // 系與代數不符時在這裡阻止，血統警告未確認時要求確認（需求規格 10.2、10.3）。
+  const resolved =
+    input.taskId === undefined
+      ? undefined
+      : await resolveTaskBreeding(context, {
+          taskId: input.taskId,
+          mareId,
+          stallionId,
+          acceptedWarnings: input.acceptedWarnings,
+        });
   const fields = {
     breedingType,
     ...(stallionId === undefined ? {} : { stallionId }),
@@ -198,9 +215,19 @@ export async function saveBreeding(
   };
   const draft = (stored: Breeding | undefined): Breeding => {
     const expectedBirthYear = expectedBirthYearFor(gameYear, conception);
-    // 沒有指定任務時沿用既有快照，讓後續更正受胎狀態不會抹掉登記當下的規則。
-    const ruleSnapshot =
-      breedingType === 'designated' ? (snapshot ?? stored?.ruleSnapshot) : undefined;
+    // 沒有指定任務時沿用既有快照與檢查結果，讓後續更正受胎狀態不會抹掉登記當下的規則。
+    const designated = breedingType === 'designated';
+    const ruleSnapshot = designated ? (resolved?.ruleSnapshot ?? stored?.ruleSnapshot) : undefined;
+    const pedigreeCheck = designated
+      ? resolved === undefined
+        ? stored?.pedigreeCheck
+        : resolved.pedigreeCheck
+      : undefined;
+    const confirmations = designated
+      ? resolved === undefined
+        ? stored?.confirmations
+        : resolved.confirmations
+      : undefined;
     return {
       id: stored?.id ?? '',
       mareId,
@@ -209,6 +236,8 @@ export async function saveBreeding(
       ...(expectedBirthYear === undefined ? {} : { expectedBirthYear }),
       ...(stored?.foalId === undefined ? {} : { foalId: stored.foalId }),
       ...(ruleSnapshot === undefined ? {} : { ruleSnapshot }),
+      ...(pedigreeCheck === undefined ? {} : { pedigreeCheck }),
+      ...(confirmations === undefined || confirmations.length === 0 ? {} : { confirmations }),
     };
   };
   const existing = await getBreeding(context.database, game.id, mareId, gameYear);

@@ -29,7 +29,7 @@ function anyExpandable(node: PedigreeHorseNode): boolean {
 }
 
 /** 依內部識別逐代讀出馬匹；多讀一代，讓最上層未命名的產駒也能顯示追蹤名。 */
-async function loadAncestors(
+export async function loadAncestors(
   context: ServiceContext,
   gameId: string,
   rootId: string,
