@@ -180,9 +180,10 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       type: 'mayMares',
       gameYear: 1968,
       timing: { month: 5, week: 1 },
-      fileName: '1968年5月1週 繁殖牝馬.txt',
+      fileName: '1968年 5月1週_繁殖牝馬.txt',
       sha256: 'a'.repeat(64),
-      summary: { applied: 1, skipped: 0 },
+      summary: { apply: 1, skip: 0, review: 0, warn: 0, error: 0 },
+      appliedAt: '2026-09-16T00:00:00.000Z',
     },
   ],
   events: [

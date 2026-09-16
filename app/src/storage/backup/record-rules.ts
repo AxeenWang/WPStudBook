@@ -53,6 +53,8 @@ const IMPORT_TYPES: Readonly<Record<ImportType, true>> = {
   octWorldMares: true,
 };
 
+const IMPORT_TYPE_VALUES = enumSet<ImportType>(IMPORT_TYPES);
+
 const SEXES = enumSet<Sex>({ male: true, female: true });
 const LIFE_STAGES = enumSet<LifeStage>({
   foal: true,
@@ -484,6 +486,36 @@ function checkEvent(record: StoredRecord): string | undefined {
   ]);
 }
 
+/** 預覽分類（設計決策 6.3）；storage 不能引用 domain 的值，所以在此列出。 */
+const PREVIEW_OUTCOME_KEYS = ['apply', 'skip', 'review', 'warn', 'error'] as const;
+
+const SHA256_HEX = /^[0-9a-f]{64}$/u;
+
+function isImportSummary(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    Object.keys(value).length === PREVIEW_OUTCOME_KEYS.length &&
+    PREVIEW_OUTCOME_KEYS.every((key) => isIntegerIn(value[key], 0, Number.MAX_SAFE_INTEGER))
+  );
+}
+
+function checkImportBatch(record: StoredRecord): string | undefined {
+  const { sha256, appliedAt } = record;
+  return firstProblem([
+    [isOneOf(IMPORT_TYPE_VALUES, record.type), 'type 不是有效的匯入類型'],
+    [isYear(record.gameYear), 'gameYear 必須是 1000～9999 的整數'],
+    [isTiming(record.timing), 'timing 必須是 1～12 月、1～5 週'],
+    [isNonEmptyString(record.fileName), 'fileName 必須是非空字串'],
+    [typeof sha256 === 'string' && SHA256_HEX.test(sha256), 'sha256 必須是 64 位小寫十六進位字串'],
+    [isImportSummary(record.summary), 'summary 必須有五種預覽分類的非負整數筆數'],
+    [
+      typeof appliedAt === 'string' && !Number.isNaN(Date.parse(appliedAt)),
+      'appliedAt 必須是日期時間字串',
+    ],
+    [optional(record, 'correctionOf', isNonEmptyString), 'correctionOf 必須是非空字串'],
+  ]);
+}
+
 function checkBreeding(record: StoredRecord): string | undefined {
   const { gameYear, expectedBirthYear } = record;
   const conceived = record.conception === '受胎';
@@ -672,5 +704,6 @@ export const RECORD_RULES: Readonly<Partial<Record<RecordCollection, RecordRule>
   recoveries: checkRecovery,
   foals: checkFoal,
   matingRatings: checkMatingRating,
+  imports: checkImportBatch,
   events: checkEvent,
 };

@@ -12,6 +12,8 @@ export interface ParsedFile {
   readonly formatId: ImportFormatId;
   readonly encoding: SourceEncoding;
   readonly delimiter: Delimiter;
+  /** 解碼後的完整文字；內容雜湊算在這上面，呼叫端不必再解碼一次。 */
+  readonly text: string;
   readonly header: readonly string[];
   readonly rows: readonly SourceRow[];
 }
@@ -77,6 +79,13 @@ export function parseImportFile(bytes: Uint8Array, formatId: ImportFormatId): Pa
   }
   return {
     ok: true,
-    file: { formatId, encoding: decoded.encoding, delimiter, header, rows: parsed },
+    file: {
+      formatId,
+      encoding: decoded.encoding,
+      delimiter,
+      text: decoded.text,
+      header,
+      rows: parsed,
+    },
   };
 }
