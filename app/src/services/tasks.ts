@@ -1,4 +1,4 @@
-import type { BreedingRuleSnapshot } from '../domain/breeding.ts';
+import type { BreedingPedigreeCheck, BreedingRuleSnapshot } from '../domain/breeding.ts';
 import { DEFAULT_GAME_SETTINGS } from '../domain/game.ts';
 import {
   LINE_POSITIONS,
@@ -15,6 +15,15 @@ import {
   MARE_GROUP_TARGET,
   type Mare,
 } from '../domain/mare.ts';
+import {
+  checkLineageAgainstRule,
+  pedigreeNotices,
+  pedigreeWarningCodes,
+  type LineageMismatch,
+  type PedigreeCheck,
+  type PedigreeWarningCode,
+} from '../domain/pedigree-check.ts';
+import { stallionLineage } from '../domain/foal.ts';
 import { isOnDuty } from '../domain/stallion-duty.ts';
 import {
   buildLineTasks,
@@ -28,15 +37,18 @@ import {
   type TaskStallion,
 } from '../domain/task.ts';
 import { listBreedings } from '../storage/breedings.ts';
+import { getFoal } from '../storage/foals.ts';
 import { readGameSettings } from '../storage/games.ts';
 import { getHorsesByIds } from '../storage/horses.ts';
 import { listLines } from '../storage/lines.ts';
-import { listMares } from '../storage/mares.ts';
+import { getMare, listMares } from '../storage/mares.ts';
 import { listStallionDuties } from '../storage/stallion-duties.ts';
 import type { ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
 import { requireCurrentGame } from './games.ts';
 import { loadHorseNames } from './horse-names.ts';
+import { checkBreedingPedigree } from './pedigree-check.ts';
+import { requireAcceptedWarnings, type ServiceWarning } from './warnings.ts';
 
 /** 任務看板上可登記這筆任務的一匹母馬（需求規格 13.2）。 */
 export interface TaskMareOption {
@@ -320,4 +332,155 @@ export async function requireRuleSnapshot(
     throw new ServiceError('invalidInput', '這筆任務已不在看板上，請重新整理後再登記');
   }
   return snapshot;
+}
+
+/** 系與代數不符的說明（需求規格 10.3）：指出錯誤的一方與正確的系、代數。 */
+function describeMismatch(mismatch: LineageMismatch): string {
+  const side = mismatch.side === 'sire' ? '種牡馬' : '母馬';
+  const expected = `第 ${String(mismatch.expected.position)} 系 ${String(mismatch.expected.generation)} 代`;
+  if (mismatch.kind === 'unknown') {
+    return `${side}沒有系與代數，這筆任務要用${expected}的${side}`;
+  }
+  const actual = mismatch.actual;
+  const chosen =
+    actual === undefined
+      ? ''
+      : `（選到的是第 ${String(actual.position)} 系 ${String(actual.generation)} 代）`;
+  const wrong = mismatch.kind === 'position' ? '系別' : '代數';
+  return `${side}的${wrong}與規則不符：這筆任務要用${expected}的${side}${chosen}`;
+}
+
+const PEDIGREE_WARNING_MESSAGES: Readonly<
+  Record<PedigreeWarningCode, (check: PedigreeCheck) => string>
+> = {
+  activationBelowFull: (check) =>
+    `活血預估只有 ${String(check.activationCount ?? 0)} 種，少於 8 種`,
+  duplicateAncestors: (check) =>
+    `4 代內有 ${String(check.duplicateAncestors.length)} 匹重複的馬（インブリード）`,
+  insufficientPedigree: () => '血統資料不足，活血預估可能不準',
+};
+
+export interface TaskBreedingInput {
+  readonly taskId: string;
+  readonly mareId: string;
+  readonly stallionId: string | undefined;
+  /** 使用者已確認的警告（需求規格 5.2）。 */
+  readonly acceptedWarnings?: readonly PedigreeWarningCode[] | undefined;
+}
+
+export interface TaskBreedingCheck {
+  /** 系與代數不符等一律阻止的問題（需求規格 5.2、10.3）。 */
+  readonly issues: readonly string[];
+  /** 需要確認的血統警告（需求規格 10.2）。 */
+  readonly warnings: readonly ServiceWarning<PedigreeWarningCode>[];
+  /** 只提示、不要求確認的說明（PED-11）。 */
+  readonly notices: readonly string[];
+  readonly pedigreeCheck: PedigreeCheck;
+}
+
+interface TaskBreedingResolution extends TaskBreedingCheck {
+  readonly ruleSnapshot: BreedingRuleSnapshot;
+}
+
+async function inspectTaskBreeding(
+  context: ServiceContext,
+  input: TaskBreedingInput,
+): Promise<TaskBreedingResolution> {
+  const game = await requireCurrentGame(context);
+  const snapshot = await requireRuleSnapshot(context, input.taskId);
+  const issues: string[] = [];
+
+  const [duties, mare, ownFoal] = await Promise.all([
+    listStallionDuties(context.database, game.id),
+    getMare(context.database, game.id, input.mareId),
+    input.stallionId === undefined
+      ? Promise.resolve(undefined)
+      : getFoal(context.database, game.id, input.stallionId),
+  ]);
+  const sireLineage =
+    input.stallionId === undefined
+      ? undefined
+      : stallionLineage(
+          duties.filter((duty) => duty.horseId === input.stallionId),
+          ownFoal,
+        );
+  const sireMismatch = checkLineageAgainstRule('sire', snapshot.sire, sireLineage);
+  if (sireMismatch !== undefined) {
+    issues.push(describeMismatch(sireMismatch));
+  }
+  // 母馬側比對的是母馬群（需求規格 10.3「第 q 系 g−1 代母馬群（含替代母馬）」），不是母馬本身的代數。
+  const damLineage =
+    mare === undefined || mare.group.kind === 'unassigned'
+      ? undefined
+      : { position: mare.group.position, generation: mare.group.generation };
+  const damMismatch = checkLineageAgainstRule('dam', snapshot.dam, damLineage);
+  if (damMismatch !== undefined) {
+    issues.push(describeMismatch(damMismatch));
+  }
+
+  // 系或代數不符時仍算一次血統檢查，讓畫面可以同時看到阻止原因與血統狀況。
+  const pedigreeCheck = await checkBreedingPedigree(context, {
+    phase: snapshot.phase,
+    sireId: input.stallionId ?? '',
+    damId: input.mareId,
+  });
+  const warnings = pedigreeWarningCodes(pedigreeCheck).map((code) => ({
+    code,
+    message: PEDIGREE_WARNING_MESSAGES[code](pedigreeCheck),
+  }));
+  return {
+    issues,
+    warnings,
+    notices: pedigreeNotices(pedigreeCheck),
+    pedigreeCheck,
+    ruleSnapshot: snapshot,
+  };
+}
+
+/**
+ * 依任務登記指定配種前的檢查（需求規格 10.2、10.3）：系與代數不符一律阻止，
+ * 活血少於 8 種、4 代內重複或資料不足時警告並要求確認。
+ */
+export async function checkTaskBreeding(
+  context: ServiceContext,
+  input: TaskBreedingInput,
+): Promise<TaskBreedingCheck> {
+  const { issues, warnings, notices, pedigreeCheck } = await inspectTaskBreeding(context, input);
+  return { issues, warnings, notices, pedigreeCheck };
+}
+
+export interface ResolvedTaskBreeding {
+  readonly ruleSnapshot: BreedingRuleSnapshot;
+  /** 循環期才有；建系期不計算活血（需求規格 10.1）。 */
+  readonly pedigreeCheck: BreedingPedigreeCheck | undefined;
+  readonly confirmations: readonly string[];
+}
+
+/**
+ * 依任務登記指定配種時解析規則快照與血統檢查（需求規格 7.4、10.2、10.3）：
+ * 系與代數不符時阻止，未確認的血統警告時要求確認，都通過才回傳要保存的內容。
+ */
+export async function resolveTaskBreeding(
+  context: ServiceContext,
+  input: TaskBreedingInput,
+): Promise<ResolvedTaskBreeding> {
+  const resolution = await inspectTaskBreeding(context, input);
+  if (resolution.issues.length > 0) {
+    throw new ServiceError('invalidInput', resolution.issues.join('；'));
+  }
+  requireAcceptedWarnings(resolution.warnings, input.acceptedWarnings ?? []);
+  const { pedigreeCheck } = resolution;
+  return {
+    ruleSnapshot: resolution.ruleSnapshot,
+    pedigreeCheck:
+      pedigreeCheck.activationCount === undefined
+        ? undefined
+        : {
+            activationCount: pedigreeCheck.activationCount,
+            duplicateAncestors: pedigreeCheck.duplicateAncestors,
+            insufficientPedigree: pedigreeCheck.insufficientPedigree,
+            gapsOnlyFromBuildingPhase: pedigreeCheck.gapsOnlyFromBuildingPhase,
+          },
+    confirmations: resolution.warnings.map((warning) => warning.code),
+  };
 }

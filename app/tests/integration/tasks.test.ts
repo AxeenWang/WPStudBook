@@ -11,7 +11,9 @@ import {
 } from '../../src/services/lines.ts';
 import { addMarketMare } from '../../src/services/mares.ts';
 import { assignCurrentStallion } from '../../src/services/stallions.ts';
-import { loadTaskBoard } from '../../src/services/tasks.ts';
+import { checkTaskBreeding, loadTaskBoard } from '../../src/services/tasks.ts';
+import { checkBreedingPedigree } from '../../src/services/pedigree-check.ts';
+import { pedigreeWarningCodes } from '../../src/domain/pedigree-check.ts';
 import { getBreeding, listBreedings } from '../../src/storage/breedings.ts';
 import { listEventsForSubject } from '../../src/storage/events.ts';
 import { listLines } from '../../src/storage/lines.ts';
@@ -313,5 +315,169 @@ describe('指定配種的規則快照（需求規格 7.4）', () => {
     expect(first?.latestGeneration).toBe(1);
     expect([first?.mareCount, first?.mareTarget]).toEqual([1, 5]);
     expect(board.lines[1]?.opened).toBe(false);
+  });
+});
+
+describe('系與代數檢查與血統檢查（需求規格 10.2、10.3）', () => {
+  const openContext = useServiceContexts();
+
+  it('[PED-07][LINE-27] 母馬的代數與規則不符時阻止，並指出正確的代數', async () => {
+    const context = await openContext();
+    const stud = await raiseSecondGeneration(context);
+    const board = await loadTaskBoard(context);
+    const found = board.tasks.find((task) => task.kind === 'found');
+    // 建立新系要用第 1 系 1 代母馬；起點母馬群是 0 代。
+    const starter = await addStarter(context, 'テストキテンヨウ');
+
+    const check = await checkTaskBreeding(context, {
+      taskId: found?.id ?? '',
+      mareId: starter,
+      stallionId: stud.founderId,
+    });
+    // 第 2 系還沒開啟，所以種牡馬側也不符；兩邊都逐一指出正確的系與代數。
+    expect(check.issues).toEqual([
+      '種牡馬的系別與規則不符：這筆任務要用第 2 系 0 代的種牡馬（選到的是第 1 系 0 代）',
+      '母馬的代數與規則不符：這筆任務要用第 1 系 1 代的母馬（選到的是第 1 系 0 代）',
+    ]);
+
+    await expect(
+      saveBreeding(context, {
+        mareId: starter,
+        gameYear: 1970,
+        breedingType: 'designated',
+        stallionId: stud.founderId,
+        stallionName: '',
+        conception: '受胎',
+        taskId: found?.id,
+      }),
+    ).rejects.toMatchObject({ code: 'invalidInput' });
+  });
+
+  it('[PED-06][LINE-34] 母馬配自己的父親時因系與代數不符而阻止', async () => {
+    const context = await openContext();
+    const stud = await raiseSecondGeneration(context);
+    const board = await loadTaskBoard(context);
+    const advance = board.tasks.find((task) => task.kind === 'advance');
+    // テストムスメ 是第 1 系 1 代自家母馬；推進原系要用替代第 2 系的母馬。
+    const check = await checkTaskBreeding(context, {
+      taskId: advance?.id ?? '',
+      mareId: stud.daughterId,
+      stallionId: stud.elderId,
+    });
+    expect(check.issues).toEqual([
+      '母馬的系別與規則不符：這筆任務要用第 2 系 1 代的母馬（選到的是第 1 系 1 代）',
+    ]);
+  });
+
+  it('[PED-06] 種牡馬的系與代數不符時阻止，並指出正確的種牡馬', async () => {
+    const context = await openContext();
+    const stud = await raiseSecondGeneration(context);
+    await addSubstitute(context, 2, 1, 'テストダイヨウ');
+    const board = await loadTaskBoard(context);
+    const advance = board.tasks.find((task) => task.kind === 'advance');
+    const mareId = advance?.mares[0]?.id ?? '';
+
+    // 推進原系要用第 1 系 1 代現任，這裡改用零代的建系種牡馬。
+    const check = await checkTaskBreeding(context, {
+      taskId: advance?.id ?? '',
+      mareId,
+      stallionId: stud.founderId,
+    });
+    expect(check.issues).toEqual([
+      '種牡馬的代數與規則不符：這筆任務要用第 1 系 1 代的種牡馬（選到的是第 1 系 0 代）',
+    ]);
+  });
+
+  it('沒有系與代數的種牡馬也阻止', async () => {
+    const context = await openContext();
+    await raiseSecondGeneration(context);
+    await addSubstitute(context, 2, 1, 'テストダイヨウ');
+    const board = await loadTaskBoard(context);
+    const advance = board.tasks.find((task) => task.kind === 'advance');
+    const check = await checkTaskBreeding(context, {
+      taskId: advance?.id ?? '',
+      mareId: advance?.mares[0]?.id ?? '',
+      stallionId: undefined,
+    });
+    expect(check.issues).toEqual(['種牡馬沒有系與代數，這筆任務要用第 1 系 1 代的種牡馬']);
+  });
+
+  it('[PED-01] 建系期的指定配種不計算活血，也不因市場馬血統不完整警告', async () => {
+    const context = await openContext();
+    const stud = await raiseSecondGeneration(context);
+    const substitute = await addSubstitute(context, 2, 1, 'テストダイヨウ');
+    const board = await loadTaskBoard(context);
+    const advance = board.tasks.find((task) => task.kind === 'advance');
+
+    const check = await checkTaskBreeding(context, {
+      taskId: advance?.id ?? '',
+      mareId: substitute.mare.id,
+      stallionId: stud.elderId,
+    });
+    expect(check.issues).toEqual([]);
+    expect(check.warnings).toEqual([]);
+    expect(check.pedigreeCheck.evaluated).toBe(false);
+
+    await saveBreeding(context, {
+      mareId: substitute.mare.id,
+      gameYear: 1970,
+      breedingType: 'designated',
+      stallionId: stud.elderId,
+      stallionName: '',
+      conception: '受胎',
+      taskId: advance?.id,
+    });
+    const record = await getBreeding(context.database, stud.gameId, substitute.mare.id, 1970);
+    expect(record?.ruleSnapshot).toBeDefined();
+    expect(record?.pedigreeCheck).toBeUndefined();
+    expect(record?.confirmations).toBeUndefined();
+  });
+});
+
+describe('循環期的血統檢查（需求規格 10.2）', () => {
+  const openContext = useServiceContexts();
+
+  it('[PED-11] 資料不足只因建系期的市場馬時只提示，不要求確認', async () => {
+    const context = await openContext();
+    const stud = await raiseSecondGeneration(context);
+    const substitute = await addSubstitute(context, 2, 1, 'テストダイヨウ');
+
+    const check = await checkBreedingPedigree(context, {
+      phase: 'cycling',
+      sireId: stud.elderId,
+      damId: substitute.mare.id,
+    });
+    expect(check.evaluated).toBe(true);
+    expect(check.insufficientPedigree).toBe(true);
+    expect(check.gapsOnlyFromBuildingPhase).toBe(true);
+    expect(pedigreeWarningCodes(check)).toEqual(['activationBelowFull']);
+  });
+
+  it('[PED-05] 補血補入的市場母馬造成的資料不足要確認', async () => {
+    const context = await openContext();
+    const stud = await raiseSecondGeneration(context);
+    // 替代第 2 系 5 代是循環期的補血，不是建系期的市場馬。
+    const replenish = await addSubstitute(context, 2, 5, 'テストホケツ');
+
+    const check = await checkBreedingPedigree(context, {
+      phase: 'cycling',
+      sireId: stud.elderId,
+      damId: replenish.mare.id,
+    });
+    expect(check.gapsOnlyFromBuildingPhase).toBe(false);
+    expect(pedigreeWarningCodes(check)).toContain('insufficientPedigree');
+  });
+
+  it('[PED-04] 同一匹馬出現在 4 代內時列為重複祖先', async () => {
+    const context = await openContext();
+    const stud = await raiseSecondGeneration(context);
+    // テストムスメ 與 哥哥 同父：父馬在兩邊的祖先中各出現一次。
+    const check = await checkBreedingPedigree(context, {
+      phase: 'cycling',
+      sireId: stud.elderId,
+      damId: stud.daughterId,
+    });
+    expect(check.duplicateAncestors).toContain(stud.founderId);
+    expect(pedigreeWarningCodes(check)).toContain('duplicateAncestors');
   });
 });

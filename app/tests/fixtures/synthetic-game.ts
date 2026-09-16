@@ -126,8 +126,14 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       conception: '受胎',
       expectedBirthYear: 1969,
       foalId: 'horse-foal',
-      deviated: false,
-      confirmations: [],
+      ruleSnapshot: {
+        taskId: 'advance:s1-0:d1-0:t1-1',
+        phase: 'building',
+        kind: 'advance',
+        sire: { position: 1, generation: 0 },
+        dam: { position: 1, generation: 0 },
+        target: { position: 1, generation: 1 },
+      },
     },
   ],
   matingRatings: [

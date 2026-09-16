@@ -505,7 +505,35 @@ function checkBreeding(record: StoredRecord): string | undefined {
       !('ruleSnapshot' in record) || record.breedingType === 'designated',
       '只有八系指定配種可以有 ruleSnapshot',
     ],
+    [
+      optional(record, 'pedigreeCheck', isPedigreeCheck),
+      'pedigreeCheck 必須含 0～8 的 activationCount、duplicateAncestors 與兩個布林值',
+    ],
+    [
+      !('pedigreeCheck' in record) || 'ruleSnapshot' in record,
+      '只有依任務登記的指定配種可以有 pedigreeCheck',
+    ],
+    [
+      optional(record, 'confirmations', (value) => isArrayOf(value, isNonEmptyString)),
+      'confirmations 必須是非空字串的陣列',
+    ],
+    [
+      !('confirmations' in record) ||
+        (Array.isArray(record.confirmations) && record.confirmations.length > 0),
+      'confirmations 沒有項目時不可保存',
+    ],
   ]);
+}
+
+/** 血統檢查結果（需求規格 10.2）：活血種數 0～8，重複祖先為內部識別。 */
+function isPedigreeCheck(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    isIntegerIn(value.activationCount, 0, 8) &&
+    isArrayOf(value.duplicateAncestors, isNonEmptyString) &&
+    typeof value.insufficientPedigree === 'boolean' &&
+    typeof value.gapsOnlyFromBuildingPhase === 'boolean'
+  );
 }
 
 /** 指定配種的規則快照（需求規格 7.4）：種牡馬與母馬側可為零代市場馬，產出至少 1 代。 */
