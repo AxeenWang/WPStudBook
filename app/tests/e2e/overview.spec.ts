@@ -159,6 +159,12 @@ test.describe('總覽與任務看板（需求規格 13.2）', () => {
     await expect(cards.first()).toContainText('高優先');
     await expect(cards.first()).toContainText('推進原系');
 
+    // 推進原系只提供替代第 2 系的母馬：第 1 系 1 代的女兒テストムスメ 不在這一群，
+    // 所以看板不會讓她配自己的哥哥（需求規格 10.3、LINE-34）。
+    const advanceMares = cards.first().getByRole('list', { name: '可配母馬' });
+    await expect(advanceMares).toContainText('テストダイヨウ');
+    await expect(advanceMares).not.toContainText('テストムスメ');
+
     // 依任務登記指定配種。
     await board(page)
       .getByRole('list', { name: '可配母馬' })
@@ -174,5 +180,17 @@ test.describe('總覽與任務看板（需求規格 13.2）', () => {
     await openLineViaUi(page, 2, 'ヘロド', 'テストシンケイ');
     await expect(page.getByTestId('parent-system-count')).toHaveText('親系統種類數 2／8');
     await expect(page.getByTestId('overview-line-2')).toContainText('ヘロド');
+
+    // 建系期不計算活血，所以繁殖紀錄有規則快照但沒有血統檢查結果（需求規格 10.1、PED-01）。
+    await gotoPage(page, '母馬群');
+    await herd(page).getByLabel('系', { exact: true }).selectOption({ label: '第 2 系' });
+    const drawer = await openDrawer(page, 'テストダイヨウ');
+    await drawer.getByRole('tab', { name: '配種' }).click();
+    const row = drawer.getByRole('listitem', { name: '1970 年繁殖紀錄' });
+    await expect(row.getByTestId('breeding-rule')).toHaveText(
+      '依任務登記：第 1 系 1 代 × 第 2 系 1 代 → 第 1 系 2 代',
+    );
+    await expect(row.getByTestId('breeding-pedigree')).toHaveCount(0);
+    await closeDrawer(page, drawer);
   });
 });

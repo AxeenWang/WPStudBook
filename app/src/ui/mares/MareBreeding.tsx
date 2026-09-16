@@ -1,6 +1,7 @@
 import { useCallback, useId, useState } from 'react';
 import { Button, Form, Input, Label, TextField } from 'react-aria-components';
 import type { Breeding, BreedingType, Conception } from '../../domain/breeding.ts';
+import { formatLineage, PEDIGREE_WARNING_LABELS } from '../overview/labels.ts';
 import {
   BREEDING_TYPE_OPTIONS,
   CONCEPTION_OPTIONS,
@@ -177,6 +178,26 @@ function RowItem({ row, mareId }: { readonly row: BreedingRow; readonly mareId: 
       )}
       {record.conception === '未確認' && (
         <p className="notice">未確認：不推定結果，請以七月總表確認。</p>
+      )}
+      {record.ruleSnapshot !== undefined && (
+        <p data-testid="breeding-rule">
+          依任務登記：{formatLineage(record.ruleSnapshot.sire)} ×{' '}
+          {formatLineage(record.ruleSnapshot.dam)} → {formatLineage(record.ruleSnapshot.target)}
+        </p>
+      )}
+      {record.pedigreeCheck !== undefined && (
+        <p data-testid="breeding-pedigree">
+          活血預估 {record.pedigreeCheck.activationCount}／8 種
+          {record.pedigreeCheck.duplicateAncestors.length > 0 &&
+            `・4 代內重複 ${String(record.pedigreeCheck.duplicateAncestors.length)} 匹`}
+          {record.pedigreeCheck.insufficientPedigree && '・血統資料不足'}
+        </p>
+      )}
+      {record.confirmations !== undefined && (
+        <p className="notice" data-testid="breeding-confirmations">
+          已確認：
+          {record.confirmations.map((code) => PEDIGREE_WARNING_LABELS[code] ?? code).join('、')}
+        </p>
       )}
       {registered !== undefined && <p role="status">{registered}</p>}
       {row.canConfirmBirth && !confirming && (

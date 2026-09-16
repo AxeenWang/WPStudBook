@@ -1,4 +1,5 @@
 import type { Lineage } from '../../domain/lineage.ts';
+import type { PedigreeCheck } from '../../domain/pedigree-check.ts';
 import type { TaskBlocker, TaskDam, TaskPhase } from '../../domain/task.ts';
 import type { TaskView } from '../../services/tasks.ts';
 
@@ -53,3 +54,25 @@ export function formatTaskKind(task: Pick<TaskView, 'kind' | 'dam'>): string {
       return '循環配種';
   }
 }
+
+/** 血統檢查結果的摘要（需求規格 10.2）：建系期不計算活血。 */
+export function describePedigreeCheck(check: PedigreeCheck): string {
+  if (!check.evaluated) {
+    return '建系期不計算活血。';
+  }
+  const parts = [`活血預估 ${String(check.activationCount ?? 0)}／8 種`];
+  if (check.duplicateAncestors.length > 0) {
+    parts.push(`4 代內重複 ${String(check.duplicateAncestors.length)} 匹`);
+  }
+  if (check.insufficientPedigree) {
+    parts.push('血統資料不足');
+  }
+  return `${parts.join('・')}。`;
+}
+
+/** 確認紀錄的介面文字（需求規格 10.2）。 */
+export const PEDIGREE_WARNING_LABELS: Readonly<Record<string, string | undefined>> = {
+  activationBelowFull: '活血少於 8 種',
+  duplicateAncestors: '4 代內有重複的馬',
+  insufficientPedigree: '血統資料不足',
+};

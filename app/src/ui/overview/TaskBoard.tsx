@@ -1,13 +1,27 @@
 import { useCallback, useState } from 'react';
 import { Button } from 'react-aria-components';
+import type { PedigreeWarningCode } from '../../domain/pedigree-check.ts';
 import { saveBreeding } from '../../services/breedings.ts';
 import type { ServiceContext } from '../../services/context.ts';
 import { listOpenableLines, type OpenableLine } from '../../services/lines.ts';
-import { loadTaskBoard, type TaskMareOption, type TaskView } from '../../services/tasks.ts';
+import {
+  checkTaskBreeding,
+  loadTaskBoard,
+  type TaskBreedingCheck,
+  type TaskMareOption,
+  type TaskView,
+} from '../../services/tasks.ts';
 import { Feedback, useAction, type ActionState } from '../actions.tsx';
+import { ConfirmDialog } from '../dialogs.tsx';
 import { OpenLineForm } from '../lines/OpenLineForm.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
-import { BLOCKER_LABELS, formatTask, formatTaskKind, PHASE_LABELS } from './labels.ts';
+import {
+  BLOCKER_LABELS,
+  describePedigreeCheck,
+  formatTask,
+  formatTaskKind,
+  PHASE_LABELS,
+} from './labels.ts';
 
 function MareRow({
   task,
@@ -21,7 +35,43 @@ function MareRow({
   readonly action: ActionState;
 }) {
   const { context } = useServices();
+  const [pending, setPending] = useState<TaskBreedingCheck>();
   const { sireId } = task;
+
+  const record = async (acceptedWarnings: readonly PedigreeWarningCode[] | undefined) => {
+    await action.run(async () => {
+      await saveBreeding(context, {
+        mareId: mare.id,
+        gameYear: currentYear,
+        breedingType: 'designated',
+        stallionId: sireId,
+        stallionName: '',
+        conception: undefined,
+        taskId: task.id,
+        acceptedWarnings,
+      });
+      return `已依任務登記「${mare.name}」的 ${String(currentYear)} 年指定配種`;
+    });
+  };
+
+  /** 先檢查系與代數（阻止）與血統（警告並確認），都通過才直接登記（需求規格 10.2、10.3）。 */
+  const start = async () => {
+    const check = await checkTaskBreeding(context, {
+      taskId: task.id,
+      mareId: mare.id,
+      stallionId: sireId,
+    });
+    if (check.issues.length > 0) {
+      await action.run(() => Promise.reject(new Error(check.issues.join('；'))));
+      return;
+    }
+    if (check.warnings.length > 0) {
+      setPending(check);
+      return;
+    }
+    await record(undefined);
+  };
+
   return (
     <li>
       <span>{mare.name}</span>
@@ -33,22 +83,37 @@ function MareRow({
           type="button"
           isDisabled={action.busy || sireId === undefined}
           onPress={() => {
-            void action.run(async () => {
-              await saveBreeding(context, {
-                mareId: mare.id,
-                gameYear: currentYear,
-                breedingType: 'designated',
-                stallionId: sireId,
-                stallionName: '',
-                conception: undefined,
-                taskId: task.id,
-              });
-              return `已依任務登記「${mare.name}」的 ${String(currentYear)} 年指定配種`;
-            });
+            void start();
           }}
         >
           登記指定配種
         </Button>
+      )}
+      {pending !== undefined && (
+        <ConfirmDialog
+          title={`確認登記「${mare.name}」的指定配種`}
+          confirmLabel="確認並登記"
+          onCancel={() => {
+            setPending(undefined);
+          }}
+          onConfirm={() => {
+            const accepted = pending.warnings.map((warning) => warning.code);
+            setPending(undefined);
+            void record(accepted);
+          }}
+        >
+          <p>{describePedigreeCheck(pending.pedigreeCheck)}</p>
+          <ul>
+            {pending.warnings.map((warning) => (
+              <li key={warning.code}>{warning.message}</li>
+            ))}
+          </ul>
+          {pending.notices.map((notice) => (
+            <p key={notice} className="notice">
+              {notice}
+            </p>
+          ))}
+        </ConfirmDialog>
       )}
     </li>
   );
