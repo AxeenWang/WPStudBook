@@ -24,6 +24,7 @@ import { listImports } from '../storage/imports.ts';
 import { listMares } from '../storage/mares.ts';
 import { listMareYearly } from '../storage/mare-yearly.ts';
 import { listLines } from '../storage/lines.ts';
+import { listSystemMapEntries } from '../storage/system-map.ts';
 import { loadOwnMareState } from '../storage/succession.ts';
 import type { CollectionRecord } from '../storage/imports.ts';
 import { withStageNumber, toBaseName } from '../domain/horse.ts';
@@ -80,6 +81,8 @@ export interface MayMareRow extends PreviewRow {
   readonly foal: Foal | undefined;
   /** 轉入會讓該代成立時要更新的系位置（需求規格 8.2）。 */
   readonly line: Line | undefined;
+  /** 父系在系統對照表裡查不到（LINE-05）：預覽可補登親系統，未補登仍可匯入。 */
+  readonly subsystemUnregistered: boolean;
 }
 
 export interface BloodFills {
@@ -134,6 +137,11 @@ const ISSUES = {
   unassignedPurpose: {
     code: 'unassignedPurpose',
     message: '待指定用途，指定前不進入任務',
+    handling: 'confirm',
+  },
+  subsystemUnregistered: {
+    code: 'subsystemUnregistered',
+    message: '父系尚未登錄在系統對照表，可在預覽補登親系統；未補登仍會匯入',
     handling: 'confirm',
   },
   freeBredFoal: {
@@ -339,6 +347,35 @@ function classifyAbsent(
   return reachesRetirementAge(age, retirementAge) ? 'retired' : 'sold';
 }
 
+/**
+ * 缺席者的處置逐匹更正（需求規格 11.5、MARE-09）：預設值由上次五月的馬齡決定，
+ * 使用者在預覽改過的以這裡為準。回傳新的列，不改原本的預覽。
+ */
+export function withAbsentOverrides(
+  rows: readonly MayMareRow[],
+  overrides: ReadonlyMap<string, 'retired' | 'sold'>,
+): MayMareRow[] {
+  return rows.map((row) => {
+    const next = overrides.get(row.key);
+    if (next === undefined || (row.disposition !== 'retired' && row.disposition !== 'sold')) {
+      return row;
+    }
+    return { ...row, disposition: next };
+  });
+}
+
+/** 檔案裡出現、但系統對照表沒有的子系統（LINE-05）；預覽用來提供補登入口。 */
+export function unknownSubsystemsOf(rows: readonly MayMareRow[]): string[] {
+  return [
+    ...new Set(
+      rows
+        .filter((row) => row.subsystemUnregistered)
+        .map((row) => row.values?.sireSubsystem)
+        .filter((name): name is string => name !== undefined),
+    ),
+  ];
+}
+
 export function summariseMayRows(rows: readonly MayMareRow[]): MayMaresOverview {
   // 據點分布講的是這份檔案裡的繁殖牝馬圈，缺席的母馬不在檔案裡，不計入（需求規格 11.5）。
   const fileRows = rows.filter((row) => row.values !== undefined);
@@ -392,7 +429,7 @@ export async function previewMayMares(
     );
   }
 
-  const [resolutions, mareList, foalList, settings, imports, yearlyList, lineList] =
+  const [resolutions, mareList, foalList, settings, imports, yearlyList, lineList, systemMap] =
     await Promise.all([
       resolveIdentities(context.database, gameId, identityRows),
       listMares(context.database, gameId),
@@ -401,6 +438,7 @@ export async function previewMayMares(
       listImports(context.database, gameId),
       listMareYearly(context.database, gameId),
       listLines(context.database, gameId),
+      listSystemMapEntries(context.database, gameId),
     ]);
   const mares = new Map(mareList.map((mare) => [mare.id, mare]));
   const foals = new Map(foalList.map((foal) => [foal.id, foal]));
@@ -414,6 +452,7 @@ export async function previewMayMares(
   ]);
 
   const linesByPosition = new Map(lineList.map((line) => [line.position, line]));
+  const registeredSubsystems = new Set(systemMap.map((entry) => entry.subsystem));
   const yearlyByHorse = new Map(
     yearlyList
       .filter((record) => record.gameYear === choice.gameYear)
@@ -453,12 +492,18 @@ export async function previewMayMares(
           },
         ]
       : [];
+    const unregistered =
+      item.sireSubsystem !== undefined && !registeredSubsystems.has(item.sireSubsystem);
     return {
       key: String(item.lineNumber),
       lineNumber: item.lineNumber,
       label: item.fullName ?? `第 ${String(item.lineNumber)} 行`,
       outcome: blocked ? 'review' : classified.outcome,
-      issues: [...classified.issues, ...blockIssues],
+      issues: [
+        ...classified.issues,
+        ...blockIssues,
+        ...(unregistered ? [ISSUES.subsystemUnregistered] : []),
+      ],
       disposition: classified.disposition,
       values: item,
       birthYear: identityRows[index]?.birthYear,
@@ -474,6 +519,7 @@ export async function previewMayMares(
       conversion,
       foal: classified.horseId === undefined ? undefined : foals.get(classified.horseId),
       line: conversion === undefined ? undefined : linesByPosition.get(conversion.group.position),
+      subsystemUnregistered: unregistered,
     };
   });
 
@@ -513,6 +559,7 @@ export async function previewMayMares(
         conversion: undefined,
         foal: undefined,
         line: undefined,
+        subsystemUnregistered: false,
       };
     });
 

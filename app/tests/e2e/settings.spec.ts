@@ -7,7 +7,7 @@ test.describe('遊戲局設定', () => {
   }) => {
     await openApp(page);
     await createGameViaUi(page, '設定局');
-    const form = page.getByRole('form', { name: '提醒設定' });
+    const form = page.getByRole('form', { name: '遊戲局設定' });
     const age = form.getByLabel('高齡提醒年齡');
     const threshold = form.getByLabel('活力建議門檻（留空＝不使用）');
     await expect(age).toHaveValue('18');
@@ -25,7 +25,7 @@ test.describe('遊戲局設定', () => {
     await expect(form.getByRole('status')).toHaveText('已保存設定');
 
     await page.reload();
-    const reloaded = page.getByRole('form', { name: '提醒設定' });
+    const reloaded = page.getByRole('form', { name: '遊戲局設定' });
     await expect(reloaded.getByLabel('高齡提醒年齡')).toHaveValue('20');
     await expect(reloaded.getByLabel('活力建議門檻（留空＝不使用）')).toHaveValue('60');
     await expect(reloaded.getByLabel('種牡馬提醒年齡')).toHaveValue('24');
@@ -47,7 +47,7 @@ test.describe('遊戲局設定', () => {
     const target = checkpoints.getByRole('row', { name: /設定前/ });
     await expect(target).toBeVisible();
 
-    const form = page.getByRole('form', { name: '提醒設定' });
+    const form = page.getByRole('form', { name: '遊戲局設定' });
     const threshold = form.getByLabel('活力建議門檻（留空＝不使用）');
     await threshold.fill('60');
     await threshold.blur();

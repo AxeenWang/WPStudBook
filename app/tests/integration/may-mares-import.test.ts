@@ -5,12 +5,14 @@ import type { Mare } from '../../src/domain/mare.ts';
 import { parseImportFile, type ParsedFile } from '../../src/import/parse.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
 import { createGame } from '../../src/services/games.ts';
-import { readGameSettings } from '../../src/storage/games.ts';
+import { updateGameRuleSettings } from '../../src/services/settings.ts';
 import {
   previewMayMares,
   summariseMayRows,
+  unknownSubsystemsOf,
   type MayMareRow,
 } from '../../src/services/may-mares-import.ts';
+import { saveSystemMapEntry } from '../../src/services/system-map.ts';
 import type { ImportChoice } from '../../src/services/imports.ts';
 import { horseNameKeys } from '../../src/storage/horses.ts';
 import { putRecords } from '../../src/storage/records.ts';
@@ -283,12 +285,12 @@ describe('五月繁殖牝馬總表的預覽（需求規格 11.5）', () => {
     expect(rowFor(rows, 'テストワカ').disposition).toBe('sold');
 
     // 定年改成 7 歲 → 下一次匯入依新設定判斷（MARE-10）。
-    // 目前還沒有編輯定年的服務，所以直接寫設定；編輯入口在本子計畫的批次 4。
-    const settings = await readGameSettings(context.database, gameId);
-    if (settings === undefined) {
-      throw new Error('找不到遊戲局設定');
-    }
-    await context.database.put('gameSettings', { ...settings, retirementAge: 7, gameId });
+    await updateGameRuleSettings(context, {
+      retirementAge: 7,
+      highAgeReminderAge: 18,
+      stallionAgeReminderAge: 26,
+      vitalityThreshold: undefined,
+    });
     const after = await previewMayMares(context, gameId, parsed(), MAY);
     expect(rowFor(after, 'テストワカ').disposition).toBe('retired');
   });
@@ -309,5 +311,24 @@ describe('五月繁殖牝馬總表的預覽（需求規格 11.5）', () => {
         MAY,
       ),
     ).rejects.toMatchObject({ code: 'importHalted' });
+  });
+
+  it('[LINE-05] 未登錄的子系統列在預覽可補登，未補登仍可匯入', async () => {
+    const context = await openContext();
+    const gameId = await setUp(context);
+
+    const before = await previewMayMares(context, gameId, parsed(), MAY);
+    // 樣本的父系是 エクリプス 與 ヘロド，兩者都還沒登錄。
+    expect(unknownSubsystemsOf(before).sort()).toEqual(['エクリプス', 'ヘロド']);
+    expect(rowFor(before, 'テストメス001').issues.map((issue) => issue.code)).toContain(
+      'subsystemUnregistered',
+    );
+    // 未補登也不阻擋匯入。
+    expect(rowFor(before, 'テストメス001').outcome).toBe('apply');
+
+    await saveSystemMapEntry(context, { subsystem: 'エクリプス', parentSystem: 'エクリプス' });
+    const after = await previewMayMares(context, gameId, parsed(), MAY);
+    expect(unknownSubsystemsOf(after)).toEqual(['ヘロド']);
+    expect(rowFor(after, 'テストメス001').subsystemUnregistered).toBe(false);
   });
 });

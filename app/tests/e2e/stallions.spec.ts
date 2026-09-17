@@ -179,7 +179,7 @@ test.describe('種牡馬', () => {
     );
 
     await gotoPage(page, '資料管理');
-    const settings = page.getByRole('form', { name: '提醒設定' });
+    const settings = page.getByRole('form', { name: '遊戲局設定' });
     const age = settings.getByLabel('種牡馬提醒年齡');
     await age.fill('27');
     await age.blur();

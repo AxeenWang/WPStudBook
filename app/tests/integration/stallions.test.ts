@@ -6,7 +6,7 @@ import { nameFoal, registerFoal } from '../../src/services/foals.ts';
 import { changeCurrentYear } from '../../src/services/games.ts';
 import { loadMareMatingRatings, saveMatingRating } from '../../src/services/mating-ratings.ts';
 import { loadPedigree } from '../../src/services/pedigree.ts';
-import { updateReminderSettings } from '../../src/services/settings.ts';
+import { updateGameRuleSettings } from '../../src/services/settings.ts';
 import {
   assignCurrentStallion,
   changeDutyStatus,
@@ -195,7 +195,8 @@ describe('自家種牡馬接任與更換現任（需求規格 7.7、9.6）', () 
       '第 1 系 0 代現任「テストシュボバ」已 26 歲，達到種牡馬提醒年齡，請準備後繼',
     ]);
 
-    await updateReminderSettings(context, {
+    await updateGameRuleSettings(context, {
+      retirementAge: 25,
       highAgeReminderAge: 18,
       stallionAgeReminderAge: 27,
       vitalityThreshold: undefined,

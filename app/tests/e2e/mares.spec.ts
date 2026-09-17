@@ -177,7 +177,7 @@ test.describe('母馬群', () => {
     await expect(card).toContainText('產駒素質可能下降，可考慮出售');
 
     await gotoPage(page, '資料管理');
-    const form = page.getByRole('form', { name: '提醒設定' });
+    const form = page.getByRole('form', { name: '遊戲局設定' });
     await form.getByLabel('高齡提醒年齡').fill('19');
     await form.getByLabel('高齡提醒年齡').blur();
     await form.getByRole('button', { name: '保存設定' }).click();
