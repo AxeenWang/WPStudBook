@@ -16,9 +16,17 @@ export interface PreviewIssue {
   readonly handling: ProblemHandling;
 }
 
-/** 預覽的一列；各匯入類型再加上自己的欄位。 */
+/**
+ * 預覽的一列；各匯入類型再加上自己的欄位。
+ *
+ * 不是每一列都來自檔案：五月繁殖牝馬總表要把「上年在圈、今年缺席」的母馬也列進預覽並計入
+ * 摘要（需求規格 11.5、MAY-02），那些列沒有行號。所以識別用 `key`，行號只是顯示資訊。
+ */
 export interface PreviewRow {
-  readonly lineNumber: number;
+  /** 這次預覽內唯一；檔案列用行號，其他列用自己的識別（例如母馬的內部 id）。 */
+  readonly key: string;
+  /** 檔案行號；不是來自檔案的列沒有行號。 */
+  readonly lineNumber?: number;
   /** 顯示用的標題，通常是馬名。 */
   readonly label: string;
   readonly outcome: PreviewOutcome;

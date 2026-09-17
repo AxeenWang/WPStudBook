@@ -63,14 +63,14 @@ interface PickedFile {
  * 那個檢查是刻意做得很鈍的，不值得為了一個畫面狀態放寬它。
  */
 function toggleSelection(
-  previous: ReadonlySet<number>,
-  lineNumbers: readonly number[],
+  previous: ReadonlySet<string>,
+  keys: readonly string[],
   checked: boolean,
-): ReadonlySet<number> {
+): ReadonlySet<string> {
   if (checked) {
-    return new Set([...previous, ...lineNumbers]);
+    return new Set([...previous, ...keys]);
   }
-  const removing = new Set(lineNumbers);
+  const removing = new Set(keys);
   return new Set([...previous].filter((value) => !removing.has(value)));
 }
 
@@ -108,7 +108,7 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
   const [month, setMonth] = useState<number | undefined>();
   const [week, setWeek] = useState<number | undefined>();
   const [prepared, setPrepared] = useState<PreparedImport<CandidateRow>>();
-  const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [position, setPosition] = useState<number>();
   const [generation, setGeneration] = useState<number>();
   const [site, setSite] = useState<MareSite>(32);
@@ -162,7 +162,7 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
       const result = await prepareImport(context, candidateImportHandler(target), file, choice);
       setPrepared(result);
       setSelected(
-        new Set(result.rows.filter((row) => row.outcome === 'apply').map((row) => row.lineNumber)),
+        new Set(result.rows.filter((row) => row.outcome === 'apply').map((row) => row.key)),
       );
       return `預覽完成：${summaryText(result.summary)}`;
     });
@@ -174,7 +174,7 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
         throw new Error('請先產生預覽');
       }
       const result = await applyImport(context, candidateImportHandler(target), prepared, {
-        selectedLineNumbers: [...selected],
+        selectedKeys: [...selected],
       });
       setPrepared(undefined);
       setSelected(new Set());
@@ -283,11 +283,11 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
           <CandidatePreview
             rows={prepared.rows}
             selected={selected}
-            onToggle={(lineNumber, checked) => {
-              setSelected((previous) => toggleSelection(previous, [lineNumber], checked));
+            onToggle={(key, checked) => {
+              setSelected((previous) => toggleSelection(previous, [key], checked));
             }}
-            onToggleShown={(lineNumbers, checked) => {
-              setSelected((previous) => toggleSelection(previous, lineNumbers, checked));
+            onToggleShown={(keys, checked) => {
+              setSelected((previous) => toggleSelection(previous, keys, checked));
             }}
           />
           <button type="button" onClick={apply} disabled={action.busy || selected.size === 0}>

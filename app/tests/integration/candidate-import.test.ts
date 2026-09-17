@@ -82,7 +82,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
   it('[CAND-02] 只建立勾選的母馬', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
-    const { result } = await run(context, UNASSIGNED, { selectedLineNumbers: [2, 3, 5] });
+    const { result } = await run(context, UNASSIGNED, { selectedKeys: ['2', '3', '5'] });
 
     expect(result.appliedRows).toBe(3);
     const mares = await listMares(context.database, gameId);
@@ -92,7 +92,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
   it('[CAND-03] 已在圈的馬再次出現時略過，不重複匯入', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
-    await run(context, UNASSIGNED, { selectedLineNumbers: [2, 3] });
+    await run(context, UNASSIGNED, { selectedKeys: ['2', '3'] });
 
     // 換一個時點重新匯同一份檔案：前兩筆已在圈，其餘照樣可套用。
     const handler = candidateImportHandler(UNASSIGNED);
@@ -115,7 +115,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
       context,
       { group: undefined, site: 34, origin: 'marketMixed' },
       {
-        selectedLineNumbers: [2],
+        selectedKeys: ['2'],
       },
     );
 
@@ -129,7 +129,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
   it('[CAND-05] 候選匯入不建立檢查點，也不算年度總表', async () => {
     const context = await openContext();
     await setUp(context);
-    const { prepared, result } = await run(context, UNASSIGNED, { selectedLineNumbers: [2] });
+    const { prepared, result } = await run(context, UNASSIGNED, { selectedKeys: ['2'] });
 
     expect(prepared.createsCheckpoint).toBe(false);
     expect(result.checkpointId).toBeUndefined();
@@ -142,7 +142,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
     await run(
       context,
       { group: { position: 3, generation: 6 }, site: 33, origin: 'marketReplenish' },
-      { selectedLineNumbers: [2] },
+      { selectedKeys: ['2'] },
     );
     const [assigned] = await listMares(context.database, gameId);
     expect(assigned?.group).toEqual({ kind: 'substitute', position: 3, generation: 6 });
@@ -150,7 +150,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
 
     const otherGame = await createGame(context, { name: '第二局', startYear: 1968 });
     await switchGame(context, otherGame.id);
-    await run(context, UNASSIGNED, { selectedLineNumbers: [2] });
+    await run(context, UNASSIGNED, { selectedKeys: ['2'] });
     const [unassigned] = await listMares(context.database, otherGame.id);
     expect(unassigned?.group).toEqual({ kind: 'unassigned' });
   });
@@ -158,7 +158,7 @@ describe('候選 TXT 匯入（需求規格 11.7）', () => {
   it('[MARE-21][IMP-17] 父馬、母馬、父系與牝系立即保存，父系去掉結尾「系」', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
-    await run(context, UNASSIGNED, { selectedLineNumbers: [2, 3] });
+    await run(context, UNASSIGNED, { selectedKeys: ['2', '3'] });
 
     const horses = await horsesByName(context, gameId);
     const first = horses.get('(外)テスト候補001');

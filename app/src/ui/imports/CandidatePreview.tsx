@@ -24,9 +24,9 @@ function matchesSearch(row: CandidateRow, search: string): boolean {
 
 interface CandidatePreviewProps {
   readonly rows: readonly CandidateRow[];
-  readonly selected: ReadonlySet<number>;
-  readonly onToggle: (lineNumber: number, checked: boolean) => void;
-  readonly onToggleShown: (lineNumbers: readonly number[], checked: boolean) => void;
+  readonly selected: ReadonlySet<string>;
+  readonly onToggle: (key: string, checked: boolean) => void;
+  readonly onToggleShown: (keys: readonly string[], checked: boolean) => void;
 }
 
 /** 候選 TXT 預覽（需求規格 11.7、CAND-01）：分頁、搜尋、篩選與勾選。 */
@@ -88,8 +88,8 @@ export function CandidatePreview(props: CandidatePreviewProps) {
                 type="button"
                 onClick={() => {
                   props.onToggleShown(
-                    selectable.map((row) => row.lineNumber),
-                    !selectable.every((row) => props.selected.has(row.lineNumber)),
+                    selectable.map((row) => row.key),
+                    !selectable.every((row) => props.selected.has(row.key)),
                   );
                 }}
                 disabled={selectable.length === 0}
@@ -113,15 +113,15 @@ export function CandidatePreview(props: CandidatePreviewProps) {
         </thead>
         <tbody>
           {shown.map((row) => (
-            <tr key={row.lineNumber} data-testid={`candidate-row-${String(row.lineNumber)}`}>
+            <tr key={row.key} data-testid={`candidate-row-${row.key}`}>
               <td>
                 <input
                   type="checkbox"
                   aria-label={`勾選 ${row.label}`}
-                  checked={props.selected.has(row.lineNumber)}
+                  checked={props.selected.has(row.key)}
                   disabled={row.outcome !== 'apply'}
                   onChange={(event) => {
-                    props.onToggle(row.lineNumber, event.target.checked);
+                    props.onToggle(row.key, event.target.checked);
                   }}
                 />
               </td>
