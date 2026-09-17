@@ -94,7 +94,7 @@ describe('種牡馬總表的欄位讀取（需求規格 11.8、附錄 A.4）', (
     expect(hasPrefixOnlyName({ ...foreign, fullName: '(外)' })).toBe(true);
   });
 
-  it('[STL-01] 目標種牡馬 TXT 用同一份格式，整份只有一筆資料列', () => {
+  it('目標種牡馬 TXT 用同一份格式，整份只有一筆資料列', () => {
     const rows = stallionRows('targetStallion');
     expect(rows).toHaveLength(1);
     const values = readStallionRow(rows[0] as SourceRow);

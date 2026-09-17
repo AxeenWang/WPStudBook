@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Foal } from '../../src/domain/foal.ts';
 import type { Horse } from '../../src/domain/horse.ts';
 import type { StallionDuty } from '../../src/domain/stallion-duty.ts';
+import { loadAnnualWork } from '../../src/services/annual-work.ts';
 import { listGameCheckpoints } from '../../src/services/checkpoints.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
 import { createGame } from '../../src/services/games.ts';
@@ -155,6 +156,32 @@ describe('五月種牡馬總表的套用（需求規格 11.8）', () => {
     const checkpoints = await listGameCheckpoints(context);
     expect(checkpoints).toHaveLength(1);
     expect(checkpoints[0]?.timing).toEqual({ month: 5, week: 1 });
+  });
+
+  it('[STL-02][UI-03] 年度工作清單依序列出五項年度總表，依匯入紀錄標示完成', async () => {
+    const context = await openContext();
+    await setUp(context);
+
+    const before = await loadAnnualWork(context);
+    expect(before.items.map((item) => item.type)).toEqual([
+      'jan2yo',
+      'aprFoals',
+      'mayMares',
+      'mayStallions',
+      'julMares',
+    ]);
+    expect(before.items.every((item) => !item.done)).toBe(true);
+
+    await runImport(context);
+
+    const after = await loadAnnualWork(context);
+    expect(after.gameYear).toBe(1968);
+    expect(after.items.find((item) => item.type === 'mayStallions')).toMatchObject({
+      done: true,
+      batch: { fileName: SAMPLE.fileName },
+    });
+    // 其他四項還沒匯入，照樣列在清單裡但未完成。
+    expect(after.items.filter((item) => item.done)).toHaveLength(1);
   });
 
   it('[STL-09] 自家生產的馬沿用內部識別，保存種牡馬馬番号並留下成為種牡馬的去向', async () => {

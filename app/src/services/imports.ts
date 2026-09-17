@@ -165,8 +165,11 @@ function requireConfirmations<TRow extends PreviewRow>(
   prepared: PreparedImport<TRow>,
   options: ApplyImportOptions,
 ): void {
+  // 依實際要套用的列判斷，不看預覽當下的摘要：呼叫端可能更正過處置（MARE-09、STL-10），
+  // 那會改變錯誤與警告的列數。
+  const summary = summarise(prepared.rows);
   if (hasBlockingError(prepared.rows)) {
-    throw halted([`有 ${String(prepared.summary.error)} 列錯誤`]);
+    throw halted([`有 ${String(summary.error)} 列錯誤`]);
   }
   if (prepared.repeat.kind === 'duplicate') {
     throw new ServiceError(
@@ -192,10 +195,10 @@ function requireConfirmations<TRow extends PreviewRow>(
       '檔案早於目前進度，建議先回溯到對應的檢查點；確認後才會套用',
     );
   }
-  if (prepared.summary.warn > 0 && options.confirmWarnings !== true) {
+  if (summary.warn > 0 && options.confirmWarnings !== true) {
     throw new ServiceError(
       'confirmationRequired',
-      `有 ${String(prepared.summary.warn)} 列警告，請先確認後再套用`,
+      `有 ${String(summary.warn)} 列警告，請先確認後再套用`,
     );
   }
 }
