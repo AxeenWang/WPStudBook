@@ -75,6 +75,8 @@ export interface ImportHandler<TRow extends PreviewRow> {
   ) => Promise<readonly TRow[]>;
   /** 套用：在寫入交易內呼叫，只能做同步運算。 */
   readonly build: (input: ImportBuildInput<TRow>) => ImportBuildOutput;
+  /** 同一個年與時點本來就會有多份不同的檔案時為 true（目標種牡馬 TXT，STL-05）。 */
+  readonly manyPerSlot?: boolean;
 }
 
 export interface PreparedImport<TRow extends PreviewRow> {
@@ -128,7 +130,7 @@ export async function prepareImport<TRow extends PreviewRow>(
     choice,
     rows,
     summary: summarise(rows),
-    repeat: checkRepeat(sameSlot, sha256),
+    repeat: checkRepeat(sameSlot, sha256, handler.manyPerSlot === true),
     year: decideYear(
       choice.gameYear,
       choice.timing,

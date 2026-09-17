@@ -111,11 +111,22 @@ export type RepeatCheck =
 /**
  * 重複與更正（需求規格 11.1、IMP-07、IMP-08）：同局、同年、同時點、同類型的既有匯入中，
  * 內容雜湊相同為重複，不同為資料更正。不同類型即使同一個時點也互不相干（IMP-16）。
+ *
+ * `manyPerSlot` 給同一個年與時點本來就會有多份不同檔案的類型（目標種牡馬 TXT：同一層的
+ * 每一條建立新系分支各自匯入自己的檔案，STL-05）。那時候「內容不同」不代表資料更正，
+ * 只有同雜湊的重複仍然要擋。
  */
-export function checkRepeat(sameSlot: readonly ImportBatch[], sha256: string): RepeatCheck {
+export function checkRepeat(
+  sameSlot: readonly ImportBatch[],
+  sha256: string,
+  manyPerSlot = false,
+): RepeatCheck {
   const duplicate = sameSlot.find((batch) => batch.sha256 === sha256);
   if (duplicate !== undefined) {
     return { kind: 'duplicate', previous: duplicate };
+  }
+  if (manyPerSlot) {
+    return { kind: 'new' };
   }
   const latest = [...sameSlot].sort((a, b) => a.appliedAt.localeCompare(b.appliedAt)).at(-1);
   return latest === undefined ? { kind: 'new' } : { kind: 'correction', previous: latest };
