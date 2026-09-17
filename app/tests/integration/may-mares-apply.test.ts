@@ -366,4 +366,39 @@ describe('五月繁殖牝馬總表的套用（需求規格 11.5）', () => {
       group: { kind: 'unassigned' },
     });
   });
+
+  it('[ID-07] 手動新增、沒有能力番号的母馬，匯入時補上能力番号與出生年', async () => {
+    const context = await openContext();
+    const gameId = await setUp(context);
+    await seedHorses(context, gameId, [horse({ id: 'h-1', fullName: 'テストメス001' })]);
+    await seedMares(context, gameId, [producing('h-1', 32)]);
+
+    await runImport(context);
+    expect(await getHorse(context.database, gameId, 'h-1')).toMatchObject({
+      abilityNo: 0x1001,
+      birthYear: 1962,
+    });
+  });
+
+  it('配對到的既有紀錄不是牝馬時列為衝突，不建繁殖牝馬紀錄', async () => {
+    const context = await openContext();
+    const gameId = await setUp(context);
+    await seedHorses(context, gameId, [
+      horse({
+        id: 'stallion-1',
+        sex: 'male',
+        abilityNo: 0x1001,
+        birthYear: 1962,
+        fullName: 'テストメス001',
+      }),
+    ]);
+
+    await runImport(context);
+    expect(await getMare(context.database, gameId, 'stallion-1')).toBeUndefined();
+    expect(
+      (await listMareYearly(context.database, gameId)).some(
+        (item) => item.horseId === 'stallion-1',
+      ),
+    ).toBe(false);
+  });
 });

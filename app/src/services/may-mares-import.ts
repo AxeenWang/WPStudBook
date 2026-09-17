@@ -139,6 +139,11 @@ const ISSUES = {
     message: '待指定用途，指定前不進入任務',
     handling: 'confirm',
   },
+  notFemale: {
+    code: 'notFemale',
+    message: '配對到的既有紀錄不是牝馬，交由使用者處理',
+    handling: 'confirm',
+  },
   subsystemUnregistered: {
     code: 'subsystemUnregistered',
     message: '父系尚未登錄在系統對照表，可在預覽補登親系統；未補登仍會匯入',
@@ -286,6 +291,16 @@ function classifyFileRow(
       disposition: 'conflict',
       outcome: 'review',
       issues: [ISSUES.bloodConflict],
+      horseId,
+    };
+  }
+  // 能力番号碰巧撞到一匹公馬時不能替牠建繁殖牝馬紀錄，交由使用者處理（需求規格 6.2）。
+  if (horse !== undefined && horse.sex !== 'female') {
+    return {
+      ...base,
+      disposition: 'conflict',
+      outcome: 'review',
+      issues: [ISSUES.notFemale],
       horseId,
     };
   }
@@ -592,7 +607,17 @@ function updatedHorse(row: MayMareRow, build: BuildContext): Horse {
     stageNumbers: [],
     aliases: [],
   };
-  const filled: Horse = { ...base, ...row.fills };
+  // 手動新增的舊紀錄可能沒有能力番号或出生年，唯一配對到就補上（需求規格 6.2、ID-07）。
+  const filled: Horse = {
+    ...base,
+    ...(base.abilityNo === undefined && values?.abilityNo !== undefined
+      ? { abilityNo: values.abilityNo }
+      : {}),
+    ...(base.birthYear === undefined && row.birthYear !== undefined
+      ? { birthYear: row.birthYear }
+      : {}),
+    ...row.fills,
+  };
   return values?.horseNo === undefined
     ? filled
     : withStageNumber(filled, importedStageNumber('mayMares', values.horseNo, build.gameYear));
@@ -623,6 +648,11 @@ interface Written {
 function applyRow(row: MayMareRow, build: BuildContext): Written {
   const records: CollectionRecord[] = [];
   const events: HistoryEvent[] = [];
+  // 衝突與未配對不寫入（需求規格 11.5）。selectRows 已經依預覽分類濾掉，這裡是第二道，
+  // 免得之後有人改了分類卻忘了這裡。
+  if (row.disposition === 'conflict' || row.disposition === 'unmatched') {
+    return { records, events };
+  }
   const event = (type: HistoryEvent['type'], payload: Partial<HistoryEvent>) =>
     userEvent(
       { newId: build.newId },

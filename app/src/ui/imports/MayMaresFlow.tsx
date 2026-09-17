@@ -24,10 +24,12 @@ function SubsystemForm({
   const { context } = useServices();
   const action = useAction();
   const [parentSystem, setParentSystem] = useState('');
-  const [subsystem, setSubsystem] = useState(subsystems[0] ?? '');
+  const [chosen, setChosen] = useState('');
   if (subsystems.length === 0) {
     return null;
   }
+  // 補登一個之後清單會變短，選取的可能已經不在裡面，這時候退回第一個。
+  const subsystem = subsystems.includes(chosen) ? chosen : (subsystems[0] ?? '');
   return (
     <div className="field-row" data-testid="may-unknown-subsystems">
       <p>
@@ -40,7 +42,7 @@ function SubsystemForm({
           id="may-subsystem"
           value={subsystem}
           onChange={(event) => {
-            setSubsystem(event.target.value);
+            setChosen(event.target.value);
           }}
         >
           {subsystems.map((name) => (
