@@ -265,7 +265,10 @@ function isHorseFate(value: unknown): boolean {
   return isPlainRecord(value) && isOneOf(HORSE_FATE_KINDS, value.kind) && isYear(value.gameYear);
 }
 
-/** 五月種牡馬總表的在表紀錄（需求規格 11.8）：缺席的年份一定晚於最後在表的年份。 */
+/**
+ * 五月種牡馬總表的在表紀錄（需求規格 11.8）：缺席的年份不早於最後在表的年份。
+ * 同年的更正匯入拿掉一匹時，最後在表與缺席會是同一年，所以不是嚴格大於。
+ */
 function isStallionListing(value: unknown): boolean {
   if (!isPlainRecord(value)) {
     return false;
@@ -278,7 +281,7 @@ function isStallionListing(value: unknown): boolean {
     inactiveSince === undefined ||
     (typeof inactiveSince === 'number' &&
       typeof lastSeenYear === 'number' &&
-      inactiveSince > lastSeenYear)
+      inactiveSince >= lastSeenYear)
   );
 }
 
@@ -308,7 +311,7 @@ function checkHorse(record: StoredRecord): string | undefined {
     [optional(record, 'fate', isHorseFate), 'fate 必須含有效的 kind 與 gameYear'],
     [
       optional(record, 'stallionListing', isStallionListing),
-      'stallionListing 必須含 lastSeenYear，inactiveSince 必須晚於 lastSeenYear',
+      'stallionListing 必須含 lastSeenYear，inactiveSince 不可早於 lastSeenYear',
     ],
   ]);
 }

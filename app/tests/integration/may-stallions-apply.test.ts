@@ -300,6 +300,26 @@ describe('五月種牡馬總表的套用（需求規格 11.8）', () => {
     expect(events.map((event) => event.type)).toContain('stallionListingChanged');
   });
 
+  it('[STL-10][IMP-08] 同年的更正匯入拿掉一匹 → 那一匹的最後在表與缺席是同一年', async () => {
+    const context = await openContext();
+    const gameId = await setUp(context);
+
+    await runImport(context);
+    const dropped = await listStallionYearly(context.database, gameId);
+    const goneId = dropped.find((record) => record.studFee === 2450)?.horseId ?? '';
+    expect(await getHorse(context.database, gameId, goneId)).toMatchObject({
+      stallionListing: { lastSeenYear: 1968 },
+    });
+
+    // 同年同時點、內容不同 → 資料更正；少掉的那一匹當年就缺席。
+    const corrected = { ...SAMPLE, rows: SAMPLE.rows.slice(1) };
+    await runImport(context, corrected, MAY, { confirmCorrection: true });
+
+    expect(await getHorse(context.database, gameId, goneId)).toMatchObject({
+      stallionListing: { lastSeenYear: 1968, inactiveSince: 1968 },
+    });
+  });
+
   it('[STL-13] 血統衝突的一筆不寫入，其他筆照常套用', async () => {
     const context = await openContext();
     const gameId = await setUp(context);

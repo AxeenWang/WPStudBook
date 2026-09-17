@@ -337,17 +337,17 @@ describe('資料表欄位規則', () => {
     ]);
   });
 
-  it('[STL-10] horses：在表紀錄的缺席年份必須晚於最後在表的年份', () => {
+  it('[STL-10] horses：在表紀錄的缺席年份不可早於最後在表的年份', () => {
     expect(check('horses', { ...HORSE, stallionListing: { lastSeenYear: 1968 } })).toBeUndefined();
     expect(
       check('horses', { ...HORSE, stallionListing: { lastSeenYear: 1968, inactiveSince: 1969 } }),
     ).toBeUndefined();
+    // 同年的更正匯入拿掉一匹時，最後在表與缺席是同一年。
+    expect(
+      check('horses', { ...HORSE, stallionListing: { lastSeenYear: 1969, inactiveSince: 1969 } }),
+    ).toBeUndefined();
     expectProblems('horses', HORSE, [
       [{ ...HORSE, stallionListing: { inactiveSince: 1969 } }, 'stallionListing'],
-      [
-        { ...HORSE, stallionListing: { lastSeenYear: 1969, inactiveSince: 1969 } },
-        'stallionListing',
-      ],
       [
         { ...HORSE, stallionListing: { lastSeenYear: 1970, inactiveSince: 1969 } },
         'stallionListing',
