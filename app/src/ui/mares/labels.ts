@@ -1,6 +1,6 @@
 import type { HistoryEventType } from '../../domain/history-event.ts';
 import type { LifeStage } from '../../domain/horse.ts';
-import type { MareGroupView } from '../../services/mare-list.ts';
+import { UNASSIGNED_VIEW, type MareGroupView } from '../../services/mare-list.ts';
 import type { MareHistoryItem } from '../../services/mares.ts';
 import type {
   LeftReason,
@@ -58,9 +58,12 @@ export function formatMareGroup(group: MareGroup): string {
 }
 
 export function formatGroupTitle(
-  position: number,
+  position: MareGroupView['position'],
   generation: MareGroupView['generation'],
 ): string {
+  if (position === UNASSIGNED_VIEW) {
+    return '待指定用途';
+  }
   if (generation === 'all') {
     return `第 ${String(position)} 系母馬群（全部代數）`;
   }
@@ -73,7 +76,10 @@ export function formatGroupTitle(
     : `第 ${String(position)} 系 ${String(generation)} 代母馬群`;
 }
 
-export function formatGenerationTab(position: number, generation: number): string {
+export function formatGenerationTab(
+  position: MareGroupView['position'],
+  generation: number,
+): string {
   return position === 1 && generation === 0 ? '起點' : `${String(generation)} 代`;
 }
 
@@ -108,7 +114,10 @@ export const MARE_EVENT_LABELS: Readonly<Partial<Record<HistoryEventType, string
   horseCreated: '建立馬匹',
   mareAdded: '加入母馬群',
   mareSold: '賣出',
+  mareRetired: '定年引退',
+  mareReturned: '回歸',
   mareTransferred: '轉場',
+  mareGroupAssigned: '指定用途',
   mareYearlyChanged: '更正年度資料',
   breedingRecorded: '登記繁殖紀錄',
   foalBorn: '出生',

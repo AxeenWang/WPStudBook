@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button, Form, Input, Label, TextField } from 'react-aria-components';
 import type { LinePosition } from '../../domain/line.ts';
 import type { MareOrigin, MareSite } from '../../domain/mare.ts';
-import type { MareGroupView } from '../../services/mare-list.ts';
+import { UNASSIGNED_VIEW, type MareGroupView } from '../../services/mare-list.ts';
 import {
   MARE_ORIGIN_OPTIONS,
   MARE_POSITION_OPTIONS,
@@ -40,7 +40,10 @@ interface AddMareFormProps {
 /** 手動新增市場母馬（需求規格 8.4）：帶入目前檢視的系與代數，來源預設依母馬群決定。 */
 export function AddMareForm(props: AddMareFormProps) {
   const { context, notifyChanged } = useServices();
-  const [position, setPosition] = useState<LinePosition>(props.initial.position);
+  // 待指定用途檢視沒有系可帶入，手動新增仍要選一個系（需求規格 8.4）。
+  const [position, setPosition] = useState<LinePosition>(
+    props.initial.position === UNASSIGNED_VIEW ? 1 : props.initial.position,
+  );
   const [generation, setGeneration] = useState<number | undefined>(
     typeof props.initial.generation === 'number' ? props.initial.generation : undefined,
   );

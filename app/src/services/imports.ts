@@ -148,8 +148,8 @@ export interface ApplyImportOptions {
   readonly confirmBehindProgress?: boolean;
   /** 已確認預覽裡的警告列（需求規格 5.2「警告並要求確認」）。 */
   readonly confirmWarnings?: boolean;
-  /** 只套用這些行號；省略時套用全部可套用的列（候選 TXT 的勾選，CAND-02）。 */
-  readonly selectedLineNumbers?: readonly number[];
+  /** 只套用這些列（`PreviewRow.key`）；省略時套用全部可套用的列（候選 TXT 的勾選，CAND-02）。 */
+  readonly selectedKeys?: readonly string[];
 }
 
 export interface ImportResult {
@@ -208,10 +208,10 @@ function appliedSummary<TRow extends PreviewRow>(
   prepared: PreparedImport<TRow>,
   applied: readonly TRow[],
 ): ImportSummary {
-  const lineNumbers = new Set(applied.map((row) => row.lineNumber));
+  const keys = new Set(applied.map((row) => row.key));
   return summarise(
     prepared.rows.map((row) =>
-      (row.outcome === 'apply' || row.outcome === 'warn') && !lineNumbers.has(row.lineNumber)
+      (row.outcome === 'apply' || row.outcome === 'warn') && !keys.has(row.key)
         ? { ...row, outcome: 'skip' as const }
         : row,
     ),
@@ -222,12 +222,12 @@ function selectRows<TRow extends PreviewRow>(
   prepared: PreparedImport<TRow>,
   options: ApplyImportOptions,
 ): readonly TRow[] {
-  const selected = options.selectedLineNumbers;
+  const selected = options.selectedKeys;
   // 預覽分類就是處置：可套用與（確認過的）警告會寫入，略過、待核對不寫，錯誤讓整份停止。
   return prepared.rows.filter(
     (row) =>
       (row.outcome === 'apply' || row.outcome === 'warn') &&
-      (selected === undefined || selected.includes(row.lineNumber)),
+      (selected === undefined || selected.includes(row.key)),
   );
 }
 

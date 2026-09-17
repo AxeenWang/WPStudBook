@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { Button, Form } from 'react-aria-components';
 import {
-  loadReminderSettings,
-  updateReminderSettings,
-  type ReminderSettings,
+  loadGameRuleSettings,
+  updateGameRuleSettings,
+  type GameRuleSettings,
 } from '../../services/settings.ts';
 import { OptionalIntegerField } from '../fields.tsx';
 import { errorMessage } from '../format.ts';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 
-function ReminderForm({ initial }: { readonly initial: ReminderSettings }) {
+function GameRuleForm({ initial }: { readonly initial: GameRuleSettings }) {
   const { context, notifyChanged } = useServices();
+  const [retirementAge, setRetirementAge] = useState<number | undefined>(initial.retirementAge);
   const [highAgeReminderAge, setHighAgeReminderAge] = useState<number | undefined>(
     initial.highAgeReminderAge,
   );
@@ -21,11 +22,13 @@ function ReminderForm({ initial }: { readonly initial: ReminderSettings }) {
   // 載入的設定改變時（例如回溯檢查點）重新帶入欄位，避免之後保存時把舊值寫回。
   const [synced, setSynced] = useState(initial);
   if (
+    synced.retirementAge !== initial.retirementAge ||
     synced.highAgeReminderAge !== initial.highAgeReminderAge ||
     synced.stallionAgeReminderAge !== initial.stallionAgeReminderAge ||
     synced.vitalityThreshold !== initial.vitalityThreshold
   ) {
     setSynced(initial);
+    setRetirementAge(initial.retirementAge);
     setHighAgeReminderAge(initial.highAgeReminderAge);
     setStallionAgeReminderAge(initial.stallionAgeReminderAge);
     setVitalityThreshold(initial.vitalityThreshold);
@@ -40,7 +43,8 @@ function ReminderForm({ initial }: { readonly initial: ReminderSettings }) {
     }
     setBusy(true);
     try {
-      await updateReminderSettings(context, {
+      await updateGameRuleSettings(context, {
+        retirementAge,
         highAgeReminderAge,
         stallionAgeReminderAge,
         vitalityThreshold,
@@ -64,8 +68,12 @@ function ReminderForm({ initial }: { readonly initial: ReminderSettings }) {
         void save();
       }}
     >
-      <h3 id="reminder-form-heading">提醒設定</h3>
-      <p>提醒設定只影響提示與排序，不會阻止任何操作。</p>
+      <h3 id="reminder-form-heading">遊戲局設定</h3>
+      <p>
+        定年會改變判斷：達定年的母馬不列入任務，五月匯入時缺席的母馬也依定年決定預設處置。
+        其餘三項只影響提示與排序，不會阻止任何操作。
+      </p>
+      <OptionalIntegerField label="定年" value={retirementAge} onChange={setRetirementAge} />
       <OptionalIntegerField
         label="高齡提醒年齡"
         value={highAgeReminderAge}
@@ -91,7 +99,7 @@ function ReminderForm({ initial }: { readonly initial: ReminderSettings }) {
 }
 
 export function SettingsSection() {
-  const { data, error } = useServiceQuery(loadReminderSettings);
+  const { data, error } = useServiceQuery(loadGameRuleSettings);
   return (
     <section aria-labelledby="settings-heading">
       <h2 id="settings-heading">遊戲局設定</h2>
@@ -102,7 +110,7 @@ export function SettingsSection() {
           <p role="alert">{error}</p>
         )
       ) : (
-        <ReminderForm initial={data} />
+        <GameRuleForm initial={data} />
       )}
     </section>
   );

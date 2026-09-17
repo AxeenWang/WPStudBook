@@ -47,11 +47,7 @@ test.describe('年度匯入：候選 TXT', () => {
     await expect(page.getByTestId('candidate-preview-table').locator('tbody tr')).toHaveCount(1);
     await page.getByLabel('搜尋馬名、父馬、母馬或父系').fill('');
 
-    // 用途：指定母馬群與據點，原牧場只會記為來源（MARE-05、CAND-04）。
-    await page.getByLabel('母馬群').selectOption({ label: '第 1 系' });
-    const generation = page.getByLabel('代數');
-    await generation.fill('1');
-    await generation.blur();
+    // 用途：只選據點，母馬群留「待指定用途」（需求規格 11.5）；原牧場只會記為來源（CAND-04）。
     await page.getByLabel('據點').selectOption({ label: '日本' });
 
     // 先全部取消，再只勾兩筆（CAND-02）。
@@ -67,8 +63,12 @@ test.describe('年度匯入：候選 TXT', () => {
     await expect(page.getByRole('status').filter({ hasText: '已匯入 2 匹母馬' })).toBeVisible();
     await expect(page.getByTestId('import-history')).toContainText(SAMPLE.fileName);
 
+    // 待指定用途的母馬有自己的檢視，不屬於任何系（需求規格 11.5「新進（其他）」）。
     await gotoPage(page, '母馬群');
     const herd = page.getByRole('region', { name: '繁殖牝馬群' });
+    await expect(herd).not.toContainText('テスト候補002');
+    await herd.getByLabel('系', { exact: true }).selectOption({ label: '待指定用途' });
+    await expect(page.getByTestId('mare-group-title')).toHaveText('待指定用途');
     await expect(herd).toContainText('テスト候補002');
 
     // [MARE-21] 父馬、母馬、父系立即顯示；沒有內部馬匹時標示「尚未連結內部馬匹」。
@@ -80,7 +80,23 @@ test.describe('年度匯入：候選 TXT', () => {
     await expect(drawer.getByRole('tabpanel')).toContainText('ヘロド');
     await drawer.getByRole('tab', { name: '血緣' }).click();
     await expect(drawer.getByRole('tabpanel')).toContainText('尚未連結內部馬匹');
+
+    // 指定用途後才離開這個檢視、進入該系該代的母馬群。
+    await drawer.getByRole('tab', { name: '概要' }).click();
+    const assign = drawer.getByRole('form', { name: '指定用途' });
+    await assign.getByLabel('母馬群的系').selectOption({ label: '第 1 系' });
+    const generation = assign.getByLabel('母馬群的代數（0＝第 1 系起點）');
+    await generation.fill('1');
+    await generation.blur();
+    await assign.getByRole('button', { name: '指定用途' }).click();
+    // 斷言在持久的結果上：指定成功後她不再是待指定用途，表單也跟著消失。
+    // 成功訊息是暫態的，詳情欄重新載入就可能已經換掉，不適合當斷言對象。
+    await expect(drawer.getByRole('tabpanel')).toContainText('替代第 1 系 1 代');
+    await expect(assign).toBeHidden();
     await closeDrawer(page, drawer);
+
+    await herd.getByLabel('系', { exact: true }).selectOption({ label: '第 1 系' });
+    await expect(herd).toContainText('テスト候補002');
   });
 
   test('[IMP-13] 拖放檔案進入與選檔相同的預覽流程', async ({ page }) => {

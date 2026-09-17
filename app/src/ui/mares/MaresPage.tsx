@@ -9,6 +9,7 @@ import {
   matchesMareFilter,
   paginate,
   sortMareCards,
+  UNASSIGNED_VIEW,
   type MareFilterOptions,
   type MareGroupView,
 } from '../../services/mare-list.ts';
@@ -28,10 +29,14 @@ import { MareDetailDrawer, type MareDetailTab } from './MareDetailDrawer.tsx';
 import { MareFilters } from './MareFilters.tsx';
 import { SellMareDialog } from './SellMareDialog.tsx';
 
-const POSITION_CHOICES = MARE_POSITION_OPTIONS.map((position) => ({
-  value: position,
-  label: `第 ${String(position)} 系`,
-}));
+const POSITION_CHOICES: readonly { value: MareGroupView['position']; label: string }[] = [
+  ...MARE_POSITION_OPTIONS.map((position) => ({
+    value: position,
+    label: `第 ${String(position)} 系`,
+  })),
+  // 待指定用途的母馬不屬於任何系（需求規格 11.5「新進（其他）」），另立一個檢視。
+  { value: UNASSIGNED_VIEW, label: '待指定用途' },
+];
 
 /** 使用者選擇的代數；交接中在每次載入時依目前資料換成相鄰兩代。 */
 interface GroupSelection {
@@ -55,14 +60,23 @@ function MareHerdView() {
   }
 
   const position = selection?.position ?? 1;
-  const handover = handoverGenerations(herd.cards, position);
-  const selected = selection?.generation ?? defaultGeneration(herd.cards, position);
+  // 待指定用途沒有代數，代數頁籤、交接中與預設代數都不適用。
+  const linePosition = position === UNASSIGNED_VIEW ? undefined : position;
+  const handover =
+    linePosition === undefined ? undefined : handoverGenerations(herd.cards, linePosition);
+  const selected =
+    selection?.generation ??
+    (linePosition === undefined ? 'all' : defaultGeneration(herd.cards, linePosition));
   const view: MareGroupView = {
     position,
     generation:
-      selected === 'handover' ? (handover ?? defaultGeneration(herd.cards, position)) : selected,
+      selected === 'handover' && linePosition !== undefined
+        ? (handover ?? defaultGeneration(herd.cards, linePosition))
+        : selected === 'handover'
+          ? 'all'
+          : selected,
   };
-  const tabs = generationTabs(herd.cards, view.position);
+  const tabs = linePosition === undefined ? [] : generationTabs(herd.cards, linePosition);
   const shown = paginate(
     sortMareCards(
       herd.cards.filter((card) => matchesMareFilter(card, view, options)),
@@ -111,7 +125,10 @@ function MareHerdView() {
           options={POSITION_CHOICES}
           onChange={(next) => {
             if (next !== undefined) {
-              choose({ position: next, generation: defaultGeneration(herd.cards, next) });
+              choose({
+                position: next,
+                generation: next === UNASSIGNED_VIEW ? 'all' : defaultGeneration(herd.cards, next),
+              });
             }
           }}
         />

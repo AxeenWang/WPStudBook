@@ -56,6 +56,7 @@ function testHandler(
           const name = cell(row, columns.name ?? 0) ?? '';
           const sireSubsystem = stripSystemSuffix(cell(row, columns.sireSystem ?? 0));
           return {
+            key: String(row.lineNumber),
             lineNumber: row.lineNumber,
             label: name,
             outcome: row.lineNumber === options.errorOnLine ? 'error' : 'apply',
@@ -304,7 +305,7 @@ describe('匯入流程（需求規格 11.1）', () => {
       type: 'candidateFile',
     });
 
-    const result = await applyImport(context, handler, prepared, { selectedLineNumbers: [2, 4] });
+    const result = await applyImport(context, handler, prepared, { selectedKeys: ['2', '4'] });
     expect(result.appliedRows).toBe(2);
     expect(await readRecords(context.database, game.id, 'horses')).toHaveLength(2);
     // 結果摘要記的是實際發生的事：沒勾選的那一筆算略過（IMP-11）。

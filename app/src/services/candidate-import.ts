@@ -165,6 +165,7 @@ export function candidateImportHandler(target: CandidateTarget): ImportHandler<C
         const resolution = resolutions[index] ?? { kind: 'new' as const };
         const classification = classify(item, resolution, herd);
         return {
+          key: String(item.lineNumber),
           lineNumber: item.lineNumber,
           label: item.fullName ?? `第 ${String(item.lineNumber)} 行`,
           outcome: classification.outcome,

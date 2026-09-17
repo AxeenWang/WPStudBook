@@ -12,7 +12,13 @@ import {
 import { IMPORT_TYPES } from '../../src/domain/import-type.ts';
 
 function row(lineNumber: number, outcome: PreviewRow['outcome']): PreviewRow {
-  return { lineNumber, label: `第 ${String(lineNumber)} 列`, outcome, issues: [] };
+  return {
+    key: String(lineNumber),
+    lineNumber,
+    label: `第 ${String(lineNumber)} 列`,
+    outcome,
+    issues: [],
+  };
 }
 
 function batch(overrides: Partial<ImportBatch> = {}): ImportBatch {
