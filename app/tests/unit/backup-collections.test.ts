@@ -108,7 +108,20 @@ describe('validateCollections', () => {
     expect(issueCodes(result)).toEqual(['uniqueConflict']);
   });
 
-  it('[DATA-04] 唯一索引欄位是陣列時也檢查重複', () => {
+  it('[DATA-04] 種牡馬年度資料同年同馬重複時回報', () => {
+    const result = validateCollections(
+      collections({
+        horses: [horse('h1')],
+        stallionYearly: [
+          { id: 'y1', horseId: 'h1', gameYear: 1968 },
+          { id: 'y2', horseId: 'h1', gameYear: 1968 },
+        ],
+      }),
+    );
+    expect(issueCodes(result)).toEqual(['uniqueConflict']);
+  });
+
+  it('[DATA-04] 唯一索引欄位是陣列時，欄位規則會先擋下來', () => {
     const result = validateCollections(
       collections({
         horses: [horse('h1')],
@@ -118,7 +131,8 @@ describe('validateCollections', () => {
         ],
       }),
     );
-    expect(issueCodes(result)).toEqual(['uniqueConflict']);
+    // 欄位檢查先跑且會短路，所以看不到 uniqueConflict；兩筆各回報一次 gameYear 無效。
+    expect(issueCodes(result)).toEqual(['recordInvalid', 'recordInvalid']);
   });
 
   it('[DATA-04] 內部 id 參照不存在時回報缺少關聯；只有外部名稱時不檢查', () => {

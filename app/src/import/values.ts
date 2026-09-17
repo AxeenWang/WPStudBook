@@ -1,3 +1,4 @@
+import { SUB_PARAM_GRADES, type SubParamGrade } from '../domain/foal.ts';
 import { toBaseName } from '../domain/horse.ts';
 import { isVitalityValue } from '../domain/mare-yearly.ts';
 import type { Vitality } from '../domain/mare-yearly.ts';
@@ -68,6 +69,12 @@ export function parseVitality(raw: string | undefined): Vitality | undefined {
     return undefined;
   }
   return { state: 'confirmed', value, boosted };
+}
+
+/** 副能力欄：`G`～`S+` 之一（需求規格 4.7）；其他文字視為未取得。 */
+export function parseSubParamGrade(raw: string | undefined): SubParamGrade | undefined {
+  const text = raw?.trim();
+  return SUB_PARAM_GRADES.find((grade) => grade === text);
 }
 
 /** 馬名欄：`(外)`、`[地]` 前綴後面一定接著馬名，只有前綴時是資料異常（需求規格 6.4）。 */

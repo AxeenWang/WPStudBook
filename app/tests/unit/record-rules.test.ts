@@ -63,6 +63,7 @@ const MARE = {
   site: 32,
 };
 const MARE_YEARLY = { id: 'y1', horseId: 'h1', gameYear: 1968 };
+const STALLION_YEARLY = { id: 's1', horseId: 'h1', gameYear: 1968 };
 const BREEDING = { id: 'b1', mareId: 'h1', gameYear: 1968, breedingType: 'designated' };
 const FOAL = {
   id: 'f1',
@@ -307,6 +308,50 @@ describe('資料表欄位規則', () => {
       [{ ...MARE_YEARLY, kodashi: 16 }, 'kodashi'],
       [{ ...MARE_YEARLY, breedingYears: -1 }, 'breedingYears'],
       [{ ...MARE_YEARLY, breedingCount: 1.5 }, 'breedingCount'],
+    ]);
+  });
+
+  it('[STL-11] stallionYearly：能力、仔出、種付料與戦績都是選填；超出範圍或多餘欄位時指出問題', () => {
+    expect(
+      check('stallionYearly', {
+        ...STALLION_YEARLY,
+        sp: 0,
+        st: 999,
+        subParams: { power: 'S+', health: 'G' },
+        subParamTotal: 45,
+        kodashi: 15,
+        studFee: 0,
+        record: { starts: 18, wins: 9, earnings: 312500, gradedWins: 4, g1Wins: 2 },
+      }),
+    ).toBeUndefined();
+    expectProblems('stallionYearly', STALLION_YEARLY, [
+      [omit(STALLION_YEARLY, 'horseId'), 'horseId'],
+      [{ ...STALLION_YEARLY, gameYear: 68 }, 'gameYear'],
+      [{ ...STALLION_YEARLY, sp: 1000 }, 'sp'],
+      [{ ...STALLION_YEARLY, st: -1 }, 'st'],
+      [{ ...STALLION_YEARLY, subParams: { power: 'Z' } }, 'subParams'],
+      [{ ...STALLION_YEARLY, kodashi: 16 }, 'kodashi'],
+      [{ ...STALLION_YEARLY, studFee: -1 }, 'studFee'],
+      [{ ...STALLION_YEARLY, record: { starts: -1 } }, 'record'],
+      [{ ...STALLION_YEARLY, record: { places: 3 } }, 'record'],
+    ]);
+  });
+
+  it('[STL-10] horses：在表紀錄的缺席年份必須晚於最後在表的年份', () => {
+    expect(check('horses', { ...HORSE, stallionListing: { lastSeenYear: 1968 } })).toBeUndefined();
+    expect(
+      check('horses', { ...HORSE, stallionListing: { lastSeenYear: 1968, inactiveSince: 1969 } }),
+    ).toBeUndefined();
+    expectProblems('horses', HORSE, [
+      [{ ...HORSE, stallionListing: { inactiveSince: 1969 } }, 'stallionListing'],
+      [
+        { ...HORSE, stallionListing: { lastSeenYear: 1969, inactiveSince: 1969 } },
+        'stallionListing',
+      ],
+      [
+        { ...HORSE, stallionListing: { lastSeenYear: 1970, inactiveSince: 1969 } },
+        'stallionListing',
+      ],
     ]);
   });
 
