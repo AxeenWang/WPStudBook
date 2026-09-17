@@ -114,6 +114,8 @@ export const MARE_EVENT_LABELS: Readonly<Partial<Record<HistoryEventType, string
   horseCreated: '建立馬匹',
   mareAdded: '加入母馬群',
   mareSold: '賣出',
+  mareRetired: '定年引退',
+  mareReturned: '回歸',
   mareTransferred: '轉場',
   mareGroupAssigned: '指定用途',
   mareYearlyChanged: '更正年度資料',

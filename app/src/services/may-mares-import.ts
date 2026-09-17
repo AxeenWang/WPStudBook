@@ -1,4 +1,8 @@
 import type { Foal } from '../domain/foal.ts';
+import { establishGeneration, type Line } from '../domain/line.ts';
+import type { MareYearly } from '../domain/mare-yearly.ts';
+import type { HistoryEvent } from '../domain/history-event.ts';
+import type { JsonValue } from '../domain/json.ts';
 import type { Horse } from '../domain/horse.ts';
 import { DEFAULT_GAME_SETTINGS } from '../domain/game.ts';
 import { inferBirthYear } from '../domain/identity.ts';
@@ -18,6 +22,14 @@ import { getHorsesByIds } from '../storage/horses.ts';
 import { listFoals } from '../storage/foals.ts';
 import { listImports } from '../storage/imports.ts';
 import { listMares } from '../storage/mares.ts';
+import { listMareYearly } from '../storage/mare-yearly.ts';
+import { listLines } from '../storage/lines.ts';
+import { loadOwnMareState } from '../storage/succession.ts';
+import type { CollectionRecord } from '../storage/imports.ts';
+import { withStageNumber, toBaseName } from '../domain/horse.ts';
+import { userEvent } from './events.ts';
+import { importedStageNumber } from './import-identity.ts';
+import { planConversion, type ConvertPreview } from './succession.ts';
 import type { ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
 import {
@@ -26,7 +38,7 @@ import {
   type IdentityResolution,
   type IdentityRow,
 } from './import-identity.ts';
-import type { ImportChoice } from './imports.ts';
+import type { ImportChoice, ImportHandler } from './imports.ts';
 
 /**
  * 預覽的處置（需求規格 11.5、MAY-02）。轉場是「繼續在圈」的附加狀態而不是另一種處置，
@@ -58,6 +70,16 @@ export interface MayMareRow extends PreviewRow {
   /** 只補空白欄；與既有不同的欄位列在這裡並略過該筆（MAY-05）。 */
   readonly fills: BloodFills;
   readonly site: MareSite | undefined;
+  /** 套用時要更新的既有紀錄；預覽時一次讀出來，套用在單一交易內只做同步運算。 */
+  readonly horse: Horse | undefined;
+  readonly mare: Mare | undefined;
+  /** 這個匯入年已有的年度資料；有的話沿用同一筆的 id（`[gameId, horseId, gameYear]` 唯一）。 */
+  readonly yearly: MareYearly | undefined;
+  /** 新進自家產駒依 8.9 算出的母馬群與接替狀態（MAY-09）；走 succession 的同一套規則。 */
+  readonly conversion: ConvertPreview | undefined;
+  readonly foal: Foal | undefined;
+  /** 轉入會讓該代成立時要更新的系位置（需求規格 8.2）。 */
+  readonly line: Line | undefined;
 }
 
 export interface BloodFills {
@@ -152,7 +174,12 @@ function toIdentityRow(values: BroodmareValues, birthYear: number | undefined): 
   };
 }
 
-/** 父馬、母馬、父系與牝系只補空白；與既有不同為衝突（MAY-05）。父系保存原文，不寫成替代系。 */
+/**
+ * 父馬、母馬、父系與牝系只補空白；與既有不同為衝突（MAY-05）。父系保存原文，不寫成替代系。
+ *
+ * 已經連到內部馬匹的父母不補也不比對：`sireId`／`damId` 是這一局裡的事實，總表的父馬欄只是
+ * 遊戲當下的顯示名稱。拿名稱去覆蓋或推翻一個已連結的父母，只會讓資料互相矛盾。
+ */
 function compareBlood(
   values: BroodmareValues,
   horse: Horse | undefined,
@@ -160,13 +187,13 @@ function compareBlood(
   const fills: Record<string, string> = {};
   let conflict = false;
   const fields = [
-    ['sireName', values.sireName, horse?.sireName],
-    ['damName', values.damName, horse?.damName],
-    ['sireSubsystem', values.sireSubsystem, horse?.sireSubsystem],
-    ['femaleLine', values.femaleLine, horse?.femaleLine],
+    ['sireName', values.sireName, horse?.sireName, horse?.sireId !== undefined],
+    ['damName', values.damName, horse?.damName, horse?.damId !== undefined],
+    ['sireSubsystem', values.sireSubsystem, horse?.sireSubsystem, false],
+    ['femaleLine', values.femaleLine, horse?.femaleLine, false],
   ] as const;
-  for (const [field, incoming, existing] of fields) {
-    if (incoming === undefined) {
+  for (const [field, incoming, existing, linked] of fields) {
+    if (incoming === undefined || linked) {
       continue;
     }
     if (existing === undefined) {
@@ -365,13 +392,16 @@ export async function previewMayMares(
     );
   }
 
-  const [resolutions, mareList, foalList, settings, imports] = await Promise.all([
-    resolveIdentities(context.database, gameId, identityRows),
-    listMares(context.database, gameId),
-    listFoals(context.database, gameId),
-    readGameSettings(context.database, gameId),
-    listImports(context.database, gameId),
-  ]);
+  const [resolutions, mareList, foalList, settings, imports, yearlyList, lineList] =
+    await Promise.all([
+      resolveIdentities(context.database, gameId, identityRows),
+      listMares(context.database, gameId),
+      listFoals(context.database, gameId),
+      readGameSettings(context.database, gameId),
+      listImports(context.database, gameId),
+      listMareYearly(context.database, gameId),
+      listLines(context.database, gameId),
+    ]);
   const mares = new Map(mareList.map((mare) => [mare.id, mare]));
   const foals = new Map(foalList.map((foal) => [foal.id, foal]));
   const matchedIds = new Set(
@@ -383,17 +413,52 @@ export async function previewMayMares(
     ...new Set([...matchedIds, ...mareList.map((mare) => mare.id)]),
   ]);
 
+  const linesByPosition = new Map(lineList.map((line) => [line.position, line]));
+  const yearlyByHorse = new Map(
+    yearlyList
+      .filter((record) => record.gameYear === choice.gameYear)
+      .map((record) => [record.horseId, record]),
+  );
+
+  // 新進自家產駒走 succession 的同一套規則（需求規格 11.5、MAY-09）：預覽先算，套用只組紀錄。
+  const conversions = new Map<string, ConvertPreview | undefined>();
+  const conversionIssues = new Map<string | undefined, readonly string[]>();
+  for (const [index, item] of values.entries()) {
+    const horseId = matchedHorseId(resolutions[index] ?? { kind: 'new' });
+    const foal = horseId === undefined ? undefined : foals.get(horseId);
+    if (horseId === undefined || foal === undefined || foal.freeBred || mares.has(horseId)) {
+      continue;
+    }
+    const state = await loadOwnMareState(context.database, gameId, horseId);
+    const plan = planConversion(state, { foalId: horseId, site: item.farmNo ?? Number.NaN });
+    conversions.set(horseId, plan.preview);
+    conversionIssues.set(horseId, plan.issues);
+  }
+
   const fileRows = values.map((item, index): MayMareRow => {
     const resolution = resolutions[index] ?? { kind: 'new' as const };
     // checkSites 已經確認過每一列的據點都在 32～35。
     const site = isMareSite(item.farmNo ?? Number.NaN) ? (item.farmNo as MareSite) : 32;
     const classified = classifyFileRow(item, resolution, site, mares, foals, horses);
+    const conversion =
+      classified.horseId === undefined ? undefined : conversions.get(classified.horseId);
+    const blocked =
+      classified.disposition === 'newOwnFoal' && !classified.freeBred && conversion === undefined;
+    const blockIssues = blocked
+      ? [
+          {
+            code: 'conversionBlocked',
+            message: `不能轉入母馬群：${(conversionIssues.get(classified.horseId) ?? []).join('；')}`,
+            handling: 'confirm' as const,
+          },
+        ]
+      : [];
     return {
       key: String(item.lineNumber),
       lineNumber: item.lineNumber,
       label: item.fullName ?? `第 ${String(item.lineNumber)} 行`,
-      outcome: classified.outcome,
-      issues: classified.issues,
+      outcome: blocked ? 'review' : classified.outcome,
+      issues: [...classified.issues, ...blockIssues],
       disposition: classified.disposition,
       values: item,
       birthYear: identityRows[index]?.birthYear,
@@ -403,6 +468,12 @@ export async function previewMayMares(
       freeBred: classified.freeBred,
       fills: classified.fills,
       site,
+      horse: classified.horseId === undefined ? undefined : horses.get(classified.horseId),
+      mare: classified.horseId === undefined ? undefined : mares.get(classified.horseId),
+      yearly: classified.horseId === undefined ? undefined : yearlyByHorse.get(classified.horseId),
+      conversion,
+      foal: classified.horseId === undefined ? undefined : foals.get(classified.horseId),
+      line: conversion === undefined ? undefined : linesByPosition.get(conversion.group.position),
     };
   });
 
@@ -436,8 +507,260 @@ export async function previewMayMares(
         freeBred: false,
         fills: {},
         site: mare.site,
+        horse,
+        mare,
+        yearly: yearlyByHorse.get(mare.id),
+        conversion: undefined,
+        foal: undefined,
+        line: undefined,
       };
     });
 
   return [...fileRows, ...absentRows];
+}
+
+interface BuildContext {
+  readonly gameYear: number;
+  readonly newId: () => string;
+  readonly occurredAt: string;
+}
+
+function groupValue(group: Mare['group']): JsonValue {
+  return group.kind === 'unassigned'
+    ? { kind: group.kind }
+    : { kind: group.kind, position: group.position, generation: group.generation };
+}
+
+/** 補齊空白的父母與父系，並記下這一階段的馬番号（需求規格 6.4、MAY-06）。 */
+function updatedHorse(row: MayMareRow, build: BuildContext): Horse {
+  const { values } = row;
+  const fullName = values?.fullName ?? row.label;
+  const base: Horse = row.horse ?? {
+    id: build.newId(),
+    sex: 'female',
+    ...(values?.abilityNo === undefined ? {} : { abilityNo: values.abilityNo }),
+    ...(row.birthYear === undefined ? {} : { birthYear: row.birthYear }),
+    fullName,
+    baseName: values?.baseName ?? toBaseName(fullName),
+    stageNumbers: [],
+    aliases: [],
+  };
+  const filled: Horse = { ...base, ...row.fills };
+  return values?.horseNo === undefined
+    ? filled
+    : withStageNumber(filled, importedStageNumber('mayMares', values.horseNo, build.gameYear));
+}
+
+/** 5 月活力快照、仔出、繁殖年數與頭數（需求規格 11.5、MAY-07、MAY-08、MARE-14、MARE-15）。 */
+function yearlyRecord(row: MayMareRow, horseId: string, build: BuildContext): MareYearly {
+  const { values } = row;
+  return {
+    // 同一年已有紀錄就沿用同一筆：[gameId, horseId, gameYear] 是唯一索引。
+    id: row.yearly?.id ?? build.newId(),
+    horseId,
+    gameYear: build.gameYear,
+    // 7 月的快照不因為重匯五月而消失（MARE-15）。
+    ...(row.yearly?.vitalityJuly === undefined ? {} : { vitalityJuly: row.yearly.vitalityJuly }),
+    ...(values?.vitality === undefined ? {} : { vitalityMay: values.vitality }),
+    ...(values?.kodashi === undefined ? {} : { kodashi: values.kodashi }),
+    ...(values?.breedingYears === undefined ? {} : { breedingYears: values.breedingYears }),
+    ...(values?.breedingCount === undefined ? {} : { breedingCount: values.breedingCount }),
+  };
+}
+
+interface Written {
+  readonly records: CollectionRecord[];
+  readonly events: HistoryEvent[];
+}
+
+function applyRow(row: MayMareRow, build: BuildContext): Written {
+  const records: CollectionRecord[] = [];
+  const events: HistoryEvent[] = [];
+  const event = (type: HistoryEvent['type'], payload: Partial<HistoryEvent>) =>
+    userEvent(
+      { newId: build.newId },
+      { subjectId: '', type, gameYear: build.gameYear, occurredAt: build.occurredAt, ...payload },
+    );
+
+  if (row.disposition === 'retired' || row.disposition === 'sold') {
+    const mare = row.mare;
+    if (mare === undefined) {
+      return { records, events };
+    }
+    const leftReason = row.disposition === 'retired' ? 'retired' : 'sold';
+    records.push({
+      collection: 'mares',
+      record: { ...mare, status: 'left' as const, leftReason },
+    });
+    events.push(
+      event(row.disposition === 'retired' ? 'mareRetired' : 'mareSold', {
+        subjectId: mare.id,
+        before: { status: 'producing' },
+        after: { status: 'left', leftReason },
+      }),
+    );
+    return { records, events };
+  }
+
+  const horse = updatedHorse(row, build);
+  records.push({ collection: 'horses', record: horse });
+  records.push({ collection: 'mareYearly', record: yearlyRecord(row, horse.id, build) });
+
+  switch (row.disposition) {
+    case 'continuing': {
+      const mare = row.mare;
+      if (mare === undefined) {
+        break;
+      }
+      records.push({ collection: 'mares', record: { ...mare, site: row.site ?? mare.site } });
+      if (row.transferred) {
+        events.push(
+          event('mareTransferred', {
+            subjectId: mare.id,
+            before: { site: mare.site },
+            after: { site: row.site ?? mare.site },
+          }),
+        );
+      }
+      break;
+    }
+    case 'returning': {
+      const mare = row.mare;
+      if (mare === undefined) {
+        break;
+      }
+      // 沿用原識別、血緣、自身父系、母馬群與代數；只恢復在圈狀態與據點（需求規格 11.5）。
+      // 回到生產中就不該再有離圈原因，所以是重建而不是覆寫。
+      const revived: Mare = {
+        id: mare.id,
+        group: mare.group,
+        origin: mare.origin,
+        ...(mare.originNote === undefined ? {} : { originNote: mare.originNote }),
+        status: 'producing',
+        site: row.site ?? mare.site,
+        ...(mare.succession === undefined ? {} : { succession: mare.succession }),
+        ...(mare.yearPlan === undefined ? {} : { yearPlan: mare.yearPlan }),
+      };
+      records.push({ collection: 'mares', record: revived });
+      events.push(
+        event('mareReturned', {
+          subjectId: mare.id,
+          before: {
+            status: 'left',
+            ...(mare.leftReason === undefined ? {} : { leftReason: mare.leftReason }),
+          },
+          after: {
+            status: 'producing',
+            site: row.site ?? mare.site,
+            group: groupValue(mare.group),
+          },
+        }),
+      );
+      break;
+    }
+    case 'newOwnFoal': {
+      const { conversion } = row;
+      const group: Mare['group'] = conversion?.group ?? { kind: 'unassigned' };
+      const mare: Mare = {
+        id: horse.id,
+        group,
+        origin: 'ownRetired',
+        status: 'producing',
+        site: row.site ?? 32,
+        ...(conversion === undefined ? {} : { succession: conversion.succession }),
+      };
+      records.push({ collection: 'mares', record: mare });
+      events.push(
+        event('mareAdded', {
+          subjectId: horse.id,
+          after: {
+            group: groupValue(group),
+            origin: mare.origin,
+            site: mare.site,
+            ...(conversion === undefined ? {} : { succession: conversion.succession }),
+          },
+        }),
+      );
+      // 轉入後產駒的處置固定為保留（需求規格 8.9，與手動轉入同一套規則）。
+      if (row.foal !== undefined && row.foal.disposition !== 'keep' && conversion !== undefined) {
+        records.push({
+          collection: 'foals',
+          record: { ...row.foal, disposition: 'keep' as const },
+        });
+        events.push(
+          event('foalChanged', {
+            subjectId: row.foal.id,
+            before: { disposition: row.foal.disposition },
+            after: { disposition: 'keep' },
+          }),
+        );
+      }
+      const established =
+        conversion?.establishes === true && row.line !== undefined
+          ? establishGeneration(row.line, conversion.group.generation, build.gameYear)
+          : undefined;
+      if (established !== undefined) {
+        records.push({ collection: 'lines', record: established });
+        events.push(
+          event('lineGenerationEstablished', {
+            subjectId: established.id,
+            after: { generation: conversion?.group.generation ?? 0, mareId: horse.id },
+          }),
+        );
+      }
+      break;
+    }
+    case 'newOther': {
+      // 不猜測系、代數或自身父系：生產中、待指定用途（需求規格 11.5、MAY-03）。
+      const mare: Mare = {
+        id: horse.id,
+        group: { kind: 'unassigned' },
+        origin: 'other',
+        status: 'producing',
+        site: row.site ?? 32,
+      };
+      records.push({ collection: 'mares', record: mare });
+      events.push(
+        event('mareAdded', {
+          subjectId: horse.id,
+          after: { group: groupValue(mare.group), origin: mare.origin, site: mare.site },
+        }),
+      );
+      break;
+    }
+    default:
+      break;
+  }
+  return { records, events };
+}
+
+/** 這次匯入會寫到的資料表。 */
+export const MAY_MARES_COLLECTIONS = ['horses', 'mares', 'mareYearly', 'foals', 'lines'] as const;
+
+export function buildMayMares(
+  rows: readonly MayMareRow[],
+  build: BuildContext,
+): { readonly records: readonly CollectionRecord[]; readonly events: readonly HistoryEvent[] } {
+  const records: CollectionRecord[] = [];
+  const events: HistoryEvent[] = [];
+  for (const row of rows) {
+    const written = applyRow(row, build);
+    records.push(...written.records);
+    events.push(...written.events);
+  }
+  return { records, events };
+}
+
+/**
+ * 五月繁殖牝馬總表（需求規格 11.5）：繁殖牝馬圈對帳、據點、活力快照、仔出、繁殖年數與頭數、
+ * 補齊父母與父系、繁殖牝馬馬番号。不建立正式受胎結果，也不把父系寫成替代系（11.2）。
+ */
+export function mayMaresImportHandler(): ImportHandler<MayMareRow> {
+  return {
+    type: 'mayMares',
+    collections: [...MAY_MARES_COLLECTIONS],
+    preview: (context, game, file, choice) => previewMayMares(context, game.id, file, choice),
+    build: ({ rows, choice, newId, occurredAt }) =>
+      buildMayMares(rows, { gameYear: choice.gameYear, newId, occurredAt }),
+  };
 }

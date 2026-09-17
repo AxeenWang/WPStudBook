@@ -85,8 +85,11 @@ export function lineageMismatch(
 /**
  * 從產駒手動轉入繁殖牝馬前的核對（需求規格 8.4、9.6）：只有非自由配種、未售出的自家母駒可以轉入；
  * 進入母馬群前以父母再次推導系與代數，與出生紀錄不符時阻止。接替狀態依在圈姊妹決定（8.9）。
+ *
+ * 五月匯入的新進自家產駒走同一套規則（需求規格 11.5、MAY-09），所以這個純函式對外公開：
+ * 匯入在預覽時先算好，套用時在單一交易內用同一份結果建紀錄。
  */
-function planConversion(state: OwnMareState, input: ConvertFoalInput): ConvertCheck {
+export function planConversion(state: OwnMareState, input: ConvertFoalInput): ConvertCheck {
   const { foal, horse, existingMare, dam, sire, sisters, line } = state;
   if (foal === undefined || horse === undefined) {
     return { issues: ['找不到這匹產駒'], preview: undefined };

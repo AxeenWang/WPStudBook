@@ -21,6 +21,10 @@ export type HistoryEventType =
   | 'mareAdded'
   /** 賣出繁殖牝馬；subjectId 為馬匹 id。 */
   | 'mareSold'
+  /** 定年引退離圈（需求規格 8.5、11.5）；subjectId 為馬匹 id。 */
+  | 'mareRetired'
+  /** 已離圈的母馬重新出現在五月總表而回歸（需求規格 11.5、ID-04）；subjectId 為馬匹 id。 */
+  | 'mareReturned'
   /** 據點變更（轉場），含時點；subjectId 為馬匹 id。 */
   | 'mareTransferred'
   /** 待指定用途的母馬被指定母馬群（需求規格 11.5）；subjectId 為馬匹 id。 */

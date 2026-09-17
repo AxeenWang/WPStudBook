@@ -97,6 +97,8 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   stallionDutyStarted: true,
   mareAdded: true,
   mareSold: true,
+  mareRetired: true,
+  mareReturned: true,
   mareTransferred: true,
   mareGroupAssigned: true,
   mareYearlyChanged: true,
