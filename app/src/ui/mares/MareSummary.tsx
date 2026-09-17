@@ -3,16 +3,21 @@ import { Button, Form } from 'react-aria-components';
 import type { MareSite, YearPlan } from '../../domain/mare.ts';
 import type { MareYearly, Vitality } from '../../domain/mare-yearly.ts';
 import {
+  MARE_POSITION_OPTIONS,
   MARE_SITE_OPTIONS,
   YEAR_PLAN_OPTIONS,
+  assignMareGroup,
+  checkAssignMareGroup,
   horseNumberText,
   isCeExtended,
   saveMareYearly,
   setYearPlan,
   transferMare,
+  type AddMareWarning,
   type MareDetail,
   type VitalityInput,
 } from '../../services/mares.ts';
+import { ServiceError } from '../../services/errors.ts';
 import { CheckboxField, OptionalIntegerField, SelectField } from '../fields.tsx';
 import { Feedback, useAction } from '../actions.tsx';
 import { formatGeneration } from '../format.ts';
@@ -34,6 +39,10 @@ const PLAN_CHOICES = YEAR_PLAN_OPTIONS.map((plan) => ({
   label: YEAR_PLAN_LABELS[plan],
 }));
 const SITE_CHOICES = MARE_SITE_OPTIONS.map((site) => ({ value: site, label: SITE_LABELS[site] }));
+const POSITION_CHOICES = MARE_POSITION_OPTIONS.map((position) => ({
+  value: position,
+  label: `第 ${String(position)} 系`,
+}));
 
 function YearPlanForm({ detail }: { readonly detail: MareDetail }) {
   const { context } = useServices();
@@ -143,6 +152,76 @@ function VitalityFields({
         }}
       />
     </>
+  );
+}
+
+/**
+ * 指定用途（需求規格 11.5「新進（其他）」）：匯入建立的母馬是待指定用途，由使用者事後指定
+ * 母馬群；沒有這個入口的話她們在清單上只看得到、動不了。
+ */
+function AssignGroupSection({ detail }: { readonly detail: MareDetail }) {
+  const { context } = useServices();
+  // 指定成功後表單會因為不再是待指定用途而卸載，所以訊息由這個不會卸載的外層持有
+  // （見 ui/actions.tsx 的 ActionState 說明）。
+  const { busy, message, error, run } = useAction();
+  const [position, setPosition] = useState<number>();
+  const [generation, setGeneration] = useState<number>();
+  const [pending, setPending] = useState<readonly AddMareWarning[]>([]);
+  if (detail.card.group.kind !== 'unassigned') {
+    return <Feedback message={message} error={error} />;
+  }
+  return (
+    <Form
+      aria-labelledby="mare-assign-heading"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void run(async () => {
+          const input = {
+            mareId: detail.card.id,
+            position: position ?? Number.NaN,
+            generation: generation ?? Number.NaN,
+            acceptedWarnings: pending.map((warning) => warning.code),
+          };
+          const check = await checkAssignMareGroup(context, input);
+          if (check.issues.length > 0) {
+            setPending([]);
+            throw new ServiceError('invalidInput', check.issues.join('；'));
+          }
+          const unconfirmed = check.warnings.filter(
+            (warning) => !input.acceptedWarnings.includes(warning.code),
+          );
+          if (unconfirmed.length > 0) {
+            setPending(check.warnings);
+            throw new ServiceError('confirmationRequired', unconfirmed[0]?.message ?? '');
+          }
+          const assigned = await assignMareGroup(context, input);
+          setPending([]);
+          return `已指定為${formatMareGroup(assigned.group)}${check.notices.map((notice) => `。提示：${notice}`).join('')}`;
+        });
+      }}
+    >
+      <h4 id="mare-assign-heading">指定用途</h4>
+      <p>
+        這匹母馬是待指定用途，指定前不進入任務。自身父系是馬匹資料，不會因為指定而改變（需求規格
+        8.3）。
+      </p>
+      <SelectField
+        label="母馬群的系"
+        value={position}
+        options={POSITION_CHOICES}
+        emptyLabel="請選擇"
+        onChange={setPosition}
+      />
+      <OptionalIntegerField
+        label="母馬群的代數（0＝第 1 系起點）"
+        value={generation}
+        onChange={setGeneration}
+      />
+      <Feedback message={message} error={error} />
+      <Button type="submit" isPending={busy}>
+        {pending.length > 0 ? '確認並指定用途' : '指定用途'}
+      </Button>
+    </Form>
   );
 }
 
@@ -312,6 +391,7 @@ export function MareSummary({ detail }: { readonly detail: MareDetail }) {
       )}
       {card.succession !== undefined && <SisterComparison mareId={card.id} />}
       <YearlyTable records={detail.yearly} />
+      {producing && <AssignGroupSection detail={detail} />}
       {producing && <YearPlanForm detail={detail} />}
       {producing && <TransferForm detail={detail} />}
       <YearlyForm detail={detail} />

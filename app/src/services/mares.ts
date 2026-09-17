@@ -161,6 +161,55 @@ interface AddMareInspection extends AddMareCheck {
   readonly femaleLine: string;
 }
 
+interface SubstituteSireInspection {
+  readonly warnings: readonly AddMareWarning[];
+  readonly notices: readonly string[];
+}
+
+/**
+ * 替代母馬的自身父系與該系親系統比較（需求規格 8.3、LINE-29）：不同時警告並要求確認，
+ * 查不到或該系未開啟時只提示。起點用與待指定用途不檢查。
+ */
+async function inspectSubstituteSire(
+  context: ServiceContext,
+  gameId: string,
+  group: AssignedMareGroup | undefined,
+  sireSubsystem: string,
+): Promise<SubstituteSireInspection> {
+  if (group?.kind !== 'substitute') {
+    return { warnings: [], notices: [] };
+  }
+  const [systemMap, lines] = await Promise.all([
+    listSystemMapEntries(context.database, gameId),
+    listLines(context.database, gameId),
+  ]);
+  const check = checkSubstituteSire(
+    group,
+    sireSubsystem === '' ? undefined : sireSubsystem,
+    systemMap,
+    lines,
+  );
+  const target = `第 ${String(group.position)} 系`;
+  if (check.result === 'differentParentSystem') {
+    return {
+      warnings: [
+        {
+          code: 'sireParentSystemDiffers',
+          message: `自身父系「${sireSubsystem}」的親系統是「${check.sireParentSystem}」，與${target}目前的親系統「${check.lineParentSystem}」不同；確認後仍登記為替代${target} ${String(group.generation)} 代`,
+        },
+      ],
+      notices: [],
+    };
+  }
+  return {
+    warnings: [],
+    notices:
+      check.result === 'undetermined'
+        ? [UNDETERMINED_MESSAGES[check.reason](target, sireSubsystem)]
+        : [],
+  };
+}
+
 async function inspectAddMarketMare(
   context: ServiceContext,
   game: Game,
@@ -213,29 +262,7 @@ async function inspectAddMarketMare(
     }
   }
 
-  const warnings: AddMareWarning[] = [];
-  const notices: string[] = [];
-  if (group?.kind === 'substitute') {
-    const [systemMap, lines] = await Promise.all([
-      listSystemMapEntries(context.database, game.id),
-      listLines(context.database, game.id),
-    ]);
-    const check = checkSubstituteSire(
-      group,
-      sireSubsystem === '' ? undefined : sireSubsystem,
-      systemMap,
-      lines,
-    );
-    const target = `第 ${String(group.position)} 系`;
-    if (check.result === 'differentParentSystem') {
-      warnings.push({
-        code: 'sireParentSystemDiffers',
-        message: `自身父系「${sireSubsystem}」的親系統是「${check.sireParentSystem}」，與${target}目前的親系統「${check.lineParentSystem}」不同；確認後仍登記為替代${target} ${String(group.generation)} 代`,
-      });
-    } else if (check.result === 'undetermined') {
-      notices.push(UNDETERMINED_MESSAGES[check.reason](target, sireSubsystem));
-    }
-  }
+  const { warnings, notices } = await inspectSubstituteSire(context, game.id, group, sireSubsystem);
   return { issues, warnings, notices, group, site, fullName, abilityNo, sireSubsystem, femaleLine };
 }
 
@@ -592,6 +619,115 @@ export async function transferMare(context: ServiceContext, input: TransferInput
           after: { site },
         });
         return { mare: { ...current, site }, events: [event] };
+      },
+    }),
+  );
+}
+
+export interface AssignGroupInput {
+  readonly mareId: string;
+  readonly position: number;
+  readonly generation: number;
+  /** 使用者已確認的警告（需求規格 5.2）。 */
+  readonly acceptedWarnings?: readonly AddMareWarningCode[] | undefined;
+}
+
+export interface AssignGroupCheck {
+  readonly issues: readonly string[];
+  readonly warnings: readonly AddMareWarning[];
+  readonly notices: readonly string[];
+}
+
+async function inspectAssignGroup(
+  context: ServiceContext,
+  gameId: string,
+  input: AssignGroupInput,
+): Promise<AssignGroupCheck & { readonly group: AssignedMareGroup | undefined }> {
+  const issues: string[] = [];
+  const groupIssue = checkMarketGroup(input.position, input.generation);
+  if (groupIssue !== undefined) {
+    issues.push(GROUP_MESSAGES[groupIssue]);
+  }
+  const group =
+    groupIssue === undefined && isLinePosition(input.position)
+      ? marketGroupFor(input.position, input.generation)
+      : undefined;
+  const mare = await getMare(context.database, gameId, input.mareId);
+  if (mare === undefined) {
+    issues.push('找不到這匹繁殖牝馬');
+  } else if (mare.status !== 'producing') {
+    issues.push('這匹繁殖牝馬已離圈');
+  } else if (mare.group.kind !== 'unassigned') {
+    issues.push('這匹繁殖牝馬已經指定過用途，不是待指定用途');
+  }
+  const horse = mare === undefined ? undefined : await getHorse(context.database, gameId, mare.id);
+  const { warnings, notices } = await inspectSubstituteSire(
+    context,
+    gameId,
+    group,
+    horse?.sireSubsystem ?? '',
+  );
+  return { issues, warnings, notices, group };
+}
+
+export async function checkAssignMareGroup(
+  context: ServiceContext,
+  input: AssignGroupInput,
+): Promise<AssignGroupCheck> {
+  const game = await requireCurrentGame(context);
+  const { issues, warnings, notices } = await inspectAssignGroup(context, game.id, input);
+  return { issues, warnings, notices };
+}
+
+/**
+ * 指定待指定用途母馬的用途（需求規格 11.5「新進（其他）」）：匯入建立的母馬不猜測系與代數，
+ * 由使用者事後指定。只改母馬群，不動自身父系——那是馬匹資料，不是她放在哪一群（8.3）。
+ */
+export async function assignMareGroup(
+  context: ServiceContext,
+  input: AssignGroupInput,
+): Promise<Mare> {
+  const game = await requireCurrentGame(context);
+  const inspection = await inspectAssignGroup(context, game.id, input);
+  const { group } = inspection;
+  if (inspection.issues.length > 0 || group === undefined) {
+    throw new ServiceError('invalidInput', inspection.issues.join('；'));
+  }
+  requireAcceptedWarnings(inspection.warnings, input.acceptedWarnings ?? []);
+  const now = context.now().toISOString();
+  const groupValue = {
+    kind: group.kind,
+    position: group.position,
+    generation: group.generation,
+  };
+  return trackWrite(context, () =>
+    modifyMare(context.database, {
+      gameId: game.id,
+      mareId: input.mareId,
+      touch: gameTouch(context, now),
+      apply: ({ game: stored, mare: current }) => {
+        requireProducing(current);
+        if (current.group.kind !== 'unassigned') {
+          throw new ServiceError('invalidInput', '這匹繁殖牝馬不是待指定用途');
+        }
+        return {
+          mare: { ...current, group },
+          events: [
+            userEvent(context, {
+              subjectId: input.mareId,
+              type: 'mareGroupAssigned',
+              gameYear: stored.currentYear,
+              occurredAt: now,
+              before: { group: { kind: 'unassigned' } },
+              after: {
+                group: groupValue,
+                ...(inspection.warnings.length === 0
+                  ? {}
+                  : { confirmations: inspection.warnings.map((warning) => warning.code) }),
+              },
+            }),
+          ],
+        };
       },
     }),
   );

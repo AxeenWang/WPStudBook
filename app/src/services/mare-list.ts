@@ -129,10 +129,22 @@ export interface HandoverGenerations {
   readonly handover: readonly [number, number];
 }
 
-/** 清單單位：第 q 系 N 代母馬群、同一系的全部代數（歷史檢視），或交接中的相鄰兩代。 */
+/**
+ * 待指定用途的母馬不屬於任何系，所以在清單上自成一個檢視（需求規格 11.5「新進（其他）」）。
+ * 沒有這個入口的話，五月匯入建立的這些母馬存進去就在介面上找不到。
+ */
+export const UNASSIGNED_VIEW = 'unassigned';
+
+export type MareViewPosition = LinePosition | typeof UNASSIGNED_VIEW;
+
+/** 清單單位：第 q 系 N 代母馬群、同一系的全部代數（歷史檢視）、交接中的相鄰兩代，或待指定用途。 */
 export interface MareGroupView {
-  readonly position: LinePosition;
+  readonly position: MareViewPosition;
   readonly generation: number | 'all' | HandoverGenerations;
+}
+
+export function isUnassignedView(view: MareGroupView): boolean {
+  return view.position === UNASSIGNED_VIEW;
 }
 
 export type MareStatusFilter = 'producing' | 'left' | 'all';
@@ -218,10 +230,14 @@ export function matchesMareFilter(
   const confirmed = vitality.state === 'confirmed' ? vitality : undefined;
   const lineName = options.femaleLineName.trim();
   const keyword = options.keyword.trim();
+  const inGroup =
+    view.position === UNASSIGNED_VIEW
+      ? group.kind === 'unassigned'
+      : group.kind !== 'unassigned' &&
+        group.position === view.position &&
+        matchesGeneration(group.generation, view);
   return (
-    group.kind !== 'unassigned' &&
-    group.position === view.position &&
-    matchesGeneration(group.generation, view) &&
+    inGroup &&
     (options.status === 'all' || card.status === options.status) &&
     (options.site === undefined || card.site === options.site) &&
     inRange(confirmed?.value, options.vitalityMin, options.vitalityMax) &&

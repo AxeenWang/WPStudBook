@@ -23,6 +23,8 @@ export type HistoryEventType =
   | 'mareSold'
   /** 據點變更（轉場），含時點；subjectId 為馬匹 id。 */
   | 'mareTransferred'
+  /** 待指定用途的母馬被指定母馬群（需求規格 11.5）；subjectId 為馬匹 id。 */
+  | 'mareGroupAssigned'
   /** 年度資料人工更正，保存前後值；subjectId 為馬匹 id。 */
   | 'mareYearlyChanged'
   /** 遊戲局設定變更；subjectId 為 game。 */

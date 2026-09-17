@@ -13,6 +13,7 @@ import {
   sortMareCards,
   type MareCard,
   type MareFilterOptions,
+  UNASSIGNED_VIEW,
   type MareGroupView,
 } from '../../src/services/mare-list.ts';
 
@@ -372,5 +373,31 @@ describe('定年提示（需求規格 8.5、MARE-11）', () => {
       currentYear: 1968,
     });
     expect([unknown.lastBreedingAge, unknown.atRetirementAge]).toEqual([false, false]);
+  });
+});
+
+describe('待指定用途檢視（需求規格 11.5「新進（其他）」）', () => {
+  const unassignedView: MareGroupView = { position: UNASSIGNED_VIEW, generation: 'all' };
+  const lineView: MareGroupView = { position: 3, generation: 'all' };
+  const assigned = card('assigned');
+  const waiting = card('waiting', { group: { kind: 'unassigned' } });
+
+  it('只有待指定用途的母馬進入這個檢視', () => {
+    expect(matchesMareFilter(waiting, unassignedView, DEFAULT_MARE_FILTER)).toBe(true);
+    expect(matchesMareFilter(assigned, unassignedView, DEFAULT_MARE_FILTER)).toBe(false);
+  });
+
+  it('待指定用途的母馬不會出現在任何系的檢視裡', () => {
+    expect(matchesMareFilter(assigned, lineView, DEFAULT_MARE_FILTER)).toBe(true);
+    expect(matchesMareFilter(waiting, lineView, DEFAULT_MARE_FILTER)).toBe(false);
+  });
+
+  it('其他篩選條件照常套用', () => {
+    expect(
+      matchesMareFilter(waiting, unassignedView, { ...DEFAULT_MARE_FILTER, status: 'left' }),
+    ).toBe(false);
+    expect(matchesMareFilter(waiting, unassignedView, { ...DEFAULT_MARE_FILTER, site: 33 })).toBe(
+      false,
+    );
   });
 });

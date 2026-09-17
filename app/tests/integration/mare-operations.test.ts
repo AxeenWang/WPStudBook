@@ -4,6 +4,8 @@ import { changeCurrentYear, createGame, getCurrentGame } from '../../src/service
 import { DEFAULT_MARE_FILTER, matchesMareFilter } from '../../src/services/mare-list.ts';
 import {
   addMarketMare,
+  assignMareGroup,
+  checkAssignMareGroup,
   loadMareDetail,
   loadMareHerd,
   previewSellMare,
@@ -15,7 +17,9 @@ import {
   type MarketMareInput,
 } from '../../src/services/mares.ts';
 import { countGameRecords } from '../../src/storage/games.ts';
-import { modifyMare } from '../../src/storage/mares.ts';
+import { getMare, modifyMare } from '../../src/storage/mares.ts';
+import { horseNameKeys } from '../../src/storage/horses.ts';
+import { listEventsForSubject } from '../../src/storage/events.ts';
 import { putRecords, readRecords } from '../../src/storage/records.ts';
 import { useServiceContexts } from './helpers.ts';
 
@@ -408,5 +412,116 @@ describe('繁殖牝馬操作', () => {
     const detail = await loadMareDetail(context, added.horse.id);
 
     expect(detail.history.map((item) => item.type)).toEqual(['mareAdded', 'horseCreated']);
+  });
+});
+
+describe('指定待指定用途母馬的用途（需求規格 11.5）', () => {
+  const openContext = useServiceContexts();
+
+  async function seedUnassigned(
+    context: ServiceContext,
+    gameId: string,
+    sireSubsystem?: string,
+  ): Promise<string> {
+    const horse = {
+      id: 'waiting-1',
+      sex: 'female' as const,
+      abilityNo: 0x5001,
+      birthYear: 1962,
+      fullName: 'テスト候補001',
+      baseName: 'テスト候補001',
+      ...(sireSubsystem === undefined ? {} : { sireSubsystem }),
+      stageNumbers: [],
+      aliases: [],
+    };
+    await putRecords(context.database, gameId, 'horses', [
+      { ...horse, nameKeys: horseNameKeys(gameId, horse) },
+    ]);
+    await putRecords(context.database, gameId, 'mares', [
+      {
+        id: horse.id,
+        group: { kind: 'unassigned' },
+        origin: 'marketMixed',
+        status: 'producing',
+        site: 32,
+      },
+    ]);
+    return horse.id;
+  }
+
+  it('指定後成為替代第 q 系 N 代，並留下歷程', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '指定用途局', startYear: 1968 });
+    const mareId = await seedUnassigned(context, game.id);
+
+    const assigned = await assignMareGroup(context, { mareId, position: 3, generation: 6 });
+    expect(assigned.group).toEqual({ kind: 'substitute', position: 3, generation: 6 });
+
+    const events = await listEventsForSubject(context.database, game.id, mareId);
+    expect(events.map((event) => event.type)).toEqual(['mareGroupAssigned']);
+    expect(events[0]?.before).toEqual({ group: { kind: 'unassigned' } });
+    expect(events[0]?.after).toEqual({
+      group: { kind: 'substitute', position: 3, generation: 6 },
+    });
+  });
+
+  it('已經指定過用途的母馬不能再指定', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '指定用途局', startYear: 1968 });
+    const mareId = await seedUnassigned(context, game.id);
+    await assignMareGroup(context, { mareId, position: 3, generation: 6 });
+
+    await expect(
+      assignMareGroup(context, { mareId, position: 4, generation: 2 }),
+    ).rejects.toMatchObject({ code: 'invalidInput' });
+    const mare = await getMare(context.database, game.id, mareId);
+    expect(mare?.group).toEqual({ kind: 'substitute', position: 3, generation: 6 });
+  });
+
+  it('系或代數不合法時拒絕，資料不變', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '指定用途局', startYear: 1968 });
+    const mareId = await seedUnassigned(context, game.id);
+
+    await expect(
+      assignMareGroup(context, { mareId, position: 2, generation: 0 }),
+    ).rejects.toMatchObject({ code: 'invalidInput' });
+    const mare = await getMare(context.database, game.id, mareId);
+    expect(mare?.group).toEqual({ kind: 'unassigned' });
+  });
+
+  it('自身父系與該系親系統不同時要先確認（LINE-29）', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '指定用途局', startYear: 1968 });
+    const mareId = await seedUnassigned(context, game.id, 'ヘロド');
+    await putRecords(context.database, game.id, 'systemMap', [
+      { id: 'map-1', subsystem: 'ヘロド', parentSystem: 'ヘロド' },
+      { id: 'map-2', subsystem: 'ネアルコ', parentSystem: 'エクリプス' },
+    ]);
+    await putRecords(context.database, game.id, 'lines', [
+      {
+        id: 'line-3',
+        position: 3,
+        subsystem: 'ネアルコ',
+        parentSystem: 'エクリプス',
+        color: '#1565c0',
+        branch: { targetGeneration: 1, openedYear: 1968 },
+        establishedGenerations: [],
+      },
+    ]);
+
+    const check = await checkAssignMareGroup(context, { mareId, position: 3, generation: 6 });
+    expect(check.warnings.map((warning) => warning.code)).toEqual(['sireParentSystemDiffers']);
+    await expect(
+      assignMareGroup(context, { mareId, position: 3, generation: 6 }),
+    ).rejects.toMatchObject({ code: 'confirmationRequired' });
+
+    const assigned = await assignMareGroup(context, {
+      mareId,
+      position: 3,
+      generation: 6,
+      acceptedWarnings: ['sireParentSystemDiffers'],
+    });
+    expect(assigned.group).toEqual({ kind: 'substitute', position: 3, generation: 6 });
   });
 });
