@@ -112,6 +112,7 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   recoveryChanged: true,
   becameStallion: true,
   stallionDutyChanged: true,
+  stallionListingChanged: true,
   plannedSuccessorChanged: true,
   matingRatingRecorded: true,
 });

@@ -1,6 +1,12 @@
 import type { Horse } from '../domain/horse.ts';
 import type { AppDatabase } from './database.ts';
-import { isPlainRecord, withGameId, withoutGameId, type StoredRecord } from './records.ts';
+import {
+  gameKeyRange,
+  isPlainRecord,
+  withGameId,
+  withoutGameId,
+  type StoredRecord,
+} from './records.ts';
 
 /** nameKeys 的分隔字元（設計決策 5.2 節）。 */
 export const NAME_KEY_SEPARATOR = '\u001f';
@@ -43,6 +49,12 @@ export function toHorse(value: unknown): Horse | undefined {
   const fields = Object.entries(withoutGameId(value)).filter(([key]) => key !== 'nameKeys');
   // 本機資料由本程式寫入；備份匯入的馬匹由 validateCollections 驗證。
   return Object.fromEntries(fields) as unknown as Horse;
+}
+
+/** 目前遊戲局的全部馬匹；匯入的離場偵測要掃過既有紀錄（需求規格 11.8）。 */
+export async function listHorses(database: AppDatabase, gameId: string): Promise<Horse[]> {
+  const values: unknown[] = await database.getAll('horses', gameKeyRange(gameId));
+  return values.map(toHorse).filter((horse) => horse !== undefined);
 }
 
 export async function getHorse(

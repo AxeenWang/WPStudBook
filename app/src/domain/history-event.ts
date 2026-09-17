@@ -51,6 +51,11 @@ export type HistoryEventType =
   | 'becameStallion'
   /** 現任任期狀態變更或被更換，保存前後值；subjectId 為馬匹 id。 */
   | 'stallionDutyChanged'
+  /**
+   * 五月種牡馬總表的在表狀態變更（需求規格 11.8、STL-10）；subjectId 為馬匹 id。
+   * 只在非現役標示出現或消失時寫，年年更新最後在表年份不寫事件。
+   */
+  | 'stallionListingChanged'
   /** 預定後繼指定、就緒狀態、確認產駒或結束，保存前後值；subjectId 為系位置 id。 */
   | 'plannedSuccessorChanged'
   /** 總合評價與爆發力新增或更正，保存前後值；subjectId 為母馬 id。 */

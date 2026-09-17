@@ -39,6 +39,7 @@ import {
   type IdentityResolution,
   type IdentityRow,
 } from './import-identity.ts';
+import { compareBlood, type BloodFills } from './import-blood.ts';
 import type { ImportChoice, ImportHandler } from './imports.ts';
 
 /**
@@ -83,13 +84,6 @@ export interface MayMareRow extends PreviewRow {
   readonly line: Line | undefined;
   /** 父系在系統對照表裡查不到（LINE-05）：預覽可補登親系統，未補登仍可匯入。 */
   readonly subsystemUnregistered: boolean;
-}
-
-export interface BloodFills {
-  readonly sireName?: string;
-  readonly damName?: string;
-  readonly sireSubsystem?: string;
-  readonly femaleLine?: string;
 }
 
 export interface MayMaresOverview {
@@ -185,37 +179,6 @@ function toIdentityRow(values: BroodmareValues, birthYear: number | undefined): 
     sireName: values.sireName,
     damName: values.damName,
   };
-}
-
-/**
- * 父馬、母馬、父系與牝系只補空白；與既有不同為衝突（MAY-05）。父系保存原文，不寫成替代系。
- *
- * 已經連到內部馬匹的父母不補也不比對：`sireId`／`damId` 是這一局裡的事實，總表的父馬欄只是
- * 遊戲當下的顯示名稱。拿名稱去覆蓋或推翻一個已連結的父母，只會讓資料互相矛盾。
- */
-function compareBlood(
-  values: BroodmareValues,
-  horse: Horse | undefined,
-): { readonly fills: BloodFills; readonly conflict: boolean } {
-  const fills: Record<string, string> = {};
-  let conflict = false;
-  const fields = [
-    ['sireName', values.sireName, horse?.sireName, horse?.sireId !== undefined],
-    ['damName', values.damName, horse?.damName, horse?.damId !== undefined],
-    ['sireSubsystem', values.sireSubsystem, horse?.sireSubsystem, false],
-    ['femaleLine', values.femaleLine, horse?.femaleLine, false],
-  ] as const;
-  for (const [field, incoming, existing, linked] of fields) {
-    if (incoming === undefined || linked) {
-      continue;
-    }
-    if (existing === undefined) {
-      fills[field] = incoming;
-    } else if (existing.trim() !== incoming.trim()) {
-      conflict = true;
-    }
-  }
-  return { fills, conflict };
 }
 
 interface Classified {
