@@ -35,9 +35,15 @@ export async function changeYearViaUi(page: Page, year: number): Promise<void> {
 /**
  * 關閉詳情欄並等它真的消失。只按 Esc 就繼續操作時，`.drawer-overlay` 還在的話會攔截點擊，
  * 是與速度相依的競態（main 推送 CI 的 Edge 曾因此失敗）。
+ *
+ * Esc 一律按在詳情欄本身而不是 `page.keyboard`：`page.keyboard.press` 送到的是目前焦點所在的
+ * 元素，而詳情欄裡的表單送出後會整個卸載，焦點會落回 `body`。react-aria 的焦點收容會把焦點拉
+ * 回對話框，但那是非同步的，中間那一瞬間按下的 Esc 就消失了——Edge 上真的發生過（PR #17 合併
+ * 後 main 的推送 CI）。`locator.press` 會先聚焦再送鍵，鍵一定落在對話框內。
  */
-export async function closeDrawer(page: Page, drawer: Locator): Promise<void> {
-  await page.keyboard.press('Escape');
+export async function closeDrawer(drawer: Locator): Promise<void> {
+  await expect(drawer).toBeVisible();
+  await drawer.press('Escape');
   await expect(drawer).toBeHidden();
 }
 

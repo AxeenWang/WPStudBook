@@ -31,7 +31,7 @@ async function breedConceived(page: Page, mareName: string): Promise<void> {
   await form.getByLabel('受胎狀態').selectOption({ label: '受胎' });
   await form.getByRole('button', { name: '保存繁殖紀錄' }).click();
   await expect(form.getByRole('status')).toContainText('繁殖紀錄');
-  await closeDrawer(page, drawer);
+  await closeDrawer(drawer);
 }
 
 async function confirmColt(page: Page, mareName: string, breedingYear: number): Promise<void> {
@@ -45,7 +45,7 @@ async function confirmColt(page: Page, mareName: string, breedingYear: number): 
   await foalForm.getByLabel('性別').selectOption({ label: '牡' });
   await foalForm.getByRole('button', { name: '登記產駒' }).click();
   await expect(drawer.getByRole('status').first()).toContainText('已登記產駒');
-  await closeDrawer(page, drawer);
+  await closeDrawer(drawer);
 }
 
 async function changeYear(page: Page, year: number): Promise<void> {
@@ -228,7 +228,7 @@ test.describe('種牡馬', () => {
     await expect(ratings.getByRole('listitem')).toHaveText([
       '1968 年・テストシュボバ・總合評價 A・爆發力 12',
     ]);
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
 
     await changeYear(page, 1969);
     drawer = await openDrawer(page, 'オオトリモナーコス');
