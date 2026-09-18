@@ -34,6 +34,17 @@ const HERD = [
   { id: 'h-3', abilityNo: 0x1003, name: '(外)テストメス003', birthYear: 1964, site: 35 },
 ] as const;
 
+function withRow(
+  sample: SyntheticSample,
+  index: number,
+  changes: Readonly<Record<string, string>>,
+): SyntheticSample {
+  return {
+    ...sample,
+    rows: sample.rows.map((row, at) => (at === index ? { ...row, ...changes } : row)),
+  };
+}
+
 function horse(overrides: Partial<Horse> & Pick<Horse, 'id'>): Horse {
   return { sex: 'female', stageNumbers: [], aliases: [], ...overrides };
 }
@@ -229,6 +240,34 @@ describe('七月繁殖牝馬總表的套用（需求規格 11.6）', () => {
     expect(record?.ruleSnapshot?.taskId).toBe('found:1-0:1-0:1-1');
     expect(record?.pedigreeCheck).toBeUndefined();
     expect(record?.stallionId).toBeUndefined();
+  });
+
+  it('[JUL-01] 檔案欄位空白時沿用既有的受胎結果與種牡馬，不把它們清掉', async () => {
+    const context = await openContext();
+    const gameId = await setUp(context);
+    await seedHerd(context, gameId);
+    await seed(context, gameId, 'breedings', [
+      {
+        id: 'b-1',
+        mareId: 'h-1',
+        gameYear: 1968,
+        breedingType: 'free',
+        stallionName: 'サキニトウロクシタウマ',
+        conception: '受胎',
+        expectedBirthYear: 1969,
+      } satisfies Breeding,
+    ]);
+
+    await runImport(context, withRow(SAMPLE, 0, { status: '', matedStallion: '' }));
+
+    expect(
+      (await listBreedings(context.database, gameId)).find((item) => item.mareId === 'h-1'),
+    ).toMatchObject({
+      id: 'b-1',
+      conception: '受胎',
+      stallionName: 'サキニトウロクシタウマ',
+      expectedBirthYear: 1969,
+    });
   });
 
   it('[JUL-02] 缺席與待處理的列都不寫入，繁殖牝馬圈不變', async () => {

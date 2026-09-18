@@ -326,12 +326,14 @@ function decideBreeding(
   stallionName: string | undefined,
   plan: AutoBreedingPlan | undefined,
 ): BreedingDecision {
+  // 檔案欄位空白時沿用既有值：七月是正式結果的來源，但空白是「沒給」而不是「沒有」。
+  const effective = conception ?? breeding?.conception;
   const unconfirmed = conception === '未確認' ? [ISSUES.unconfirmed] : [];
-  if (changesLinkedFoal(breeding, conception, stallionId, stallionName)) {
+  if (changesLinkedFoal(breeding, effective, stallionId, stallionName)) {
     return { disposition: 'conflict', outcome: 'skip', issues: [ISSUES.linkedFoal] };
   }
   if (breeding === undefined) {
-    if (conception === undefined || conception === '空胎') {
+    if (effective === undefined || effective === '空胎') {
       return { disposition: 'vitalityOnly', outcome: 'apply', issues: unconfirmed };
     }
     const type = plan?.breedingType === 'designated' ? '八系指定配種' : '自由配種';
@@ -471,7 +473,8 @@ export async function previewJulMares(
       lineNumber: item.lineNumber,
       label: item.fullName ?? `第 ${String(item.lineNumber)} 行`,
       outcome: decision.outcome,
-      issues: [...identity.issues, ...decision.issues.filter((i) => !identity.issues.includes(i))],
+      // 身分判斷不通過時 decision 直接沿用它的說明，通過時 identity 沒有說明，所以只取 decision。
+      issues: decision.issues,
       disposition: decision.disposition,
       values: item,
       birthYear: identityRows[index]?.birthYear,
@@ -635,13 +638,18 @@ function yearlyRecord(row: JulMareRow, horseId: string, build: BuildContext): Ma
 }
 
 function breedingRecord(row: JulMareRow, horseId: string, build: BuildContext): Breeding {
-  const { breeding, conception } = row;
+  const { breeding } = row;
+  // 欄位空白時沿用既有值，不把既有的受胎結果或種牡馬清掉（需求規格 11.2 的責任邊界）。
+  const conception = row.conception ?? breeding?.conception;
+  const fromFile = row.stallionId !== undefined || row.stallionName !== undefined;
+  const stallionId = fromFile ? row.stallionId : breeding?.stallionId;
+  const stallionName = fromFile ? row.stallionName : breeding?.stallionName;
   const base = {
     id: breeding?.id ?? build.newId(),
     mareId: horseId,
     gameYear: build.gameYear,
-    ...(row.stallionId === undefined ? {} : { stallionId: row.stallionId }),
-    ...(row.stallionName === undefined ? {} : { stallionName: row.stallionName }),
+    ...(stallionId === undefined ? {} : { stallionId }),
+    ...(stallionName === undefined ? {} : { stallionName }),
     ...(conception === undefined ? {} : { conception }),
   };
   const expectedBirthYear = expectedBirthYearFor(build.gameYear, conception);
