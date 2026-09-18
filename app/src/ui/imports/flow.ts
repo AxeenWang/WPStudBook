@@ -1,6 +1,6 @@
 import type { ImportSummary } from '../../domain/import-batch.ts';
 import type { ImportChoice, ImportSource } from '../../services/imports.ts';
-import { OUTCOME_LABELS } from './labels.ts';
+import { importSummaryText } from '../import-labels.ts';
 
 export interface ImportFlowProps {
   readonly file: ImportSource;
@@ -10,7 +10,5 @@ export interface ImportFlowProps {
 }
 
 export function summaryText(summary: ImportSummary): string {
-  return (Object.keys(OUTCOME_LABELS) as (keyof typeof OUTCOME_LABELS)[])
-    .map((key) => `${OUTCOME_LABELS[key]} ${String(summary[key])}`)
-    .join('、');
+  return importSummaryText(summary);
 }

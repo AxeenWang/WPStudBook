@@ -8,7 +8,7 @@ import {
 } from '../schema.ts';
 import type { BackupCollections, BackupGameSummary } from './document.ts';
 import { findInvalidJsonValue } from './json-value.ts';
-import { RECORD_RULES } from './record-rules.ts';
+import { isAnnualWorkCorrections, RECORD_RULES } from './record-rules.ts';
 
 export type BackupIssueCode =
   | 'gzipUnsupported'
@@ -241,6 +241,12 @@ function checkSettings(records: readonly unknown[]): BackupIssue[] {
     Object.values(display).some((item) => !['string', 'number', 'boolean'].includes(typeof item))
   ) {
     problems.push('display 必須是只含文字、數值或布林的物件');
+  }
+  if (
+    'annualWorkCorrections' in settings &&
+    !isAnnualWorkCorrections(settings.annualWorkCorrections)
+  ) {
+    problems.push('annualWorkCorrections 必須是年、匯入類型與完成狀態的陣列，同年同類型只能一筆');
   }
   const jsonProblem = findInvalidJsonValue(settings, 'gameSettings[0]');
   if (jsonProblem !== undefined) {

@@ -88,6 +88,26 @@ describe('validateCollections', () => {
     ).toEqual(['settingsInvalid', 'settingsInvalid']);
   });
 
+  it('[UI-03] gameSettings 的年度工作人工更正：年、年度總表類型與完成狀態，同年同類型只能一筆', () => {
+    const corrected = (annualWorkCorrections: unknown) =>
+      issueCodes(
+        validateCollections(
+          collections({ gameSettings: [{ ...SETTINGS, annualWorkCorrections }] }),
+        ),
+      );
+    expect(corrected([{ gameYear: 1968, type: 'jan2yo', done: true }])).toEqual([]);
+    expect(corrected([{ gameYear: 1968, type: 'jan', done: true }])).toEqual(['settingsInvalid']);
+    expect(corrected([{ gameYear: 1968, type: 'jan2yo', done: 'yes' }])).toEqual([
+      'settingsInvalid',
+    ]);
+    expect(
+      corrected([
+        { gameYear: 1968, type: 'jan2yo', done: true },
+        { gameYear: 1968, type: 'jan2yo', done: false },
+      ]),
+    ).toEqual(['settingsInvalid']);
+  });
+
   it('[DATA-04] 同一資料表有重複的 id 時回報識別錯誤', () => {
     const result = validateCollections(collections({ horses: [horse('h1'), horse('h1')] }));
     expect(result.ok ? undefined : result.stage).toBe('relations');

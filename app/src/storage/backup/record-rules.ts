@@ -103,6 +103,7 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   mareGroupAssigned: true,
   mareYearlyChanged: true,
   settingsChanged: true,
+  annualWorkCorrected: true,
   breedingRecorded: true,
   foalBorn: true,
   foalChanged: true,
@@ -443,6 +444,29 @@ function checkMareGroup(group: unknown): string | undefined {
 
 function isMareSiteValue(value: unknown): boolean {
   return isInteger(value) && String(value) in MARE_SITE_FLAGS;
+}
+
+/**
+ * 年度工作清單的人工更正（`gameSettings.annualWorkCorrections`）：年、匯入類型與完成狀態，
+ * 同一年同一類型只能一筆。
+ */
+export function isAnnualWorkCorrections(value: unknown): boolean {
+  if (
+    !isArrayOf(
+      value,
+      (item) =>
+        isPlainRecord(item) &&
+        isYear(item.gameYear) &&
+        isOneOf(IMPORT_TYPE_VALUES, item.type) &&
+        typeof item.done === 'boolean',
+    )
+  ) {
+    return false;
+  }
+  const keys = (value as readonly StoredRecord[]).map(
+    (item) => `${String(item.gameYear)}:${String(item.type)}`,
+  );
+  return new Set(keys).size === keys.length;
 }
 
 function isYearPlanValue(value: unknown): boolean {

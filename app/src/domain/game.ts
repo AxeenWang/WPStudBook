@@ -1,3 +1,5 @@
+import type { ImportType } from './import-type.ts';
+
 export interface LastBackup {
   readonly fileName: string;
   readonly exportedAt: string;
@@ -19,6 +21,16 @@ export interface Game {
 
 export type DisplaySettings = Readonly<Record<string, string | number | boolean>>;
 
+/**
+ * 年度工作清單的人工更正（需求規格 13.2「可人工更正」）：某一年某一項的完成狀態不依匯入紀錄推導，
+ * 改用使用者指定的值。與匯入紀錄推導的結果相同時不保存，清單就回到自動標示。
+ */
+export interface AnnualWorkCorrection {
+  readonly gameYear: number;
+  readonly type: ImportType;
+  readonly done: boolean;
+}
+
 export interface GameSettings {
   readonly retirementAge: number;
   readonly highAgeReminderAge: number;
@@ -26,6 +38,8 @@ export interface GameSettings {
   readonly vitalityThreshold?: number;
   readonly checkpointRetention: number;
   readonly display: DisplaySettings;
+  /** 沒有更正時不保存。 */
+  readonly annualWorkCorrections?: readonly AnnualWorkCorrection[];
 }
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
