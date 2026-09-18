@@ -33,6 +33,16 @@ export interface HorseFate {
   readonly gameYear: number;
 }
 
+/**
+ * 五月種牡馬總表的在表紀錄（需求規格 11.8）。年度資料與前一份相同時不重複保存（STL-11），
+ * 所以「上年在表、今年缺席」不能由 `stallionYearly` 推導，最後一次出現的年份記在這裡。
+ */
+export interface StallionListing {
+  readonly lastSeenYear: number;
+  /** 非現役：上年在表、今年缺席（需求規格 11.8、STL-10）；重新出現在總表時清掉。 */
+  readonly inactiveSince?: number;
+}
+
 /** 設計決策 5.2、6.3 節。父母可以同時有內部 id 與匯入的外部名稱。 */
 export interface Horse {
   readonly id: string;
@@ -52,6 +62,12 @@ export interface Horse {
   readonly stageNumbers: readonly StageNumber[];
   readonly aliases: readonly HorseAlias[];
   readonly fate?: HorseFate;
+  readonly stallionListing?: StallionListing;
+}
+
+/** 非現役（需求規格 11.8、STL-10）：上一次五月種牡馬總表在表，這一次缺席。 */
+export function isInactiveStallion(horse: Horse): boolean {
+  return horse.stallionListing?.inactiveSince !== undefined;
 }
 
 /** 取得新階段馬番号（需求規格 6.4）：同一階段已有相同馬番号時不重複記錄，回傳原馬匹。 */

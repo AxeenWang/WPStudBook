@@ -46,6 +46,7 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       sireSubsystem: 'ネアルコ',
       stageNumbers: [{ stage: 'stallion', number: 0, gameYear: 1968, source: 'mayStallions' }],
       aliases: [],
+      stallionListing: { lastSeenYear: 1968 },
     },
     {
       id: 'horse-dam',
@@ -113,7 +114,11 @@ export const SYNTHETIC_RECORDS: Readonly<Record<RecordCollection, readonly Store
       gameYear: 1968,
       sp: 72,
       st: 60,
+      subParams: { power: 'B', quickness: 'A' },
+      subParamTotal: 45,
+      kodashi: 8,
       studFee: 2450,
+      record: { starts: 18, wins: 9, earnings: 312500 },
     },
   ],
   breedings: [

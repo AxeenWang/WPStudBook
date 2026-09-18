@@ -112,6 +112,7 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   recoveryChanged: true,
   becameStallion: true,
   stallionDutyChanged: true,
+  stallionListingChanged: true,
   plannedSuccessorChanged: true,
   matingRatingRecorded: true,
 });
@@ -264,6 +265,26 @@ function isHorseFate(value: unknown): boolean {
   return isPlainRecord(value) && isOneOf(HORSE_FATE_KINDS, value.kind) && isYear(value.gameYear);
 }
 
+/**
+ * 五月種牡馬總表的在表紀錄（需求規格 11.8）：缺席的年份不早於最後在表的年份。
+ * 同年的更正匯入拿掉一匹時，最後在表與缺席會是同一年，所以不是嚴格大於。
+ */
+function isStallionListing(value: unknown): boolean {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  const { lastSeenYear, inactiveSince } = value;
+  if (!isYear(lastSeenYear) || !optional(value, 'inactiveSince', isYear)) {
+    return false;
+  }
+  return (
+    inactiveSince === undefined ||
+    (typeof inactiveSince === 'number' &&
+      typeof lastSeenYear === 'number' &&
+      inactiveSince >= lastSeenYear)
+  );
+}
+
 const HORSE_TEXT_FIELDS = [
   'fullName',
   'baseName',
@@ -288,6 +309,10 @@ function checkHorse(record: StoredRecord): string | undefined {
     [isArrayOf(record.stageNumbers, isStageNumber), 'stageNumbers 必須是階段馬番号陣列'],
     [isArrayOf(record.aliases, isAlias), 'aliases 必須是名稱別名陣列'],
     [optional(record, 'fate', isHorseFate), 'fate 必須含有效的 kind 與 gameYear'],
+    [
+      optional(record, 'stallionListing', isStallionListing),
+      'stallionListing 必須含 lastSeenYear，inactiveSince 不可早於 lastSeenYear',
+    ],
   ]);
 }
 
@@ -467,6 +492,48 @@ function checkMareYearly(record: StoredRecord): string | undefined {
       optional(record, 'breedingCount', (value) => isIntegerIn(value, 0, 99)),
       'breedingCount 必須是 0～99 的整數',
     ],
+  ]);
+}
+
+const RACE_RECORD_FIELDS = ['starts', 'wins', 'earnings', 'gradedWins', 'g1Wins'] as const;
+
+function isNonNegativeInteger(value: unknown): boolean {
+  return isIntegerIn(value, 0, Number.MAX_SAFE_INTEGER);
+}
+
+/** 戦績（需求規格 11.8）：五個欄位都是選填的非負整數，未取得時不存（設計決策 5.3）。 */
+function isRaceRecord(value: unknown): boolean {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  const entries = Object.entries(value);
+  return (
+    entries.length > 0 &&
+    entries.every(
+      ([key, item]) =>
+        (RACE_RECORD_FIELDS as readonly string[]).includes(key) && isNonNegativeInteger(item),
+    )
+  );
+}
+
+function checkStallionYearly(record: StoredRecord): string | undefined {
+  const isAbility = (value: unknown) => isIntegerIn(value, 0, 999);
+  return firstProblem([
+    [isNonEmptyString(record.horseId), 'horseId 必須是非空字串'],
+    [isYear(record.gameYear), 'gameYear 必須是 1000～9999 的整數'],
+    [optional(record, 'sp', isAbility), 'sp 必須是 0～999 的整數'],
+    [optional(record, 'st', isAbility), 'st 必須是 0～999 的整數'],
+    [optional(record, 'subParams', isSubParams), 'subParams 必須是副能力等級對照'],
+    [
+      optional(record, 'subParamTotal', (value) => isIntegerIn(value, 0, 999)),
+      'subParamTotal 必須是 0～999 的整數',
+    ],
+    [
+      optional(record, 'kodashi', (value) => isIntegerIn(value, 0, 15)),
+      'kodashi 必須是 0～15 的整數',
+    ],
+    [optional(record, 'studFee', isNonNegativeInteger), 'studFee 必須是 0 以上的整數'],
+    [optional(record, 'record', isRaceRecord), 'record 必須是戦績欄的非負整數'],
   ]);
 }
 
@@ -703,6 +770,7 @@ export const RECORD_RULES: Readonly<Partial<Record<RecordCollection, RecordRule>
   stallionDuties: checkStallionDuty,
   mares: checkMare,
   mareYearly: checkMareYearly,
+  stallionYearly: checkStallionYearly,
   breedings: checkBreeding,
   recoveries: checkRecovery,
   foals: checkFoal,

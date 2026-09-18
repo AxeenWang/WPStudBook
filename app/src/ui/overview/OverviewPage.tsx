@@ -1,8 +1,10 @@
 import type { Game } from '../../domain/game.ts';
+import { loadAnnualWork } from '../../services/annual-work.ts';
 import { loadStallionOverview } from '../../services/stallions.ts';
 import { loadTaskBoard, type LineCardView } from '../../services/tasks.ts';
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery } from '../ServicesContext.tsx';
+import { IMPORT_TYPE_LABELS } from '../import-labels.ts';
 import { BLOCKER_LABELS } from './labels.ts';
 import { RecoveryPanel } from './RecoveryPanel.tsx';
 import { TaskBoard } from './TaskBoard.tsx';
@@ -76,6 +78,30 @@ function LineCard({
   );
 }
 
+/**
+ * 年度工作清單（需求規格 13.2、UI-03）：依匯入紀錄自動標示完成。
+ * 十月全世界繁殖牝馬總表是選用的，不列入清單（11.10）。
+ */
+function AnnualWorkList() {
+  const { data: work } = useServiceQuery(loadAnnualWork);
+  if (work === undefined) {
+    return null;
+  }
+  return (
+    <section aria-labelledby="annual-work-heading">
+      <h3 id="annual-work-heading">年度工作清單</h3>
+      <ul aria-label="年度工作清單" data-testid="annual-work">
+        {work.items.map((item) => (
+          <li key={item.type} data-testid={`annual-work-${item.type}`}>
+            {IMPORT_TYPE_LABELS[item.type]}：{item.done ? '已完成' : '未完成'}
+            {item.batch !== undefined && `（${item.batch.fileName}）`}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function OverviewView() {
   const { data: board, error } = useServiceQuery(loadTaskBoard);
   const { data: stallions, error: stallionError } = useServiceQuery(loadStallionOverview);
@@ -96,6 +122,8 @@ function OverviewView() {
       <h2 id="overview-heading">總覽</h2>
       {error !== undefined && <p role="alert">{error}</p>}
       {stallionError !== undefined && <p role="alert">{stallionError}</p>}
+
+      <AnnualWorkList />
 
       <section aria-labelledby="reminders-heading">
         <h3 id="reminders-heading">提醒區</h3>

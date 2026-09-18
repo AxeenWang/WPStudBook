@@ -5,6 +5,7 @@ import {
   optionalText,
   parseHexNo,
   parseInteger,
+  parseSubParamGrade,
   parseVitality,
   stripSystemSuffix,
 } from '../../src/import/values.ts';
@@ -37,6 +38,15 @@ describe('欄位值正規化（需求規格 11.1、附錄 A）', () => {
     expect(parseHexNo('0x7FFF')).toBe(32767);
     expect(parseHexNo('030F')).toBeUndefined();
     expect(parseHexNo('')).toBeUndefined();
+  });
+
+  it('副能力欄只接受 G～S+ 的等級（需求規格 4.7）', () => {
+    expect(parseSubParamGrade('B')).toBe('B');
+    expect(parseSubParamGrade(' B+ ')).toBe('B+');
+    expect(parseSubParamGrade('S+')).toBe('S+');
+    expect(parseSubParamGrade('Z')).toBeUndefined();
+    expect(parseSubParamGrade('')).toBeUndefined();
+    expect(parseSubParamGrade(undefined)).toBeUndefined();
   });
 
   it('活力可帶前置 `*` 表示増強', () => {

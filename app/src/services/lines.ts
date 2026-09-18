@@ -10,6 +10,7 @@ import {
   type LinePosition,
   type ParentSystemStatus,
 } from '../domain/line.ts';
+import type { HistoryEvent } from '../domain/history-event.ts';
 import type { CurrentDuty, StallionDuty } from '../domain/stallion-duty.ts';
 import type { SystemMapEntry } from '../domain/system-map.ts';
 import { findHorseByIdentity, getHorse } from '../storage/horses.ts';
@@ -18,7 +19,7 @@ import { listStallionDuties } from '../storage/stallion-duties.ts';
 import { findSystemMapEntry } from '../storage/system-map.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
-import { userEvent } from './events.ts';
+import { userEvent, type UserEventInput } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
 import { normalizeSystemInput } from './system-map.ts';
 import { listLineTasks } from './tasks.ts';
@@ -76,6 +77,11 @@ export interface FounderInput {
   readonly birthYear?: number | undefined;
   readonly sireName: string;
   readonly damName: string;
+  /**
+   * 沿用既有的馬匹紀錄（需求規格 11.9）：目標種牡馬 TXT 匯入時，五月總表可能已經建立過
+   * 這一匹，以能力番号＋出生年配對到就沿用，不另建一匹也不當成身分衝突。
+   */
+  readonly reuse?: Horse | undefined;
 }
 
 export type OpenLineWarningCode = 'parentSystemDiffersFromMap' | 'parentSystemDuplicated';
@@ -146,7 +152,7 @@ export interface OpenLineCheck {
   readonly warnings: readonly OpenLineWarning[];
 }
 
-interface Inspection extends OpenLineCheck {
+export interface OpenLineInspection extends OpenLineCheck {
   readonly targetGeneration: number;
   readonly subsystem: string;
   readonly parentSystem: string;
@@ -181,7 +187,7 @@ async function inspectOpenLine(
   context: ServiceContext,
   game: Game,
   input: OpenLineInput,
-): Promise<Inspection> {
+): Promise<OpenLineInspection> {
   const subsystem = normalizeSystemInput(input.subsystem);
   const parentSystem = normalizeSystemInput(input.parentSystem);
   const color = input.color.toLowerCase();
@@ -232,7 +238,7 @@ async function inspectOpenLine(
   }
   if (issues.length === 0 && abilityNo !== undefined && birthYear !== undefined) {
     const existing = await findHorseByIdentity(context.database, game.id, abilityNo, birthYear);
-    if (existing !== undefined) {
+    if (existing !== undefined && existing.id !== input.founder.reuse?.id) {
       const name = existing.fullName ?? existing.officialName ?? existing.id;
       issues.push(
         `能力番号 ${formatAbilityNo(abilityNo)} 與出生年 ${String(birthYear)} 已屬於「${name}」`,
@@ -266,6 +272,17 @@ async function inspectOpenLine(
   };
 }
 
+/**
+ * 開啟系位置的檢查結果，含建立紀錄需要的資料（需求規格 7.1）。
+ * 目標種牡馬 TXT 的匯入在預覽時取得，套用時交給 `buildOpenedLine`（11.9）。
+ */
+export async function prepareOpenLine(
+  context: ServiceContext,
+  input: OpenLineInput,
+): Promise<OpenLineInspection> {
+  return inspectOpenLine(context, await requireCurrentGame(context), input);
+}
+
 export async function checkOpenLine(
   context: ServiceContext,
   input: OpenLineInput,
@@ -273,6 +290,114 @@ export async function checkOpenLine(
   const game = await requireCurrentGame(context);
   const { issues, warnings } = await inspectOpenLine(context, game, input);
   return { issues, warnings };
+}
+
+/** 開啟系位置要寫的紀錄與事件；`openLine` 與目標種牡馬 TXT 匯入共用（需求規格 7.1、11.9）。 */
+export interface OpenedLineRecords {
+  readonly line: Line;
+  readonly founder: Horse;
+  readonly duty: StallionDuty;
+  readonly systemMapEntry: SystemMapEntry | undefined;
+  readonly events: readonly HistoryEvent[];
+}
+
+export interface BuildOpenedLineInput {
+  readonly position: LinePosition;
+  readonly inspection: OpenLineInspection;
+  readonly founder: FounderInput;
+  readonly gameYear: number;
+  readonly occurredAt: string;
+  readonly newId: () => string;
+}
+
+/**
+ * 只組紀錄，不讀不寫：匯入的套用在單一交易內只能做同步運算（需求規格 11.1）。
+ * 沿用既有馬匹時保留內部識別、階段馬番号與別名，只補上零代種牡馬需要的欄位。
+ */
+export function buildOpenedLine(input: BuildOpenedLineInput): OpenedLineRecords {
+  const { inspection, position, gameYear, occurredAt, newId } = input;
+  const { subsystem, parentSystem, color, fullName, abilityNo, mapEntry, warnings } = inspection;
+  const { birthYear, reuse } = input.founder;
+  const sireName = input.founder.sireName.trim();
+  const damName = input.founder.damName.trim();
+  const event = (
+    subjectId: string,
+    type: HistoryEvent['type'],
+    payload: Pick<UserEventInput, 'before' | 'after'>,
+  ) => userEvent({ newId }, { subjectId, type, gameYear, occurredAt, ...payload });
+
+  const base: Horse = reuse ?? {
+    id: newId(),
+    sex: 'male',
+    fullName,
+    baseName: toBaseName(fullName),
+    stageNumbers: [],
+    aliases: [],
+  };
+  const founder: Horse = {
+    ...base,
+    fullName,
+    baseName: toBaseName(fullName),
+    ...(abilityNo === undefined ? {} : { abilityNo }),
+    ...(birthYear === undefined ? {} : { birthYear }),
+    ...(sireName === '' ? {} : { sireName }),
+    ...(damName === '' ? {} : { damName }),
+    sireSubsystem: subsystem,
+  };
+  const line: Line = {
+    id: newId(),
+    position,
+    subsystem,
+    parentSystem,
+    color,
+    branch: { targetGeneration: inspection.targetGeneration, openedYear: gameYear },
+    establishedGenerations: [],
+  };
+  const duty: StallionDuty = {
+    id: newId(),
+    position,
+    generation: 0,
+    horseId: founder.id,
+    role: 'current',
+    dutyStatus: 'onDuty',
+    startYear: gameYear,
+  };
+  const systemMapEntry: SystemMapEntry | undefined =
+    mapEntry?.parentSystem === parentSystem
+      ? undefined
+      : { id: mapEntry?.id ?? newId(), subsystem, parentSystem };
+  const events: HistoryEvent[] = [
+    // 沿用既有紀錄時這一匹不是新建的，不重複寫建立事件。
+    ...(reuse === undefined
+      ? [event(founder.id, 'horseCreated', { after: { fullName, sex: 'male' } })]
+      : []),
+    event(line.id, 'lineOpened', {
+      after: {
+        position,
+        subsystem,
+        parentSystem,
+        founderId: founder.id,
+        ...(warnings.length === 0
+          ? {}
+          : { confirmations: warnings.map((warning) => warning.code) }),
+      },
+    }),
+    event(founder.id, 'stallionDutyStarted', {
+      after: { position, generation: 0, role: 'current' },
+    }),
+    ...(systemMapEntry === undefined
+      ? []
+      : [
+          event(systemMapEntry.id, 'systemMapChanged', {
+            before:
+              mapEntry === undefined
+                ? undefined
+                : { subsystem: mapEntry.subsystem, parentSystem: mapEntry.parentSystem },
+            after: { subsystem, parentSystem },
+          }),
+        ]),
+  ];
+  return { line, founder, duty, systemMapEntry, events };
 }
 
 /**
@@ -287,107 +412,27 @@ export async function openLine(context: ServiceContext, input: OpenLineInput): P
   }
   requireAcceptedWarnings(inspection.warnings, input.acceptedWarnings ?? []);
 
-  const { subsystem, parentSystem, color, fullName, abilityNo, mapEntry, warnings } = inspection;
-  const { position } = input;
-  const { birthYear } = input.founder;
-  const sireName = input.founder.sireName.trim();
-  const damName = input.founder.damName.trim();
-  const gameYear = game.currentYear;
   const now = context.now().toISOString();
-
-  const founder: Horse = {
-    id: context.newId(),
-    sex: 'male',
-    ...(abilityNo === undefined ? {} : { abilityNo }),
-    ...(birthYear === undefined ? {} : { birthYear }),
-    fullName,
-    baseName: toBaseName(fullName),
-    ...(sireName === '' ? {} : { sireName }),
-    ...(damName === '' ? {} : { damName }),
-    sireSubsystem: subsystem,
-    stageNumbers: [],
-    aliases: [],
-  };
-  const line: Line = {
-    id: context.newId(),
-    position,
-    subsystem,
-    parentSystem,
-    color,
-    branch: { targetGeneration: inspection.targetGeneration, openedYear: gameYear },
-    establishedGenerations: [],
-  };
-  const duty: StallionDuty = {
-    id: context.newId(),
-    position,
-    generation: 0,
-    horseId: founder.id,
-    role: 'current',
-    dutyStatus: 'onDuty',
-    startYear: gameYear,
-  };
-  const systemMapEntry: SystemMapEntry | undefined =
-    mapEntry?.parentSystem === parentSystem
-      ? undefined
-      : { id: mapEntry?.id ?? context.newId(), subsystem, parentSystem };
-  const events = [
-    userEvent(context, {
-      subjectId: founder.id,
-      type: 'horseCreated',
-      gameYear,
-      occurredAt: now,
-      after: { fullName, sex: 'male' },
-    }),
-    userEvent(context, {
-      subjectId: line.id,
-      type: 'lineOpened',
-      gameYear,
-      occurredAt: now,
-      after: {
-        position,
-        subsystem,
-        parentSystem,
-        founderId: founder.id,
-        ...(warnings.length === 0
-          ? {}
-          : { confirmations: warnings.map((warning) => warning.code) }),
-      },
-    }),
-    userEvent(context, {
-      subjectId: founder.id,
-      type: 'stallionDutyStarted',
-      gameYear,
-      occurredAt: now,
-      after: { position, generation: 0, role: 'current' },
-    }),
-    ...(systemMapEntry === undefined
-      ? []
-      : [
-          userEvent(context, {
-            subjectId: systemMapEntry.id,
-            type: 'systemMapChanged',
-            gameYear,
-            occurredAt: now,
-            before:
-              mapEntry === undefined
-                ? undefined
-                : { subsystem: mapEntry.subsystem, parentSystem: mapEntry.parentSystem },
-            after: { subsystem, parentSystem },
-          }),
-        ]),
-  ];
+  const records = buildOpenedLine({
+    position: input.position,
+    inspection,
+    founder: input.founder,
+    gameYear: game.currentYear,
+    occurredAt: now,
+    newId: context.newId,
+  });
   await trackWrite(context, () =>
     insertOpenedLine(context.database, {
       gameId: game.id,
       touch: gameTouch(context, now),
-      line,
-      founder,
-      duty,
-      systemMapEntry,
-      events,
+      line: records.line,
+      founder: records.founder,
+      duty: records.duty,
+      systemMapEntry: records.systemMapEntry,
+      events: [...records.events],
     }),
   );
-  return line;
+  return records.line;
 }
 
 export interface UpdateLineSystemsInput {
