@@ -30,6 +30,7 @@ import { MIN_GAME_YEAR, type Game } from '../domain/game.ts';
 import type { HistoryEvent } from '../domain/history-event.ts';
 import {
   horseDisplayName,
+  isMareElsewhere,
   isStallionHorse,
   nameForTracking,
   type Horse,
@@ -470,6 +471,12 @@ export async function nameFoal(context: ServiceContext, input: FoalNameInput): P
           throw new ServiceError(
             'invalidInput',
             '種牡馬馬名唯讀，已成為種牡馬的產駒不能修改正式馬名',
+          );
+        }
+        if (isMareElsewhere(horse)) {
+          throw new ServiceError(
+            'invalidInput',
+            '繁殖牝馬馬名唯讀，已在其他牧場成為繁殖牝馬的產駒不能修改正式馬名',
           );
         }
         const previous = horse.officialName;
