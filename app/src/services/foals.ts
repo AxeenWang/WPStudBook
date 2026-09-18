@@ -638,6 +638,8 @@ export interface FoalCard {
   readonly isMare: boolean;
   /** 已成為種牡馬（需求規格 9.7）。 */
   readonly isStallion: boolean;
+  /** 在其他牧場成為繁殖牝馬（需求規格 9.7、11.10）：所在牧場與最後確認年。 */
+  readonly mareElsewhere: { readonly farmNo: number; readonly lastSeenYear: number } | undefined;
   /** 補名管理的狀態（需求規格 9.4、BRD-20）。 */
   readonly naming: NamingStatus;
 }
@@ -694,6 +696,10 @@ export function buildFoalCard(source: FoalCardSource): FoalCard {
     note: foal.note,
     isMare: source.isMare,
     isStallion: isStallionHorse(horse),
+    mareElsewhere:
+      horse.fate?.kind === 'mareElsewhere'
+        ? { farmNo: horse.fate.farmNo, lastSeenYear: horse.fate.lastSeenYear }
+        : undefined,
     naming: namingStatus(horse, foal, {
       currentYear: source.currentYear,
       janListYears: source.janListYears,

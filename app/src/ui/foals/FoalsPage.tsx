@@ -20,7 +20,13 @@ import { CheckboxField, OptionalIntegerField, SelectField, type SelectOption } f
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery } from '../ServicesContext.tsx';
 import { FoalPanel } from './FoalPanel.tsx';
-import { DISPOSITION_LABELS, NAMING_STATUS_LABELS, SURFACE_LABELS, lineageText } from './labels.ts';
+import {
+  DISPOSITION_LABELS,
+  NAMING_STATUS_LABELS,
+  SURFACE_LABELS,
+  lineageText,
+  mareElsewhereText,
+} from './labels.ts';
 import { SexMarker } from './SexMarker.tsx';
 
 const SORT_CHOICES: readonly SelectOption<FoalSort>[] = [
@@ -118,6 +124,9 @@ function FoalRow({ card }: { readonly card: FoalCard }) {
         {!card.named && <span className="badge">未命名</span>}
         <span data-testid="foal-naming">{NAMING_STATUS_LABELS[card.naming]}</span>
         {card.isStallion && <span className="badge">已成為種牡馬</span>}
+        {card.mareElsewhere !== undefined && (
+          <span className="badge">{mareElsewhereText(card.mareElsewhere)}</span>
+        )}
       </div>
       {managing && <FoalPanel card={card} />}
     </li>
