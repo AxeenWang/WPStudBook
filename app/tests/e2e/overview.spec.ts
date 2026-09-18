@@ -35,7 +35,7 @@ async function breedConceived(page: Page, mareName: string): Promise<void> {
   await form.getByLabel('受胎狀態').selectOption({ label: '受胎' });
   await form.getByRole('button', { name: '保存繁殖紀錄' }).click();
   await expect(form.getByRole('status')).toContainText('繁殖紀錄');
-  await closeDrawer(page, drawer);
+  await closeDrawer(drawer);
 }
 
 async function confirmBirth(
@@ -57,7 +57,7 @@ async function confirmBirth(
   await foalForm.getByLabel('性別').selectOption({ label: sex });
   await foalForm.getByRole('button', { name: '登記產駒' }).click();
   await expect(drawer.getByRole('status').first()).toContainText('已登記產駒');
-  await closeDrawer(page, drawer);
+  await closeDrawer(drawer);
 }
 
 async function openFoalRow(page: Page, name: string): Promise<Locator> {
@@ -191,7 +191,7 @@ test.describe('總覽與任務看板（需求規格 13.2）', () => {
       '依任務登記：第 1 系 1 代 × 第 2 系 1 代 → 第 1 系 2 代',
     );
     await expect(row.getByTestId('breeding-pedigree')).toHaveCount(0);
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
   });
   test('[LINE-18][LINE-19][LINE-21] 母馬群降為 0 時列出三個選擇；宣告斷血後暫停建立新系，取消後解除', async ({
     page,

@@ -40,7 +40,7 @@ test.describe('母馬詳情欄', () => {
 
     await drawer.getByRole('tab', { name: '歷程' }).click();
     await expect(drawer.getByRole('tabpanel')).toContainText('加入母馬群');
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
     await expect(nameButton).toBeFocused();
 
     await nameButton.click();
@@ -96,7 +96,7 @@ test.describe('母馬詳情欄', () => {
     );
     await expect(drawer.getByRole('tabpanel')).toContainText('1968 年：更正年度資料');
     await drawer.getByRole('tab', { name: '概要' }).click();
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
 
     await expect(card.getByTestId('mare-site')).toHaveText('美國');
     await expect(card.getByTestId('mare-vitality')).toHaveText('73（5 月）');
@@ -114,7 +114,7 @@ test.describe('母馬詳情欄', () => {
       await expect(
         drawer.getByRole('form', { name: '今年年度資料' }).getByRole('status'),
       ).toHaveText('已保存年度資料');
-      await closeDrawer(page, drawer);
+      await closeDrawer(drawer);
       await expect(card.getByTestId('mare-vitality')).toHaveText(expected);
     }
 
@@ -127,7 +127,7 @@ test.describe('母馬詳情欄', () => {
     await expect(clearing.getByRole('status')).toHaveText('已保存年度資料');
     const yearlyTable = drawer.getByRole('table', { name: '年度資料（新到舊）' });
     await expect(yearlyTable.getByRole('row', { name: /1968 年/ })).toContainText('15CE 擴充值');
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
     await expect(card.getByTestId('mare-vitality')).toHaveText('待更新');
     await expect(card.getByTestId('mare-kodashi')).toHaveText('15（1968 年）CE 擴充值');
 

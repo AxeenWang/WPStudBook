@@ -93,7 +93,7 @@ test.describe('年度匯入：候選 TXT', () => {
     // 成功訊息是暫態的，詳情欄重新載入就可能已經換掉，不適合當斷言對象。
     await expect(drawer.getByRole('tabpanel')).toContainText('替代第 1 系 1 代');
     await expect(assign).toBeHidden();
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
 
     await herd.getByLabel('系', { exact: true }).selectOption({ label: '第 1 系' });
     await expect(herd).toContainText('テスト候補002');

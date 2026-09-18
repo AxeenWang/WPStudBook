@@ -31,7 +31,7 @@ async function breedConceived(page: Page): Promise<void> {
   await form.getByLabel('受胎狀態').selectOption({ label: '受胎' });
   await form.getByRole('button', { name: '保存繁殖紀錄' }).click();
   await expect(form.getByRole('status')).toContainText('繁殖紀錄');
-  await closeDrawer(page, drawer);
+  await closeDrawer(drawer);
 }
 
 async function confirmBirth(page: Page, breedingYear: number, sex: '牡' | '牝'): Promise<void> {
@@ -48,7 +48,7 @@ async function confirmBirth(page: Page, breedingYear: number, sex: '牡' | '牝'
   await foalForm.getByLabel('性別').selectOption({ label: sex });
   await foalForm.getByRole('button', { name: '登記產駒' }).click();
   await expect(drawer.getByRole('status').first()).toContainText('已登記產駒');
-  await closeDrawer(page, drawer);
+  await closeDrawer(drawer);
 }
 
 async function openFoalRow(page: Page, name: string): Promise<Locator> {

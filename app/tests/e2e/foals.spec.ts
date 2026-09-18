@@ -84,7 +84,7 @@ test.describe('配種與產駒', () => {
     await expect(drawer.getByRole('list', { name: '產駒時間軸' })).toContainText(
       '1969 年預定 1969 年 4 月 1 週出生',
     );
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
 
     await changeYear(page, 1969);
     drawer = await openDrawer(page, 'オオトリモナーコス');
@@ -104,7 +104,7 @@ test.describe('配種與產駒', () => {
     ).toHaveText('1969 年出生：オオトリモナーコス1969');
 
     await saveBreeding(drawer, '空胎', '不選（空胎）');
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
     await changeYear(page, 1971);
     drawer = await openDrawer(page, 'オオトリモナーコス');
     await drawer.getByRole('tab', { name: '產駒' }).click();
@@ -136,7 +136,7 @@ test.describe('配種與產駒', () => {
     await setup(page, '轉入局');
     let drawer = await openDrawer(page, 'オオトリモナーコス');
     await saveBreeding(drawer, '受胎');
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
     await changeYear(page, 1969);
     drawer = await openDrawer(page, 'オオトリモナーコス');
     await drawer.getByRole('tab', { name: '產駒' }).click();
@@ -173,7 +173,7 @@ test.describe('配種與產駒', () => {
     );
     await expect(named.getByRole('form', { name: '正式馬名' })).toHaveCount(0);
     await expect(named).toContainText('已轉入母馬群，繁殖牝馬馬名唯讀。');
-    await closeDrawer(page, drawer);
+    await closeDrawer(drawer);
 
     const region = herd(page);
     const mother = region.getByRole('article', { name: 'オオトリモナーコス' });
@@ -230,7 +230,7 @@ test.describe('配種與產駒', () => {
       await confirm.getByRole('button', { name: '確認並登記' }).click();
       await expect(drawer.getByRole('status').first()).toHaveText(`已登記產駒「${dam}1968」`);
       await expect(drawer.getByRole('article', { name: `${dam}1968` })).toContainText('自由配種');
-      await closeDrawer(page, drawer);
+      await closeDrawer(drawer);
     }
 
     await gotoPage(page, '產駒');
