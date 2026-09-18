@@ -40,7 +40,10 @@ test.describe('母馬詳情欄', () => {
 
     await drawer.getByRole('tab', { name: '歷程' }).click();
     await expect(drawer.getByRole('tabpanel')).toContainText('加入母馬群');
-    await closeDrawer(drawer);
+    // UI-02 要驗的就是 Esc，所以這裡直接按，不用 closeDrawer（它改用「關閉」鈕）。
+    // 前面只有切換頁籤、沒有資料變動，Esc 不會撞上重新載入。
+    await drawer.press('Escape');
+    await expect(drawer).toBeHidden();
     await expect(nameButton).toBeFocused();
 
     await nameButton.click();
