@@ -96,7 +96,8 @@ describe('合成樣本（設計決策 7.4）', () => {
     const row = firstRow(sample, file.rows);
     expect(sampleCell(sample, row, 'sp')).toBe('72(72)');
     expect(mainValue(sampleCell(sample, row, 'sp'))).toBe('72');
-    expect(mainValue(sampleCell(sample, row, 'subParamTotal'))).toBe('42');
+    // `サ` 與七項副能力換算一致（72）；不一致是 BRD-11 的警告，由匯入測試另外驗。
+    expect(mainValue(sampleCell(sample, row, 'subParamTotal'))).toBe('72');
   });
 
   it('五月繁殖牝馬樣本的活力涵蓋増強中的 `*13`', () => {

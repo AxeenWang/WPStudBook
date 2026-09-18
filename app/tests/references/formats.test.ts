@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { STALLION_COLUMNS } from '../../src/import/columns.ts';
+import { APR_FOALS_COLUMNS, STALLION_COLUMNS } from '../../src/import/columns.ts';
 import { cell, parseImportFile } from '../../src/import/parse.ts';
 import { REFERENCE_SAMPLES, readSampleBytes, sampleExists } from './samples.ts';
 
 /** 附錄 A 記錄的樣本筆數；只比對筆數，不輸出原始資料（設計決策 7.4）。 */
 const EXPECTED_ROW_COUNTS: Readonly<Record<string, number>> = {
   '1968年 1月1週._二歲新馬.txt': 1160,
+  '1968年 4月1週_幼駒誕生.txt': 10,
   '1968年10月1週_繁殖牝馬.txt': 2971,
   '1968年5月1週_種牡馬.txt': 443,
 };
@@ -30,6 +31,18 @@ describe('本機實檔：CP932 解碼、表頭與每列欄數（設計決策 7.4
         expect(result.file.rows).toHaveLength(expected);
       } else {
         expect(result.file.rows.length).toBeGreaterThan(0);
+      }
+      if (sample.fileName === '1968年 4月1週_幼駒誕生.txt') {
+        // [APR-01] 全部 0 歲、馬主番号 46、繋養牧場番号 32，牡 6 牝 4。
+        const tally: Record<string, number> = {};
+        for (const row of result.file.rows) {
+          expect(cell(row, APR_FOALS_COLUMNS.age)?.trim()).toBe('0');
+          expect(cell(row, APR_FOALS_COLUMNS.owner)?.trim()).toBe('46');
+          expect(cell(row, APR_FOALS_COLUMNS.farm)?.trim()).toBe('32');
+          const sex = cell(row, APR_FOALS_COLUMNS.sex)?.trim() ?? '';
+          tally[sex] = (tally[sex] ?? 0) + 1;
+        }
+        expect(tally).toEqual({ 牡: 6, 牝: 4 });
       }
       const countries = EXPECTED_COUNTRY_COUNTS[sample.fileName];
       if (countries !== undefined) {

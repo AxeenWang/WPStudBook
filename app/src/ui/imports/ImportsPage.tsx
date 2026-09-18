@@ -14,6 +14,7 @@ import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 import { CandidateFlow } from './CandidateFlow.tsx';
 import { IMPORT_TYPE_LABELS } from '../import-labels.ts';
 import { formatTiming } from './labels.ts';
+import { AprFoalsFlow } from './AprFoalsFlow.tsx';
 import { JulMaresFlow } from './JulMaresFlow.tsx';
 import { MayMaresFlow } from './MayMaresFlow.tsx';
 import { MayStallionsFlow } from './MayStallionsFlow.tsx';
@@ -22,6 +23,7 @@ import { TargetStallionFlow } from './TargetStallionFlow.tsx';
 /** 已經做到的匯入類型；其餘在後續子計畫加入。 */
 const IMPLEMENTED_TYPES: readonly ImportType[] = [
   'candidateFile',
+  'aprFoals',
   'mayMares',
   'julMares',
   'mayStallions',
@@ -136,6 +138,15 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
       )}
       {ready && choice.type === 'candidateFile' && (
         <CandidateFlow key={flowKey} file={file} choice={choice} onApplied={notifyChanged} />
+      )}
+      {ready && choice.type === 'aprFoals' && (
+        <AprFoalsFlow
+          key={flowKey}
+          file={file}
+          choice={choice}
+          onApplied={notifyChanged}
+          currentGame={currentGame}
+        />
       )}
       {ready && choice.type === 'mayMares' && (
         <MayMaresFlow key={flowKey} file={file} choice={choice} onApplied={notifyChanged} />
