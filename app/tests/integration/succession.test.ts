@@ -161,7 +161,7 @@ describe('自家母駒轉入與世代成立（需求規格 8.2、8.4、9.6）', 
     ]);
   });
 
-  it('轉入後繁殖牝馬馬名唯讀（需求規格 6.4），產駒紀錄的牧場處置固定為保留', async () => {
+  it('[ID-08] 轉入後繁殖牝馬馬名唯讀（需求規格 6.4），產駒紀錄的牧場處置固定為保留', async () => {
     const context = await open();
     const family = await raiseFamily(context);
     await nameFoal(context, { foalId: family.elderId, officialName: 'アネ' });

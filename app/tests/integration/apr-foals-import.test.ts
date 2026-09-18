@@ -187,6 +187,36 @@ describe('四月誕生幼駒總表（需求規格 11.4）', () => {
     expect(row.values?.distanceText).toBe('中距離');
   });
 
+  it('檔案年份晚於目前遊戲年：預覽以推進後的年份規劃，套用時推進並建立產駒（需求規格 11.1）', async () => {
+    const context = await openContext();
+    // 1967 年的局匯入 1968 年的四月總表：套用時才推進到 1968 年。
+    const game = await createGame(context, { name: '跨年四月局', startYear: 1967 });
+    await seedHerd(context, game.id);
+
+    const rows = await preview(context, game.id);
+    expect(rowFor(rows, 'テストメス001の0歳')).toMatchObject({
+      disposition: 'create',
+      outcome: 'apply',
+    });
+    const confirmed = withReviewConfirmed(
+      rows.map((row) =>
+        row.disposition === 'create'
+          ? { ...row, disposition: 'review' as const, confirmable: true }
+          : row,
+      ),
+      new Set(rows.map((row) => row.key)),
+      await requireCurrentGame(context),
+    );
+    expect(confirmed.filter((row) => row.disposition === 'confirmed')).toHaveLength(2);
+
+    const { result } = await runImport(context, SAMPLE, {
+      confirmWarnings: true,
+      confirmAdvanceYear: true,
+    });
+    expect(result.advancedToYear).toBe(1968);
+    expect(await listFoals(context.database, game.id)).toHaveLength(2);
+  });
+
   it('[APR-03] 母馬不在管理資料 → 待核對；確認後比照自由配種產駒建立', async () => {
     const context = await openContext();
     const gameId = await setUp(context);

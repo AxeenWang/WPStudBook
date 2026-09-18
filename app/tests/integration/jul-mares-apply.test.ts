@@ -12,6 +12,8 @@ import {
   type ImportChoice,
 } from '../../src/services/imports.ts';
 import { julMaresImportHandler } from '../../src/services/jul-mares-import.ts';
+import { loadMareDetail, loadMareHerd } from '../../src/services/mares.ts';
+import { mayMaresImportHandler } from '../../src/services/may-mares-import.ts';
 import { listBreedings } from '../../src/storage/breedings.ts';
 import { listEventsForSubject } from '../../src/storage/events.ts';
 import { getHorse, horseNameKeys } from '../../src/storage/horses.ts';
@@ -193,6 +195,39 @@ describe('七月繁殖牝馬總表的套用（需求規格 11.6）', () => {
       kodashi: 7,
       breedingYears: 3,
       breedingCount: 2,
+    });
+  });
+
+  it('[MARE-15] 五月與七月匯入各存一份活力快照：卡片顯示最新的七月，兩份都查得到', async () => {
+    const context = await openContext();
+    const gameId = await setUp(context);
+    await seedHerd(context, gameId);
+    const may = syntheticSample('mayMares');
+    const mayHandler = mayMaresImportHandler();
+    const prepared = await prepareImport(
+      context,
+      mayHandler,
+      { fileName: may.fileName, bytes: buildSampleBytes(may) },
+      { type: 'mayMares', gameYear: 1968, timing: { month: 5, week: 1 } },
+    );
+    await applyImport(context, mayHandler, prepared, { confirmWarnings: true });
+    const afterMay = (await loadMareHerd(context)).cards.find((card) => card.id === 'h-2');
+    expect(afterMay?.vitality).toEqual({
+      vitality: { state: 'confirmed', value: 88, boosted: false },
+      month: 5,
+    });
+
+    await runImport(context);
+    const card = (await loadMareHerd(context)).cards.find((item) => item.id === 'h-2');
+    expect(card?.vitality).toEqual({
+      vitality: { state: 'confirmed', value: 54, boosted: false },
+      month: 7,
+    });
+    const detail = await loadMareDetail(context, 'h-2');
+    expect(detail.currentYearly).toMatchObject({
+      gameYear: 1968,
+      vitalityMay: { state: 'confirmed', value: 88, boosted: false },
+      vitalityJuly: { state: 'confirmed', value: 54, boosted: false },
     });
   });
 
