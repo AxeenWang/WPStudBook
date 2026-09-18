@@ -47,6 +47,7 @@ import {
   loadFoalBirthState,
   modifyFoal,
   type FoalBirthState,
+  type NewFoalRecords,
 } from '../storage/foals.ts';
 import { getHorse, getHorsesByIds } from '../storage/horses.ts';
 import { getMare, listMares } from '../storage/mares.ts';
@@ -141,7 +142,7 @@ export interface FoalCheck {
   readonly preview: FoalPreview | undefined;
 }
 
-interface FoalPlan extends FoalCheck {
+export interface FoalPlan extends FoalCheck {
   readonly sireId: string | undefined;
   readonly sireName: string | undefined;
   readonly disposition: Disposition;
@@ -179,7 +180,7 @@ function conceptionWarning(breedingYear: number, breeding: Breeding | undefined)
  * 是否自由配種與系與代數（8.2），沒有相符紀錄時警告並比照自由配種產駒。以交易內外相同的資料計算，
  * 讓寫入時的結果與確認時一致。
  */
-function planFoal(game: Game, state: FoalBirthState, input: FoalInput): FoalPlan {
+export function planFoal(game: Game, state: FoalBirthState, input: FoalInput): FoalPlan {
   const issues: string[] = [];
   const yearIssue = birthYearIssue(input.birthYear, game.currentYear);
   if (yearIssue !== undefined) {
@@ -279,6 +280,92 @@ function lineageValue(lineage: Lineage): JsonObject {
   return { position: lineage.position, generation: lineage.generation };
 }
 
+export interface BuildFoalRecordsInput {
+  readonly plan: FoalPlan;
+  readonly state: FoalBirthState;
+  readonly damId: string;
+  readonly birthYear: number;
+  readonly sex: Sex | undefined;
+  /** 事件的遊戲年；出生事件另以出生年與 4 月 1 週記錄。 */
+  readonly gameYear: number;
+  readonly newId: () => string;
+  readonly occurredAt: string;
+}
+
+/**
+ * 由 `planFoal` 的結果組出要寫的紀錄與事件；只做同步運算，所以四月匯入的套用也能用
+ * （需求規格 11.4「由四月匯入或手動建立，規則相同」）。
+ */
+export function buildFoalRecords(input: BuildFoalRecordsInput): NewFoalRecords {
+  const { plan, state, damId, birthYear, sex, newId, occurredAt } = input;
+  const { preview, sireId, sireName, disposition, details, warnings } = plan;
+  if (preview === undefined || sex === undefined) {
+    throw new ServiceError('invalidInput', '產駒資料不完整');
+  }
+  const id = newId();
+  const sireSubsystem = state.sire?.horse?.sireSubsystem;
+  const femaleLine = state.damHorse?.femaleLine;
+  const horse: Horse = {
+    id,
+    sex,
+    birthYear,
+    ...(sireId === undefined ? {} : { sireId }),
+    ...(sireName === undefined ? {} : { sireName }),
+    damId,
+    ...(sireSubsystem === undefined ? {} : { sireSubsystem }),
+    ...(femaleLine === undefined ? {} : { femaleLine }),
+    stageNumbers: [],
+    aliases: [],
+  };
+  const { lineage, freeBred } = preview;
+  const foal: Foal = {
+    id,
+    damId,
+    birthYear,
+    ...(lineage === undefined ? {} : { lineage }),
+    freeBred,
+    disposition,
+    ...details,
+  };
+  const breeding =
+    preview.breedingYear === undefined || state.breeding === undefined
+      ? undefined
+      : { ...state.breeding, foalId: id };
+  const events: HistoryEvent[] = [
+    userEvent(
+      { newId },
+      {
+        subjectId: id,
+        type: 'horseCreated',
+        gameYear: input.gameYear,
+        occurredAt,
+        after: { sex, birthYear, damId },
+      },
+    ),
+    userEvent(
+      { newId },
+      {
+        subjectId: id,
+        type: 'foalBorn',
+        gameYear: birthYear,
+        timing: BIRTH_TIMING,
+        occurredAt,
+        after: {
+          damId,
+          freeBred,
+          disposition,
+          ...(lineage === undefined ? {} : { lineage: lineageValue(lineage) }),
+          ...(preview.breedingYear === undefined ? {} : { breedingYear: preview.breedingYear }),
+          ...(warnings.length === 0
+            ? {}
+            : { confirmations: warnings.map((warning) => warning.code) }),
+        },
+      },
+    ),
+  ];
+  return { horse, foal, breeding, events };
+}
+
 /**
  * 登記產駒（需求規格 9.3、BRD-01）：建立馬匹與產駒並連回前一年的受胎紀錄。追蹤名由母馬名與出生年推導，
  * 不保存；父系取內部種牡馬的父系，牝系沿用母馬。
@@ -307,66 +394,16 @@ export async function registerFoal(
           throw new ServiceError('invalidInput', current.issues.join('；'));
         }
         requireAcceptedWarnings(current.warnings, input.acceptedWarnings ?? []);
-        const { preview, sireId, sireName, disposition, details, warnings } = current;
-        if (preview === undefined || input.sex === undefined) {
-          throw new ServiceError('invalidInput', '產駒資料不完整');
-        }
-        const id = context.newId();
-        const sireSubsystem = state.sire?.horse?.sireSubsystem;
-        const femaleLine = state.damHorse?.femaleLine;
-        const horse: Horse = {
-          id,
+        return buildFoalRecords({
+          plan: current,
+          state,
+          damId,
+          birthYear,
           sex: input.sex,
-          birthYear,
-          ...(sireId === undefined ? {} : { sireId }),
-          ...(sireName === undefined ? {} : { sireName }),
-          damId,
-          ...(sireSubsystem === undefined ? {} : { sireSubsystem }),
-          ...(femaleLine === undefined ? {} : { femaleLine }),
-          stageNumbers: [],
-          aliases: [],
-        };
-        const { lineage, freeBred } = preview;
-        const foal: Foal = {
-          id,
-          damId,
-          birthYear,
-          ...(lineage === undefined ? {} : { lineage }),
-          freeBred,
-          disposition,
-          ...details,
-        };
-        const breeding =
-          preview.breedingYear === undefined || state.breeding === undefined
-            ? undefined
-            : { ...state.breeding, foalId: id };
-        const events: HistoryEvent[] = [
-          userEvent(context, {
-            subjectId: id,
-            type: 'horseCreated',
-            gameYear: stored.currentYear,
-            occurredAt: now,
-            after: { sex: input.sex, birthYear, damId },
-          }),
-          userEvent(context, {
-            subjectId: id,
-            type: 'foalBorn',
-            gameYear: birthYear,
-            timing: BIRTH_TIMING,
-            occurredAt: now,
-            after: {
-              damId,
-              freeBred,
-              disposition,
-              ...(lineage === undefined ? {} : { lineage: lineageValue(lineage) }),
-              ...(preview.breedingYear === undefined ? {} : { breedingYear: preview.breedingYear }),
-              ...(warnings.length === 0
-                ? {}
-                : { confirmations: warnings.map((warning) => warning.code) }),
-            },
-          }),
-        ];
-        return { horse, foal, breeding, events };
+          gameYear: stored.currentYear,
+          newId: context.newId,
+          occurredAt: now,
+        });
       },
     }),
   );

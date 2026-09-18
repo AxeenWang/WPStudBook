@@ -448,7 +448,8 @@ const APR_FOALS: SyntheticSample = {
       sp: '72(72)',
       st: '68',
       ...SUB_PARAMS,
-      subParamTotal: '42( +0)',
+      // `サ` 與七項副能力換算一致（B10＋A12＋B10＋C8＋B10＋A12＋B10＝72）；不一致是 BRD-11 的警告。
+      subParamTotal: '72( +0)',
       turf: '◎',
       dirt: '○',
       distance: '中距離',
@@ -472,7 +473,7 @@ const APR_FOALS: SyntheticSample = {
       sp: '66(66)',
       st: '71',
       ...SUB_PARAMS,
-      subParamTotal: '38( +0)',
+      subParamTotal: '72( +0)',
       turf: '○',
       dirt: '△',
       distance: '長距離',
