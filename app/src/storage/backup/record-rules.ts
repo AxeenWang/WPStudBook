@@ -103,6 +103,7 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   mareGroupAssigned: true,
   mareYearlyChanged: true,
   settingsChanged: true,
+  annualWorkCorrected: true,
   breedingRecorded: true,
   foalBorn: true,
   foalChanged: true,
@@ -305,6 +306,11 @@ function checkHorse(record: StoredRecord): string | undefined {
       (field) => [optional(record, field, isNonEmptyString), `${field} 必須是非空字串`] as const,
     ),
     [optional(record, 'femaleLine', (value) => typeof value === 'string'), 'femaleLine 必須是字串'],
+    [
+      !('officialNameSource' in record) ||
+        (record.officialNameSource === 'jan2yo' && 'officialName' in record),
+      'officialNameSource 只能是 jan2yo，且必須有 officialName',
+    ],
     [record.sireId !== record.id && record.damId !== record.id, '父母不可是自己'],
     [isArrayOf(record.stageNumbers, isStageNumber), 'stageNumbers 必須是階段馬番号陣列'],
     [isArrayOf(record.aliases, isAlias), 'aliases 必須是名稱別名陣列'],
@@ -438,6 +444,29 @@ function checkMareGroup(group: unknown): string | undefined {
 
 function isMareSiteValue(value: unknown): boolean {
   return isInteger(value) && String(value) in MARE_SITE_FLAGS;
+}
+
+/**
+ * 年度工作清單的人工更正（`gameSettings.annualWorkCorrections`）：年、匯入類型與完成狀態，
+ * 同一年同一類型只能一筆。
+ */
+export function isAnnualWorkCorrections(value: unknown): boolean {
+  if (
+    !isArrayOf(
+      value,
+      (item) =>
+        isPlainRecord(item) &&
+        isYear(item.gameYear) &&
+        isOneOf(IMPORT_TYPE_VALUES, item.type) &&
+        typeof item.done === 'boolean',
+    )
+  ) {
+    return false;
+  }
+  const keys = (value as readonly StoredRecord[]).map(
+    (item) => `${String(item.gameYear)}:${String(item.type)}`,
+  );
+  return new Set(keys).size === keys.length;
 }
 
 function isYearPlanValue(value: unknown): boolean {

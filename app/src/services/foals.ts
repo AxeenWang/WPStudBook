@@ -12,6 +12,7 @@ import {
   defaultDisposition,
   isAbilityValue,
   isDispositionAllowed,
+  namingStatus,
   stallionLineage,
   subParamTotal,
   surfaceSummary,
@@ -19,6 +20,7 @@ import {
   type Aptitude,
   type Disposition,
   type Foal,
+  type NamingStatus,
   type SubParamGrade,
   type SubParamKey,
   type SubParams,
@@ -50,6 +52,7 @@ import {
   type NewFoalRecords,
 } from '../storage/foals.ts';
 import { getHorse, getHorsesByIds } from '../storage/horses.ts';
+import { listImports } from '../storage/imports.ts';
 import { getMare, listMares } from '../storage/mares.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
@@ -62,6 +65,15 @@ export const SUB_PARAM_KEY_OPTIONS: readonly SubParamKey[] = SUB_PARAM_KEYS;
 export const SUB_PARAM_GRADE_OPTIONS: readonly SubParamGrade[] = SUB_PARAM_GRADES;
 export const APTITUDE_OPTIONS: readonly Aptitude[] = APTITUDES;
 export const DISPOSITION_OPTIONS: readonly Disposition[] = DISPOSITIONS;
+/** 補名管理檢視的分類，依需求規格 9.4 列出的順序。 */
+export const NAMING_STATUS_OPTIONS: readonly NamingStatus[] = [
+  'waiting',
+  'manual',
+  'unmatched',
+  'fromList',
+  'done',
+  'soldUnnamed',
+];
 
 /** 能力、適性與備註；新增與更正共用。空白欄位不保存。 */
 export interface FoalDetailsInput {
@@ -424,8 +436,13 @@ export interface FoalNameInput {
   readonly officialName: string;
 }
 
-function officialNameValue(horse: Horse): JsonObject {
-  return horse.officialName === undefined ? {} : { officialName: horse.officialName };
+export function officialNameValue(horse: Horse): JsonObject {
+  return {
+    ...(horse.officialName === undefined ? {} : { officialName: horse.officialName }),
+    ...(horse.officialNameSource === undefined
+      ? {}
+      : { officialNameSource: horse.officialNameSource }),
+  };
 }
 
 /**
@@ -459,17 +476,31 @@ export async function nameFoal(context: ServiceContext, input: FoalNameInput): P
         if ((previous ?? '') === name) {
           throw new ServiceError('invalidInput', '正式馬名沒有變更');
         }
+        const fromList = horse.officialNameSource === 'jan2yo';
         const keepsAlias =
           previous !== undefined &&
           name !== '' &&
           !horse.aliases.some((alias) => alias.name === previous);
         const aliases: readonly HorseAlias[] = keepsAlias
-          ? [...horse.aliases, { kind: 'manual', name: previous, gameYear: stored.currentYear }]
+          ? [
+              ...horse.aliases,
+              {
+                kind: fromList ? 'imported' : 'manual',
+                name: previous,
+                gameYear: stored.currentYear,
+              },
+            ]
           : horse.aliases;
         const named: Horse = Object.fromEntries(
           Object.entries({
             ...horse,
             officialName: name === '' ? undefined : name,
+            // 手動輸入的正式馬名沒有來源欄位。能在這裡改名的產駒（還不是繁殖牝馬或種牡馬），
+            // 基本馬名只會來自一月總表：手動改名或清空時一律拿掉，舊的總表名稱已留在別名與事件裡。
+            // 否則「總表補名 → 手動改名 → 清空」之後畫面會退回總表的基本馬名，而不是追蹤名
+            // （需求規格 9.4、BRD-10）。
+            officialNameSource: undefined,
+            baseName: undefined,
             aliases,
           }).filter(([, value]) => value !== undefined),
         ) as unknown as Horse;
@@ -600,6 +631,8 @@ export interface FoalCard {
   readonly isMare: boolean;
   /** 已成為種牡馬（需求規格 9.7）。 */
   readonly isStallion: boolean;
+  /** 補名管理的狀態（需求規格 9.4、BRD-20）。 */
+  readonly naming: NamingStatus;
 }
 
 export interface FoalCardSource {
@@ -609,6 +642,8 @@ export interface FoalCardSource {
   readonly sire: Horse | undefined;
   readonly currentYear: number;
   readonly isMare: boolean;
+  /** 已匯入一月二歲馬總表的遊戲年。 */
+  readonly janListYears: ReadonlySet<number>;
 }
 
 export function buildFoalCard(source: FoalCardSource): FoalCard {
@@ -652,6 +687,10 @@ export function buildFoalCard(source: FoalCardSource): FoalCard {
     note: foal.note,
     isMare: source.isMare,
     isStallion: isStallionHorse(horse),
+    naming: namingStatus(horse, foal, {
+      currentYear: source.currentYear,
+      janListYears: source.janListYears,
+    }),
   };
 }
 
@@ -660,14 +699,18 @@ async function buildCards(
   game: Game,
   foals: readonly Foal[],
 ): Promise<FoalCard[]> {
-  const [mares, horses] = await Promise.all([
+  const [mares, horses, imports] = await Promise.all([
     listMares(context.database, game.id),
     getHorsesByIds(
       context.database,
       game.id,
       foals.map((foal) => foal.id),
     ),
+    listImports(context.database, game.id),
   ]);
+  const janListYears = new Set(
+    imports.filter((batch) => batch.type === 'jan2yo').map((batch) => batch.gameYear),
+  );
   const relatedIds = [...horses.values()].flatMap((horse) => [
     ...(horse.damId === undefined ? [] : [horse.damId]),
     ...(horse.sireId === undefined ? [] : [horse.sireId]),
@@ -687,6 +730,7 @@ async function buildCards(
         sire: horse.sireId === undefined ? undefined : related.get(horse.sireId),
         currentYear: game.currentYear,
         isMare: mareIds.has(foal.id),
+        janListYears,
       }),
     ];
   });
@@ -713,6 +757,8 @@ export interface FoalFilterOptions {
   readonly sex: SexFilter;
   readonly disposition: Disposition | undefined;
   readonly unnamedOnly: boolean;
+  /** 補名管理檢視（需求規格 9.4、BRD-20）。 */
+  readonly naming: NamingStatus | undefined;
   readonly keyword: string;
 }
 
@@ -721,6 +767,7 @@ export const DEFAULT_FOAL_FILTER: FoalFilterOptions = {
   sex: 'any',
   disposition: undefined,
   unnamedOnly: false,
+  naming: undefined,
   keyword: '',
 };
 
@@ -731,6 +778,7 @@ export function matchesFoalFilter(card: FoalCard, options: FoalFilterOptions): b
     (options.sex === 'any' || card.sex === options.sex) &&
     (options.disposition === undefined || card.disposition === options.disposition) &&
     (!options.unnamedOnly || !card.named) &&
+    (options.naming === undefined || card.naming === options.naming) &&
     (keyword === '' || card.searchNames.some((name) => name.includes(keyword)))
   );
 }

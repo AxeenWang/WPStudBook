@@ -33,6 +33,8 @@ export type HistoryEventType =
   | 'mareYearlyChanged'
   /** 遊戲局設定變更；subjectId 為 game。 */
   | 'settingsChanged'
+  /** 年度工作清單的人工更正，保存前後的完成狀態；subjectId 為 game（需求規格 13.2）。 */
+  | 'annualWorkCorrected'
   /** 年度繁殖紀錄登記或更正，保存前後值；subjectId 為母馬 id。 */
   | 'breedingRecorded'
   /** 產駒出生（手動登記）；subjectId 為產駒 id。 */

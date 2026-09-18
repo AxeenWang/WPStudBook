@@ -258,4 +258,36 @@ test.describe('總覽與任務看板（需求規格 13.2）', () => {
     );
     await expect(board(page)).not.toContainText('斷血補系進行中');
   });
+
+  test('[UI-03][UI-06] 年度工作清單可人工更正；母馬、對照表待補與備份的提醒集中在提醒區', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await createGameViaUi(page, '提醒局', 1968);
+    await gotoPage(page, '母馬群');
+    // 1968 年 24 歲：定年 25 的前一年，也達高齡提醒年齡 18。
+    await addMareViaUi(page, {
+      position: 1,
+      generation: 0,
+      name: 'テストヒンバ',
+      site: '日本',
+      birthYear: 1944,
+      sireSubsystem: 'ネアルコ',
+    });
+    await expect(herd(page)).toContainText('テストヒンバ');
+
+    await gotoPage(page, '總覽');
+    const reminders = page.getByTestId('reminders');
+    await expect(reminders).toContainText('母馬「テストヒンバ」（24 歲）：最後值得配種的年齡');
+    await expect(reminders).toContainText('系統對照表待補：ネアルコ');
+    await expect(reminders).toContainText('這一局還沒有匯出過備份');
+
+    const jan = page.getByTestId('annual-work-jan2yo');
+    await expect(jan).toContainText('未完成');
+    await jan.getByRole('button', { name: '標示為已完成' }).click();
+    await expect(jan).toContainText('已完成（人工更正）');
+    await jan.getByRole('button', { name: '標示為未完成' }).click();
+    await expect(jan).toContainText('未完成');
+    await expect(jan).not.toContainText('人工更正');
+  });
 });

@@ -128,6 +128,9 @@ export async function updateGameRuleSettings(
           ...(vitalityThreshold === undefined ? {} : { vitalityThreshold }),
           checkpointRetention: settings.checkpointRetention,
           display: settings.display,
+          ...(settings.annualWorkCorrections === undefined
+            ? {}
+            : { annualWorkCorrections: settings.annualWorkCorrections }),
         };
         const event = userEvent(context, {
           subjectId: GAME_SUBJECT_ID,
