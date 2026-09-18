@@ -33,18 +33,23 @@ export async function changeYearViaUi(page: Page, year: number): Promise<void> {
 }
 
 /**
- * 關閉詳情欄並等它真的消失。只按 Esc 就繼續操作時，`.drawer-overlay` 還在的話會攔截點擊，
- * 是與速度相依的競態（main 推送 CI 的 Edge 曾因此失敗）。
+ * 關閉詳情欄並等它真的消失（沒等就繼續操作的話，`.drawer-overlay` 會攔截之後的點擊）。
  *
- * Esc 一律按在詳情欄本身而不是 `page.keyboard`：`page.keyboard.press` 送到的是目前焦點所在的
- * 元素，而詳情欄裡的表單送出後會整個卸載，焦點會落回 `body`。react-aria 的焦點收容會把焦點拉
- * 回對話框，但那是非同步的，中間那一瞬間按下的 Esc 就消失了——Edge 上真的發生過（PR #17 合併
- * 後 main 的推送 CI）。`locator.press` 會先聚焦再送鍵，鍵一定落在對話框內。
+ * 用「關閉」鈕而不是 Esc。這裡的呼叫點幾乎都是剛在詳情欄裡送出表單：資料改變會讓詳情欄重新
+ * 載入，react-aria 的 Esc 關閉要經過鍵盤事件路由與「這個 overlay 是不是最上層」的判斷，重新
+ * 渲染的那一瞬間按下的 Esc 就可能被吞掉。PR #17 與 PR #20 合併後 main 的推送 CI 各掛過一次；
+ * 第一次改成把 Esc 按在對話框上（`locator.press`）只修到焦點那一半，第二次照樣發生。
+ * 「關閉」鈕直接呼叫 `close()`，不經過那些判斷；再用 `toPass` 包起來，點擊剛好落在重新渲染時
+ * 會重試。Esc 能關閉詳情欄（UI-02）由 `mare-detail.spec.ts` 另外直接驗，那裡前面沒有資料變動。
  */
 export async function closeDrawer(drawer: Locator): Promise<void> {
   await expect(drawer).toBeVisible();
-  await drawer.press('Escape');
-  await expect(drawer).toBeHidden();
+  await expect(async () => {
+    if (await drawer.isVisible()) {
+      await drawer.getByRole('button', { name: '關閉' }).click({ timeout: 2000 });
+    }
+    await expect(drawer).toBeHidden({ timeout: 2000 });
+  }).toPass({ timeout: 10_000 });
 }
 
 export async function gotoPage(page: Page, name: string): Promise<void> {
