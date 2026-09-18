@@ -82,6 +82,11 @@ const ISSUES = {
     message: '能力番号與出生年相符，但母馬不符，列為衝突，不寫入',
     handling: 'confirm',
   },
+  otherFate: {
+    code: 'otherFate',
+    message: '這匹自家產駒已記錄為其他去向（例如成為種牡馬），列為衝突，不寫入',
+    handling: 'confirm',
+  },
   noFarm: {
     code: 'noFarm',
     message: '牧場欄空白，無法記錄所在牧場，不寫入',
@@ -187,8 +192,9 @@ function classify(
   if (fate === undefined) {
     return { disposition: 'new', outcome: 'apply', issues: extra, own: match };
   }
+  // 成為種牡馬只會記在公馬上，走到這裡的一定是牝馬；留著是為了去向日後多一種時不會默默覆寫。
   if (fate.kind !== 'mareElsewhere') {
-    return conflict(ISSUES.notFemale);
+    return conflict(ISSUES.otherFate);
   }
   if (exportYear < fate.lastSeenYear) {
     return { disposition: 'unchanged', outcome: 'skip', issues: [ISSUES.olderFile], own: match };

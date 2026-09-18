@@ -335,6 +335,33 @@ describe('十月全世界繁殖牝馬總表的匯入（需求規格 11.10）', (
     );
   });
 
+  it('還在繁殖牝馬圈生產中的自家母馬出現在其他牧場 → 照常記錄去向並提示，不改繁殖牝馬圈', async () => {
+    const context = await open();
+    const gameId = await setUp(context);
+    await seed(context, gameId, 'mares', [{ ...PRODUCING, id: 'f-1' }]);
+    const before = await snapshot(context, gameId);
+    const { prepared } = await runOct(context, sampleOf(1972, [elsewhereIn(1972)]), 1972);
+    expect(prepared.rows[0]).toMatchObject({ disposition: 'new', outcome: 'apply' });
+    expect(prepared.rows[0]?.issues.map((issue) => issue.code)).toEqual(['stillInHerd']);
+    expect((await requireHorse(context, gameId, 'f-1')).fate).toMatchObject({
+      kind: 'mareElsewhere',
+      farmNo: 150,
+    });
+    expect(await snapshot(context, gameId)).toEqual(before);
+  });
+
+  it('自家產駒已記錄為其他去向 → 衝突，不覆寫', async () => {
+    const context = await open();
+    const gameId = await setUp(context, { fate: { kind: 'becameStallion', gameYear: 1971 } });
+    const rows = await previewOctWorldMares(context, {
+      gameId,
+      file: parsed(sampleOf(1972, [elsewhereIn(1972)])),
+      choice: choice(1972),
+    });
+    expect(rows[0]).toMatchObject({ disposition: 'conflict', outcome: 'review' });
+    expect(rows[0]?.issues.map((issue) => issue.code)).toEqual(['otherFate']);
+  });
+
   it('同一年重匯或比最後確認年舊的檔案 → 不改寫', async () => {
     const context = await open();
     const gameId = await setUp(context);
