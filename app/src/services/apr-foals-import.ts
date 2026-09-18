@@ -302,13 +302,14 @@ export async function previewAprFoals(
       rows.push(pending(ISSUES.noConception, damId, state));
       continue;
     }
+    // 這一列已經對應到那筆受胎紀錄，之後就不該再被列成「未見產駒」——即使它因為父馬不一致
+    // 而停在待核對，同一匹母馬也不應該同時出現兩種說法。
+    usedBreedings.add(state.breeding.id);
     const recorded = breedingSireName(state.breeding, stallionNames);
     if (recorded !== undefined && item.sireName !== undefined && recorded !== item.sireName) {
       rows.push(pending(ISSUES.sireDiffers, damId, state));
       continue;
     }
-    // conceived 已經確認過 breeding 存在。
-    usedBreedings.add(state.breeding.id);
     if (state.existingFoal !== undefined) {
       // 父馬對得上就是同一匹，補齊空白；對不上不建第二匹（APR-07）。
       rows.push({

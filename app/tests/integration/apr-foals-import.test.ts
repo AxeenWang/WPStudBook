@@ -250,6 +250,22 @@ describe('四月誕生幼駒總表（需求規格 11.4）', () => {
     expect(untouched?.foalId).toBeUndefined();
   });
 
+  it('[APR-05] 父馬與受胎紀錄不一致的列不會同時被列成未見產駒', async () => {
+    const context = await openContext();
+    const gameId = await setUp(context);
+    await seed(context, gameId, 'horses', [horse({ id: 'd-1', fullName: 'テストメス001' })]);
+    await seed(context, gameId, 'mares', [producing('d-1')]);
+    await seed(context, gameId, 'breedings', [conceived('b-1', 'd-1', 'ベツノチチ')]);
+
+    const rows = await preview(context, gameId);
+    const row = rowFor(rows, 'テストメス001の0歳');
+    expect(row.disposition).toBe('review');
+    expect(row.confirmable).toBe(false);
+    expect(row.issues.map((issue) => issue.code)).toContain('sireDiffers');
+    // 同一匹母馬不應該同時出現「待核對」與「未見產駒」兩種說法。
+    expect(summariseAprRows(rows).missing).toBe(0);
+  });
+
   it('[APR-07] 同母同年已有手動產駒 → 補齊空白，不建立第二匹', async () => {
     const context = await openContext();
     const gameId = await setUp(context);
