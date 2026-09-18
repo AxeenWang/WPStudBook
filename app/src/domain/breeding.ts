@@ -66,6 +66,11 @@ export interface Breeding {
   readonly pedigreeCheck?: BreedingPedigreeCheck;
   /** 使用者確認過的警告代號；沒有需要確認的警告時不存（需求規格 5.2、10.2）。 */
   readonly confirmations?: readonly string[];
+  /**
+   * 偏離規則（需求規格 11.6、JUL-04）：七月的實際種牡馬與既有的八系指定配種不符，
+   * 使用者確認後依實際保存並標示。偏離的配種不計入八系完成度；沒有偏離時不存這個欄位。
+   */
+  readonly deviated?: true;
 }
 
 /** 前一年受胎的幼駒在 4 月 1 週誕生（需求規格 4.1、9.1）。 */

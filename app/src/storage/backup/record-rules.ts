@@ -632,6 +632,7 @@ function checkBreeding(record: StoredRecord): string | undefined {
         (Array.isArray(record.confirmations) && record.confirmations.length > 0),
       'confirmations 沒有項目時不可保存',
     ],
+    [optional(record, 'deviated', (value) => value === true), 'deviated 只能是 true 或不存在'],
   ]);
 }
 

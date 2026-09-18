@@ -108,6 +108,9 @@ export function breedingValue(record: Breeding): JsonObject {
   if (record.pedigreeCheck !== undefined) {
     value.activationCount = record.pedigreeCheck.activationCount;
   }
+  if (record.deviated === true) {
+    value.deviated = '是';
+  }
   if (record.confirmations !== undefined) {
     value.confirmations = record.confirmations.join('、');
   }

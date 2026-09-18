@@ -355,6 +355,14 @@ describe('資料表欄位規則', () => {
     ]);
   });
 
+  it('breedings：偏離規則只能是 true 或不存在（需求規格 11.6、JUL-04）', () => {
+    expect(check('breedings', { ...BREEDING, deviated: true })).toBeUndefined();
+    expectProblems('breedings', BREEDING, [
+      [{ ...BREEDING, deviated: false }, 'deviated'],
+      [{ ...BREEDING, deviated: '是' }, 'deviated'],
+    ]);
+  });
+
   it('events：繁殖牝馬與設定的事件型別', () => {
     for (const type of [
       'mareAdded',
