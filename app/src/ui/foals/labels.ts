@@ -1,5 +1,5 @@
 import type { BreedingType, Conception } from '../../domain/breeding.ts';
-import type { Disposition, SubParamKey, SurfaceSummary } from '../../domain/foal.ts';
+import type { Disposition, NamingStatus, SubParamKey, SurfaceSummary } from '../../domain/foal.ts';
 import type { Sex } from '../../domain/horse.ts';
 import type { Lineage } from '../../domain/lineage.ts';
 
@@ -9,6 +9,16 @@ export const DISPOSITION_LABELS: Readonly<Record<Disposition, string>> = {
   keep: '保留',
   forSale: '待售',
   sold: '已售出',
+};
+
+/** 補名管理的狀態（需求規格 9.4、BRD-20）。 */
+export const NAMING_STATUS_LABELS: Readonly<Record<NamingStatus, string>> = {
+  waiting: '等待總表',
+  manual: '需人工補名',
+  unmatched: '無法唯一配對',
+  fromList: '已由總表更新',
+  done: '已完成',
+  soldUnnamed: '已售出未命名（不列待辦）',
 };
 
 export const BREEDING_TYPE_LABELS: Readonly<Record<BreedingType, string>> = {

@@ -1,3 +1,4 @@
+import { horseDisplayName, type Horse } from './horse.ts';
 import type { Lineage } from './lineage.ts';
 import type { StallionDuty } from './stallion-duty.ts';
 
@@ -142,4 +143,49 @@ export function stallionLineage(
   return duty === undefined
     ? ownFoal?.lineage
     : { position: duty.position, generation: duty.generation };
+}
+
+/**
+ * 補名管理的狀態（需求規格 9.4、BRD-20）：
+ * - 已由總表更新：正式馬名由一月二歲馬總表填入。
+ * - 已完成：已有名稱（手動輸入、轉入母馬群後的總表馬名等）。
+ * - 等待總表：未命名，出生年加 2 那一年的一月總表還沒匯入，而且還沒過那一年。
+ * - 已售出未命名：不列人工待辦（9.4「單純已售出未命名者不列人工待辦」）。
+ * - 無法唯一配對：一月總表匯入過，仍沒有能力番号——能力番号未登記的舊產駒只能以父母配對，
+ *   總表匯入後還是沒補上，表示零筆或多筆候選（11.3、JAN-03）。
+ * - 需人工補名：其他未命名者，例如有能力番号卻沒出現在總表，或那一年沒有匯入一月總表。
+ */
+export type NamingStatus = 'waiting' | 'manual' | 'unmatched' | 'fromList' | 'done' | 'soldUnnamed';
+
+export interface NamingContext {
+  readonly currentYear: number;
+  /** 已匯入一月二歲馬總表的遊戲年。 */
+  readonly janListYears: ReadonlySet<number>;
+}
+
+/** 一月二歲馬總表列出的是出生年加 2 那一年的二歲馬（需求規格 6.3）。 */
+export function janListYear(birthYear: number): number {
+  return birthYear + 2;
+}
+
+export function namingStatus(
+  horse: Horse,
+  foal: Pick<Foal, 'birthYear' | 'disposition'>,
+  context: NamingContext,
+): NamingStatus {
+  if (horse.officialNameSource === 'jan2yo') {
+    return 'fromList';
+  }
+  if (horseDisplayName(horse, undefined) !== undefined) {
+    return 'done';
+  }
+  const listYear = janListYear(foal.birthYear);
+  const imported = context.janListYears.has(listYear);
+  if (!imported && context.currentYear <= listYear) {
+    return 'waiting';
+  }
+  if (foal.disposition === 'sold') {
+    return 'soldUnnamed';
+  }
+  return imported && horse.abilityNo === undefined ? 'unmatched' : 'manual';
 }

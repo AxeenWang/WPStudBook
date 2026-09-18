@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { Button, Input, Label, TextField } from 'react-aria-components';
+import type { NamingStatus } from '../../domain/foal.ts';
 import type { Game } from '../../domain/game.ts';
 import {
   DEFAULT_FOAL_FILTER,
   DISPOSITION_OPTIONS,
+  NAMING_STATUS_OPTIONS,
   loadFoalList,
   matchesFoalFilter,
   sortFoalCards,
   type FoalCard,
   type FoalFilterOptions,
+  type FoalList,
   type FoalSort,
   type SexFilter,
 } from '../../services/foals.ts';
@@ -17,7 +20,7 @@ import { CheckboxField, OptionalIntegerField, SelectField, type SelectOption } f
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery } from '../ServicesContext.tsx';
 import { FoalPanel } from './FoalPanel.tsx';
-import { DISPOSITION_LABELS, SURFACE_LABELS, lineageText } from './labels.ts';
+import { DISPOSITION_LABELS, NAMING_STATUS_LABELS, SURFACE_LABELS, lineageText } from './labels.ts';
 import { SexMarker } from './SexMarker.tsx';
 
 const SORT_CHOICES: readonly SelectOption<FoalSort>[] = [
@@ -35,6 +38,50 @@ const DISPOSITION_CHOICES = DISPOSITION_OPTIONS.map((disposition) => ({
   value: disposition,
   label: DISPOSITION_LABELS[disposition],
 }));
+const NAMING_CHOICES = NAMING_STATUS_OPTIONS.map((status) => ({
+  value: status,
+  label: NAMING_STATUS_LABELS[status],
+}));
+
+/**
+ * 補名管理檢視（需求規格 9.4、BRD-20）：各狀態的筆數，按下即以該狀態篩選下方清單。
+ * 需人工補名與無法唯一配對是待辦；已售出未命名者不列待辦。
+ */
+function NamingSummary({
+  list,
+  selected,
+  onSelect,
+}: {
+  readonly list: FoalList;
+  readonly selected: NamingStatus | undefined;
+  readonly onSelect: (status: NamingStatus | undefined) => void;
+}) {
+  const count = (status: NamingStatus) =>
+    list.cards.filter((card) => card.naming === status).length;
+  const todo = count('manual') + count('unmatched');
+  return (
+    <section aria-labelledby="naming-heading">
+      <h3 id="naming-heading">補名管理</h3>
+      <p data-testid="naming-todo">
+        {todo === 0 ? '沒有需要人工補名的產駒。' : `需要人工處理 ${String(todo)} 匹。`}
+      </p>
+      <ul aria-label="補名狀態" className="actions" data-testid="naming-summary">
+        {NAMING_STATUS_OPTIONS.map((status) => (
+          <li key={status}>
+            <Button
+              aria-pressed={selected === status}
+              onPress={() => {
+                onSelect(selected === status ? undefined : status);
+              }}
+            >
+              {NAMING_STATUS_LABELS[status]} {count(status)}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 function numberText(label: string, value: number | undefined): string {
   return `${label} ${value === undefined ? '—' : String(value)}`;
@@ -69,6 +116,7 @@ function FoalRow({ card }: { readonly card: FoalCard }) {
         </span>
         <span>{DISPOSITION_LABELS[card.disposition]}</span>
         {!card.named && <span className="badge">未命名</span>}
+        <span data-testid="foal-naming">{NAMING_STATUS_LABELS[card.naming]}</span>
         {card.isStallion && <span className="badge">已成為種牡馬</span>}
       </div>
       {managing && <FoalPanel card={card} />}
@@ -103,6 +151,13 @@ function FoalListView() {
         產駒由母馬詳情欄的配種或產駒頁籤登記。未命名的產駒顯示追蹤名（母馬名＋出生年）。SP
         越高越好；ST 是距離定位，只依數值排序。
       </p>
+      <NamingSummary
+        list={data}
+        selected={options.naming}
+        onSelect={(naming) => {
+          update({ naming });
+        }}
+      />
       <fieldset className="filters">
         <legend>篩選與排序</legend>
         <OptionalIntegerField
@@ -127,6 +182,15 @@ function FoalListView() {
           emptyLabel="全部"
           onChange={(disposition) => {
             update({ disposition });
+          }}
+        />
+        <SelectField
+          label="補名狀態"
+          value={options.naming}
+          options={NAMING_CHOICES}
+          emptyLabel="全部"
+          onChange={(naming) => {
+            update({ naming });
           }}
         />
         <CheckboxField

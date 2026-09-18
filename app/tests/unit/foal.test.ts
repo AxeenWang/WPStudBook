@@ -6,6 +6,7 @@ import {
 } from '../../src/domain/breeding.ts';
 import {
   isDispositionAllowed,
+  namingStatus,
   stallionLineage,
   subParamTotal,
   surfaceSummary,
@@ -193,6 +194,7 @@ function foalCard(id: string, overrides: Partial<FoalCard> = {}): FoalCard {
     note: undefined,
     isMare: false,
     isStallion: false,
+    naming: 'done',
     ...overrides,
   };
 }
@@ -215,5 +217,47 @@ describe('產駒排序（需求規格 9.3）', () => {
       'b',
       'c',
     ]);
+  });
+});
+
+describe('補名管理（需求規格 9.4）', () => {
+  const unnamed: Horse = { id: 'f1', sex: 'male', stageNumbers: [], aliases: [] };
+  const foal = { birthYear: 1968, disposition: 'keep' } as const;
+  const status = (
+    horse: Horse,
+    options: { currentYear?: number; listed?: boolean; sold?: boolean } = {},
+  ) =>
+    namingStatus(
+      horse,
+      { ...foal, ...(options.sold === true ? { disposition: 'sold' as const } : {}) },
+      {
+        currentYear: options.currentYear ?? 1970,
+        janListYears: new Set(options.listed === true ? [1970] : []),
+      },
+    );
+
+  it('[BRD-20] 區分等待總表、需人工補名、無法唯一配對、已由總表更新、已完成', () => {
+    // 1970 年的一月總表還沒匯入，而且還沒過 1970 年。
+    expect(status(unnamed, { currentYear: 1969 })).toBe('waiting');
+    expect(status(unnamed, { currentYear: 1970 })).toBe('waiting');
+    // 那一年沒有匯入一月總表就過去了。
+    expect(status(unnamed, { currentYear: 1971 })).toBe('manual');
+    // 總表匯入過，有能力番号卻沒補到名：沒出現在總表。
+    expect(status({ ...unnamed, abilityNo: 0x3001 }, { listed: true })).toBe('manual');
+    // 總表匯入過，仍沒有能力番号：父母配對零筆或多筆。
+    expect(status(unnamed, { listed: true })).toBe('unmatched');
+    expect(
+      status({ ...unnamed, officialName: 'テストウマ010', officialNameSource: 'jan2yo' }),
+    ).toBe('fromList');
+    expect(status({ ...unnamed, officialName: 'テスト手動名' }, { listed: true })).toBe('done');
+    expect(status({ ...unnamed, officialName: 'テスト手動名' }, { currentYear: 1969 })).toBe(
+      'done',
+    );
+  });
+
+  it('[BRD-20] 已售出未命名者不列人工待辦；總表匯入前仍是等待總表', () => {
+    expect(status(unnamed, { listed: true, sold: true })).toBe('soldUnnamed');
+    expect(status(unnamed, { currentYear: 1971, sold: true })).toBe('soldUnnamed');
+    expect(status(unnamed, { currentYear: 1969, sold: true })).toBe('waiting');
   });
 });
