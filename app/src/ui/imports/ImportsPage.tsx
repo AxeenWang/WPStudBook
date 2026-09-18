@@ -14,6 +14,7 @@ import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 import { CandidateFlow } from './CandidateFlow.tsx';
 import { IMPORT_TYPE_LABELS } from '../import-labels.ts';
 import { formatTiming } from './labels.ts';
+import { JulMaresFlow } from './JulMaresFlow.tsx';
 import { MayMaresFlow } from './MayMaresFlow.tsx';
 import { MayStallionsFlow } from './MayStallionsFlow.tsx';
 import { TargetStallionFlow } from './TargetStallionFlow.tsx';
@@ -22,6 +23,7 @@ import { TargetStallionFlow } from './TargetStallionFlow.tsx';
 const IMPLEMENTED_TYPES: readonly ImportType[] = [
   'candidateFile',
   'mayMares',
+  'julMares',
   'mayStallions',
   'targetStallion',
 ];
@@ -87,8 +89,8 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
     <section aria-labelledby="imports-heading">
       <h2 id="imports-heading">年度匯入</h2>
       <p>
-        目前支援候選 TXT、五月繁殖牝馬總表、五月種牡馬總表與目標種牡馬 TXT；
-        其他年度總表在後續子計畫加入。 匯入前會先顯示預覽，有阻擋錯誤時資料不變。
+        目前支援候選 TXT、五月繁殖牝馬總表、七月繁殖牝馬總表、五月種牡馬總表與 目標種牡馬
+        TXT；其他年度總表在後續子計畫加入。 匯入前會先顯示預覽，有阻擋錯誤時資料不變。
       </p>
 
       <div
@@ -137,6 +139,9 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
       )}
       {ready && choice.type === 'mayMares' && (
         <MayMaresFlow key={flowKey} file={file} choice={choice} onApplied={notifyChanged} />
+      )}
+      {ready && choice.type === 'julMares' && (
+        <JulMaresFlow key={flowKey} file={file} choice={choice} onApplied={notifyChanged} />
       )}
       {ready && choice.type === 'mayStallions' && (
         <MayStallionsFlow key={flowKey} file={file} choice={choice} onApplied={notifyChanged} />
