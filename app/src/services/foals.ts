@@ -424,8 +424,13 @@ export interface FoalNameInput {
   readonly officialName: string;
 }
 
-function officialNameValue(horse: Horse): JsonObject {
-  return horse.officialName === undefined ? {} : { officialName: horse.officialName };
+export function officialNameValue(horse: Horse): JsonObject {
+  return {
+    ...(horse.officialName === undefined ? {} : { officialName: horse.officialName }),
+    ...(horse.officialNameSource === undefined
+      ? {}
+      : { officialNameSource: horse.officialNameSource }),
+  };
 }
 
 /**
@@ -459,17 +464,29 @@ export async function nameFoal(context: ServiceContext, input: FoalNameInput): P
         if ((previous ?? '') === name) {
           throw new ServiceError('invalidInput', '正式馬名沒有變更');
         }
+        const fromList = horse.officialNameSource === 'jan2yo';
         const keepsAlias =
           previous !== undefined &&
           name !== '' &&
           !horse.aliases.some((alias) => alias.name === previous);
         const aliases: readonly HorseAlias[] = keepsAlias
-          ? [...horse.aliases, { kind: 'manual', name: previous, gameYear: stored.currentYear }]
+          ? [
+              ...horse.aliases,
+              {
+                kind: fromList ? 'imported' : 'manual',
+                name: previous,
+                gameYear: stored.currentYear,
+              },
+            ]
           : horse.aliases;
         const named: Horse = Object.fromEntries(
           Object.entries({
             ...horse,
             officialName: name === '' ? undefined : name,
+            // 手動輸入的正式馬名沒有來源欄位。清空一月總表填入的名稱時，總表的基本馬名一起清掉，
+            // 否則畫面會退回基本馬名而不是追蹤名（需求規格 9.4、BRD-10）。
+            officialNameSource: undefined,
+            ...(fromList && name === '' ? { baseName: undefined } : {}),
             aliases,
           }).filter(([, value]) => value !== undefined),
         ) as unknown as Horse;

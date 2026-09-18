@@ -355,6 +355,19 @@ describe('資料表欄位規則', () => {
     ]);
   });
 
+  it('[JAN-05] horses：正式馬名的來源只能是一月總表，而且要有正式馬名', () => {
+    expect(
+      check('horses', { ...HORSE, officialName: 'テストウマ010', officialNameSource: 'jan2yo' }),
+    ).toBeUndefined();
+    expectProblems('horses', HORSE, [
+      [{ ...HORSE, officialNameSource: 'jan2yo' }, 'officialNameSource'],
+      [
+        { ...HORSE, officialName: 'テストウマ010', officialNameSource: 'manual' },
+        'officialNameSource',
+      ],
+    ]);
+  });
+
   it('breedings：偏離規則只能是 true 或不存在（需求規格 11.6、JUL-04）', () => {
     expect(check('breedings', { ...BREEDING, deviated: true })).toBeUndefined();
     expectProblems('breedings', BREEDING, [

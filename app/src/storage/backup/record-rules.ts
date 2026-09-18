@@ -305,6 +305,11 @@ function checkHorse(record: StoredRecord): string | undefined {
       (field) => [optional(record, field, isNonEmptyString), `${field} 必須是非空字串`] as const,
     ),
     [optional(record, 'femaleLine', (value) => typeof value === 'string'), 'femaleLine 必須是字串'],
+    [
+      !('officialNameSource' in record) ||
+        (record.officialNameSource === 'jan2yo' && 'officialName' in record),
+      'officialNameSource 只能是 jan2yo，且必須有 officialName',
+    ],
     [record.sireId !== record.id && record.damId !== record.id, '父母不可是自己'],
     [isArrayOf(record.stageNumbers, isStageNumber), 'stageNumbers 必須是階段馬番号陣列'],
     [isArrayOf(record.aliases, isAlias), 'aliases 必須是名稱別名陣列'],

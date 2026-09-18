@@ -52,6 +52,11 @@ export interface Horse {
   readonly fullName?: string;
   readonly baseName?: string;
   readonly officialName?: string;
+  /**
+   * 正式馬名由一月二歲馬總表填入時為 `jan2yo`（需求規格 11.3「來源為總表」）；
+   * 沒有這個欄位的正式馬名是手動輸入的。只在有正式馬名時存在。
+   */
+  readonly officialNameSource?: 'jan2yo';
   readonly sireId?: string;
   readonly sireName?: string;
   readonly damId?: string;
