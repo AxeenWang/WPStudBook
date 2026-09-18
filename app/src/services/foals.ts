@@ -495,10 +495,12 @@ export async function nameFoal(context: ServiceContext, input: FoalNameInput): P
           Object.entries({
             ...horse,
             officialName: name === '' ? undefined : name,
-            // 手動輸入的正式馬名沒有來源欄位。清空一月總表填入的名稱時，總表的基本馬名一起清掉，
-            // 否則畫面會退回基本馬名而不是追蹤名（需求規格 9.4、BRD-10）。
+            // 手動輸入的正式馬名沒有來源欄位。能在這裡改名的產駒（還不是繁殖牝馬或種牡馬），
+            // 基本馬名只會來自一月總表：手動改名或清空時一律拿掉，舊的總表名稱已留在別名與事件裡。
+            // 否則「總表補名 → 手動改名 → 清空」之後畫面會退回總表的基本馬名，而不是追蹤名
+            // （需求規格 9.4、BRD-10）。
             officialNameSource: undefined,
-            ...(fromList && name === '' ? { baseName: undefined } : {}),
+            baseName: undefined,
             aliases,
           }).filter(([, value]) => value !== undefined),
         ) as unknown as Horse;

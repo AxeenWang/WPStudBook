@@ -6,7 +6,7 @@ import type { Mare } from '../../src/domain/mare.ts';
 import { parseImportFile, type ParsedFile } from '../../src/import/parse.ts';
 import { aprFoalsImportHandler } from '../../src/services/apr-foals-import.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
-import { nameFoal } from '../../src/services/foals.ts';
+import { loadFoalList, nameFoal } from '../../src/services/foals.ts';
 import { createGame } from '../../src/services/games.ts';
 import {
   applyImport,
@@ -550,13 +550,25 @@ describe('一月二歲馬總表的匯入（需求規格 11.3）', () => {
 
     const renamed = await nameFoal(context, { foalId: colt, officialName: 'テスト改名' });
     expect(renamed.officialNameSource).toBeUndefined();
+    expect(renamed.baseName).toBeUndefined();
     expect(renamed.aliases).toEqual([{ kind: 'imported', name: 'テストウマ010', gameYear: 1970 }]);
+    // 總表補名 → 手動改名 → 清空：回到追蹤名，不是總表留下的基本馬名。
+    await nameFoal(context, { foalId: colt, officialName: '' });
 
     const other = await foalIdByAbilityNo(context, gameId, 0x3002);
     const cleared = await nameFoal(context, { foalId: other, officialName: '' });
     expect(cleared.officialName).toBeUndefined();
     expect(cleared.baseName).toBeUndefined();
     expect(cleared.officialNameSource).toBeUndefined();
+
+    const cards = (await loadFoalList(context)).cards;
+    for (const id of [colt, other]) {
+      const card = cards.find((item) => item.id === id);
+      expect(card).toMatchObject({ named: false });
+      expect(card?.name).toBe(card?.trackingName);
+      // 1970 年的一月總表匯入過、有能力番号卻沒有名稱：需人工補名。
+      expect(card?.naming).toBe('manual');
+    }
   });
 
   it('[STL-12] 一月的父馬唯一對應到種牡馬紀錄 → 以內部識別比對；外部名稱照樣比對，父母不改寫', async () => {
