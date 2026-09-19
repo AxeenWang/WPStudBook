@@ -13,7 +13,7 @@ export function DataManagementPage({ status }: { readonly status: AppStatus | un
   }
   const { currentGame } = status;
   return (
-    <>
+    <div className="page-grid">
       <GameSection status={status} />
       {currentGame !== undefined && <SettingsSection key={currentGame.id} />}
       <BackupSection currentGame={currentGame} />
@@ -21,6 +21,6 @@ export function DataManagementPage({ status }: { readonly status: AppStatus | un
       {currentGame !== undefined && <CheckpointSection key={currentGame.id} />}
       <EnvironmentPanel />
       {currentGame !== undefined && <DangerZone currentGame={currentGame} />}
-    </>
+    </div>
   );
 }

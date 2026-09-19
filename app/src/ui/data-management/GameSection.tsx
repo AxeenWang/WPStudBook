@@ -305,20 +305,22 @@ export function CreateGameForm({
 export function GameSection({ status }: { readonly status: AppStatus }) {
   const { currentGame } = status;
   return (
-    <section aria-labelledby="games-heading">
+    <section aria-labelledby="games-heading" className="page-grid-wide">
       <h2 id="games-heading">遊戲局</h2>
       {status.games.length === 0 ? (
         <p>還沒有遊戲局，請先建立一局。</p>
       ) : (
         <GameList games={status.games} currentGameId={currentGame?.id} />
       )}
-      {currentGame !== undefined && (
-        <YearChangeForm
-          key={`${currentGame.id}-${String(currentGame.currentYear)}`}
-          currentGame={currentGame}
-        />
-      )}
-      <CreateGameForm currentGame={currentGame} />
+      <div className="form-pair">
+        {currentGame !== undefined && (
+          <YearChangeForm
+            key={`${currentGame.id}-${String(currentGame.currentYear)}`}
+            currentGame={currentGame}
+          />
+        )}
+        <CreateGameForm currentGame={currentGame} />
+      </div>
     </section>
   );
 }

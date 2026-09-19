@@ -33,7 +33,8 @@ function ImportHistory() {
     return <p>這一局還沒有匯入紀錄。</p>;
   }
   return (
-    <ul data-testid="import-history">
+    // 歷程在固定高度的框內捲動；可捲動區域要能用鍵盤聚焦（axe scrollable-region-focusable）。
+    <ul data-testid="import-history" tabIndex={0} aria-labelledby="import-history-heading">
       {history.map((batch) => (
         <li key={batch.id}>
           {batch.gameYear} 年 {formatTiming(batch.timing.month, batch.timing.week)} ·{' '}
@@ -105,12 +106,16 @@ function ImportsView({
 
   return (
     <section aria-labelledby="imports-heading">
-      <h2 id="imports-heading">年度匯入</h2>
-      <p>
-        支援一月二歲馬總表、四月誕生幼駒總表、五月繁殖牝馬總表、七月繁殖牝馬總表、
-        五月種牡馬總表、候選 TXT、目標種牡馬 TXT 與選用的十月全世界繁殖牝馬總表。
-        匯入前會先顯示預覽，有阻擋錯誤時資料不變。
-      </p>
+      <div className="section-head">
+        <div>
+          <h2 id="imports-heading">年度匯入</h2>
+          <p>
+            支援一月二歲馬總表、四月誕生幼駒總表、五月繁殖牝馬總表、七月繁殖牝馬總表、
+            五月種牡馬總表、候選 TXT、目標種牡馬 TXT 與選用的十月全世界繁殖牝馬總表。
+            匯入前會先顯示預覽，有阻擋錯誤時資料不變。
+          </p>
+        </div>
+      </div>
 
       <div
         className="drop-zone"
@@ -120,6 +125,9 @@ function ImportsView({
         }}
         onDrop={onDrop}
       >
+        <span className="drop-icon" aria-hidden="true">
+          ⇩
+        </span>
         <label htmlFor="import-file">選擇匯入檔（也可以把檔案拖放到這裡）</label>
         <input
           id="import-file"
@@ -181,8 +189,10 @@ function ImportsView({
         <TargetStallionFlow key={flowKey} file={file} choice={choice} onApplied={notifyChanged} />
       )}
 
-      <h3>匯入歷程</h3>
-      <ImportHistory />
+      <section aria-labelledby="import-history-heading" className="import-history">
+        <h3 id="import-history-heading">匯入歷程</h3>
+        <ImportHistory />
+      </section>
     </section>
   );
 }

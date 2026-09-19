@@ -30,7 +30,7 @@
         --focus: #0b57d0;
         --sidebar: #121b23;
         --sidebar-text: #b9c6be;
-        --sidebar-muted: #7f9186;
+        --sidebar-muted: #93a59a;
         --radius-lg: 16px;
         --radius: 12px;
         --radius-sm: 9px;
@@ -51,8 +51,7 @@
       body {
         min-height: 100vh;
         margin: 0;
-        background:
-          radial-gradient(circle at 92% 0%, rgb(31 107 79 / 9%), transparent 28rem), var(--paper);
+        background: var(--paper);
       }
       .app {
         overflow-wrap: anywhere;
@@ -120,7 +119,7 @@
         box-sizing: border-box;
         overflow-y: auto;
         padding: 1.375rem 1rem;
-        background: linear-gradient(180deg, rgb(31 107 79 / 24%), transparent 34%), var(--sidebar);
+        background: var(--sidebar);
         color: #e7eee9;
       }
       .sidebar p {
@@ -139,7 +138,7 @@
         width: 2.625rem;
         height: 2.625rem;
         border-radius: 14px;
-        background: linear-gradient(145deg, #2f8a66, var(--turf-dark));
+        background: var(--turf);
         box-shadow: 0 10px 24px rgb(0 0 0 / 28%);
         color: #ffffff;
         font-family: var(--font-display);
@@ -366,7 +365,8 @@
       }
 
       /* ── 版面：頁面與卡片 ───────────────────────────────────── */
-      main > section {
+      main > section,
+      .page-grid > section {
         margin: 0 0 1.25rem;
         padding: 1.25rem 1.5rem 1.5rem;
         border: 1px solid rgb(169 181 172 / 60%);
@@ -374,10 +374,51 @@
         background: var(--surface);
         box-shadow: var(--shadow);
       }
-      main > section section {
+      main > section section,
+      .page-grid > section section {
         margin-top: 1.5rem;
         padding-top: 0.25rem;
         border-top: 1px solid var(--rail);
+      }
+      /* 資料管理：寬螢幕兩欄，遊戲局佔整列；遊戲局內兩張表單並排。 */
+      .page-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+        gap: 1.25rem;
+        align-items: start;
+      }
+      .page-grid > section {
+        min-width: 0;
+        margin: 0;
+      }
+      .page-grid > .page-grid-wide {
+        grid-column: 1 / -1;
+      }
+      .form-pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+        gap: 1rem 1.5rem;
+        align-items: start;
+        margin-top: 1.25rem;
+      }
+      .form-pair > .react-aria-Form {
+        margin: 0;
+        padding: 1rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface-2);
+      }
+      .form-pair > .react-aria-Form > h3 {
+        margin: 0;
+      }
+      .inline-form {
+        display: flex !important;
+        flex-wrap: wrap;
+        align-items: flex-end;
+      }
+      .inline-form > h3,
+      .inline-form > p {
+        flex-basis: 100%;
       }
       main > section.dashboard {
         display: grid;
@@ -496,7 +537,8 @@
         font-size: 0.875rem;
         text-align: center;
       }
-      main > section.danger-zone {
+      main > section.danger-zone,
+      .page-grid > section.danger-zone {
         border-color: #e3a29b;
         background: #fffbfa;
         box-shadow: none;
@@ -937,50 +979,60 @@
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
-      .lines-panel .line-grid {
+      :is(.lines-panel .line-grid, .line-slots) {
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0.625rem;
       }
       @media (max-width: 70rem) {
-        .lines-panel .line-grid {
+        :is(.lines-panel .line-grid, .line-slots) {
           grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
         }
       }
-      .lines-panel .line-card {
-        position: relative;
+      :is(.lines-panel, .line-slots) .line-card {
         display: flex;
         flex-direction: column;
         gap: 0.375rem;
-        padding: 0.75rem 0.875rem 0.875rem 1.125rem;
+        padding: 0.75rem 0.875rem 0.875rem;
         border: 1px solid var(--rail);
+        border-left: 5px solid var(--line-color, var(--rail));
         border-radius: var(--radius);
         background: var(--surface);
-        overflow: hidden;
       }
-      .lines-panel .line-card::before {
-        content: '';
-        position: absolute;
-        inset: 0 auto 0 0;
-        width: 5px;
-        background: var(--line-color, var(--rail));
-      }
-      .lines-panel .line-card[data-opened='false'] {
+      :is(.lines-panel, .line-slots) .line-card[data-opened='false'] {
         border-style: dashed;
         background: var(--surface-2);
         color: var(--muted);
       }
-      .lines-panel .line-card > h4 {
+      :is(.lines-panel, .line-slots) .line-card > :is(h3, h4) {
         margin: 0;
         color: var(--muted);
         font-size: 0.75rem;
         letter-spacing: 0.08em;
       }
-      .lines-panel .line-card > h4::before {
+      :is(.lines-panel, .line-slots) .line-card > :is(h3, h4)::before {
         width: 1.375rem;
         height: 0.9375rem;
       }
-      .lines-panel .line-card p {
+      :is(.lines-panel, .line-slots) .line-card p {
         margin: 0;
+      }
+      .line-slots .line-card > button {
+        align-self: flex-start;
+        margin-top: 0.25rem;
+      }
+      .line-slots .react-aria-Form {
+        margin: 0.25rem 0 0;
+        padding: 0.75rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius-sm);
+        background: var(--surface-2);
+      }
+      .line-slots .react-aria-Form h4 {
+        margin: 0;
+        font-size: 0.875rem;
+      }
+      .line-slots .react-aria-TextField input {
+        width: 100%;
       }
       .line-card-name {
         font-family: var(--font-display);
@@ -992,12 +1044,12 @@
         font-size: 0.875rem;
         font-weight: 600;
       }
-      .lines-panel .line-card dl > div {
+      :is(.lines-panel, .line-slots) .line-card dl > div {
         padding: 0.0625rem 0;
         border: 0;
       }
-      .lines-panel .line-card dt,
-      .lines-panel .line-card dd {
+      :is(.lines-panel, .line-slots) .line-card dt,
+      :is(.lines-panel, .line-slots) .line-card dd {
         font-size: 0.8125rem;
       }
       .line-card-alert {
@@ -1299,7 +1351,7 @@
         margin: 1rem 0 0.75rem;
         padding: 1rem 1.25rem;
         border-radius: var(--radius);
-        background: linear-gradient(115deg, #17332a, var(--turf));
+        background: var(--turf-dark);
         color: #ffffff;
       }
       [data-testid='mare-group-title'] {
@@ -1593,7 +1645,7 @@
       }
       .drawer-top {
         padding: 1.375rem 1.5rem 1rem;
-        background: linear-gradient(160deg, #0a2d52, #0f4c8f);
+        background: #0d3d6e;
         color: #e6f1fc;
       }
       .drawer-header {
@@ -1778,6 +1830,129 @@
         color: #c2185b;
       }
 
+      /* ── 八系頁的種牡馬卡：兩欄格狀，現任以淺藍條表示 ─────── */
+      .stallion-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+        gap: 0.875rem;
+      }
+      .stallion-grid > .stallion-card {
+        margin: 0;
+        padding: 1rem;
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .stallion-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .stallion-card .stallion-head h3 {
+        margin: 0;
+      }
+      .stallion-card h4 {
+        margin: 0.875rem 0 0.375rem;
+        color: var(--muted);
+        font-size: 0.75rem;
+        letter-spacing: 0.1em;
+      }
+      .stallion-card .stallion-list > li {
+        margin-bottom: 0.375rem;
+        padding: 0.625rem 0.75rem;
+        border: 1px solid var(--drawer-rail);
+        border-radius: var(--radius-sm);
+        background: var(--drawer-soft);
+      }
+      .stallion-card [data-testid='current-stallion'] {
+        margin: 0 0 0.375rem;
+        font-weight: 600;
+      }
+      .stallion-card .actions button {
+        min-height: 2rem;
+        padding: 0.25rem 0.625rem;
+        font-size: 0.8125rem;
+      }
+      .stallion-tools {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.375rem;
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--rail);
+      }
+      .stallion-card .react-aria-Form {
+        margin: 0.625rem 0 0;
+        padding: 0.75rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius-sm);
+        background: var(--surface-2);
+      }
+
+      /* ── 產駒清單：馬名與基本資料、能力徽章、狀態標籤三欄 ──── */
+      .foal-list > .foal-row {
+        margin-bottom: 0.5rem;
+        padding: 0.75rem 0.875rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .foal-list .foal-row-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) auto;
+        align-items: center;
+        gap: 0.5rem 1rem;
+      }
+      .foal-row-main p {
+        margin: 0;
+      }
+      .foal-name {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.25rem 0.5rem;
+      }
+      .foal-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 0.75rem;
+        margin-top: 0.125rem !important;
+        color: var(--muted);
+        font-size: 0.8125rem;
+      }
+      .ability-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3125rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .ability-chips > span {
+        padding: 0.125rem 0.5rem;
+        border-radius: 999px;
+        background: #eaeeea;
+        color: var(--ink-2);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .foal-state {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.3125rem;
+      }
+      @media (max-width: 52rem) {
+        .foal-list .foal-row-main {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .foal-state {
+          justify-content: flex-start;
+        }
+      }
+
       /* ── 血緣表 ─────────────────────────────────────────────── */
       .pedigree-view {
         margin-top: 0.5rem;
@@ -1814,11 +1989,43 @@
 
       /* ── 年度匯入 ───────────────────────────────────────────── */
       .drop-zone {
+        display: grid;
+        justify-items: center;
+        gap: 0.5rem;
         margin: 0.75rem 0;
-        padding: 1.25rem;
-        border: 2px dashed var(--rail-strong);
+        padding: 1.75rem 1.25rem;
+        border: 2px dashed #9dc7b1;
+        border-radius: var(--radius-lg);
+        background: #eef6f1;
+        text-align: center;
+      }
+      .drop-zone label {
+        font-weight: 700;
+      }
+      .drop-icon {
+        display: grid;
+        place-items: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        color: var(--turf);
+        font-size: 1.375rem;
+      }
+      section.import-history {
+        margin-top: 1.5rem;
+      }
+      .import-history [data-testid='import-history'] {
+        max-height: 24rem;
+        overflow-y: auto;
+        padding: 0 0.75rem;
+        border: 1px solid var(--rail);
         border-radius: var(--radius);
         background: var(--surface-2);
+      }
+      .import-history [data-testid='import-history'] > li:last-child {
+        border-bottom: 0;
       }
       .may-preview > p:first-child {
         font-weight: 600;

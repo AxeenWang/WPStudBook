@@ -441,9 +441,21 @@ function LineStallionsCard({
   const title = `第 ${String(line.position)} 系種牡馬`;
   const action = useAction();
   const errorLink = useErrorLink(action.error);
+  // 接任與指定預定後繼不常用，收在按鈕後，一次只展開一個。
+  const [tool, setTool] = useState<'assign' | 'planned'>();
+  const canAssign = assignableOptions(line).length > 0;
+  const canPlan = line.successorOptions.length > 0 || line.breedingOptions.length > 0;
+  const toggle = (next: 'assign' | 'planned') => {
+    setTool(tool === next ? undefined : next);
+  };
   return (
     <article aria-label={title} className="stallion-card">
-      <h3>{title}</h3>
+      <div className="stallion-head">
+        <h3>{title}</h3>
+        {line.reminders.length > 0 && (
+          <p className="tag tag-amber">{line.reminders.length} 則提醒</p>
+        )}
+      </div>
       <div data-testid="line-stallion-feedback">
         <Feedback message={action.message} error={action.error} id={errorLink.id} />
       </div>
@@ -458,7 +470,7 @@ function LineStallionsCard({
       )}
       <h4>現任</h4>
       {line.current.length === 0 ? (
-        <p>沒有現任紀錄。</p>
+        <p className="empty-inline">沒有現任紀錄。</p>
       ) : (
         <ul className="stallion-list" aria-label="現任">
           {line.current.map((item) => (
@@ -466,16 +478,42 @@ function LineStallionsCard({
           ))}
         </ul>
       )}
-      {assignableOptions(line).length > 0 && (
-        <AssignForm line={line} action={action} errorLink={errorLink} />
-      )}
       <h4>預定後繼</h4>
       {line.planned === undefined ? (
-        <p>尚未指定。</p>
+        <p className="notice">尚未指定。</p>
       ) : (
         <PlannedBlock planned={line.planned} position={line.position} action={action} />
       )}
-      {(line.successorOptions.length > 0 || line.breedingOptions.length > 0) && (
+      {(canAssign || canPlan) && (
+        <div className="stallion-tools">
+          {canAssign && (
+            <Button
+              className="button-small button-quiet"
+              aria-expanded={tool === 'assign'}
+              onPress={() => {
+                toggle('assign');
+              }}
+            >
+              自家種牡馬接任…
+            </Button>
+          )}
+          {canPlan && (
+            <Button
+              className="button-small button-quiet"
+              aria-expanded={tool === 'planned'}
+              onPress={() => {
+                toggle('planned');
+              }}
+            >
+              指定預定後繼…
+            </Button>
+          )}
+        </div>
+      )}
+      {tool === 'assign' && canAssign && (
+        <AssignForm line={line} action={action} errorLink={errorLink} />
+      )}
+      {tool === 'planned' && canPlan && (
         <PlannedForm line={line} action={action} errorLink={errorLink} />
       )}
     </article>
@@ -492,16 +530,22 @@ export function StallionsSection() {
     return null;
   }
   return (
-    <section aria-labelledby="stallions-heading">
-      <h2 id="stallions-heading">種牡馬</h2>
-      <p>
-        {`現任達 ${String(data.reminderAge)} 歲時提醒準備後繼（資料管理的提醒設定可調整）。`}
-        交接期間同系上下兩代可同時在崗；系統不自動選馬或更換現任。
-      </p>
+    <section aria-labelledby="stallions-heading" className="stallions-section">
+      <div className="section-head">
+        <div>
+          <h2 id="stallions-heading">種牡馬</h2>
+          <p>
+            {`現任達 ${String(data.reminderAge)} 歲時提醒準備後繼（資料管理的提醒設定可調整）。`}
+            交接期間同系上下兩代可同時在崗；系統不自動選馬或更換現任。
+          </p>
+        </div>
+      </div>
       {error !== undefined && <p role="alert">{error}</p>}
-      {data.lines.map((line) => (
-        <LineStallionsCard key={line.position} line={line} currentYear={data.currentYear} />
-      ))}
+      <div className="stallion-grid">
+        {data.lines.map((line) => (
+          <LineStallionsCard key={line.position} line={line} currentYear={data.currentYear} />
+        ))}
+      </div>
     </section>
   );
 }
