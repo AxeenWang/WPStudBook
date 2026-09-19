@@ -64,12 +64,16 @@ They live here because they describe how Claude Code works, not what the product
 
 - Stop only for a spec conflict that would change product behaviour, for missing real game data
   (something only the user knows about the game), or before a destructive operation.
-- Always ask before pushing, opening a pull request, merging, or deleting a branch.
+- Push right after each commit without asking. Always ask before opening a pull request, merging,
+  or deleting a branch.
 - For every other design choice, take the option you would recommend, apply it, and record it in
   the pull request description or in `docs/設計決策.md` for later review. Do not stop to ask.
 
 ### Visual design
 
-- Visual design is deferred to the end of the project by the user's decision. Keep the existing
-  basic styling, do not add visual design tasks, and say plainly that the interface is still basic
-  styling when reporting on it. Raise scheduling it when stage 5 approaches.
+- By the user's decision on 2026-09-19, visual design is stage 5 sub-plan 5-3: after performance
+  (5-2), so that virtualization settles the list and card structure first, and before
+  accessibility (5-4), so that the contrast, focus, and forced-colours checks run once against the
+  final styling.
+- Until 5-3 starts, keep the existing basic styling, do not add visual design tasks, and say
+  plainly that the interface is still basic styling when reporting on it.
