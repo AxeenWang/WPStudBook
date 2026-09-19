@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import {
   Button,
+  FieldError,
   Form,
   Input,
   Label,
@@ -8,19 +9,21 @@ import {
   RadioButton,
   RadioField,
   RadioGroup,
-  TextField,
 } from 'react-aria-components';
 import type { Game } from '../../domain/game.ts';
 import type { AppStatus } from '../../services/app-status.ts';
+import { fieldIssuesOf, type FieldIssues } from '../../services/errors.ts';
 import {
   changeCurrentYear,
-  checkNewGameInput,
   createGame,
+  inspectNewGameInput,
   previewYearChange,
   switchGame,
   type YearChangePreview,
 } from '../../services/games.ts';
+import { describedByError } from '../actions.tsx';
 import { ConfirmDialog } from '../dialogs.tsx';
+import { TextInputField, useFocusFirstInvalid } from '../fields.tsx';
 import { errorMessage, formatDateTime } from '../format.ts';
 import { useServices } from '../ServicesContext.tsx';
 
@@ -96,13 +99,19 @@ function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
   const [year, setYear] = useState(currentGame.currentYear + 1);
   const [preview, setPreview] = useState<YearChangePreview>();
   const [error, setError] = useState<string>();
+  const [fields, setFields] = useState<FieldIssues>({});
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorId = useId();
+  useFocusFirstInvalid(formRef, fields);
 
   const requestPreview = async () => {
     try {
       setPreview(await previewYearChange(context, year));
       setError(undefined);
+      setFields({});
     } catch (caught) {
       setError(errorMessage(caught));
+      setFields(fieldIssuesOf(caught));
     }
   };
 
@@ -121,7 +130,9 @@ function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
   return (
     <>
       <Form
+        ref={formRef}
         aria-labelledby="year-heading"
+        {...describedByError(errorId, error)}
         onSubmit={(event) => {
           event.preventDefault();
           void requestPreview();
@@ -132,11 +143,22 @@ function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
           「{currentGame.name}」目前是 {currentGame.currentYear}{' '}
           年。遊戲年只由你更新，不會依電腦日期改變。
         </p>
-        <NumberField value={year} onChange={setYear} formatOptions={YEAR_FORMAT}>
+        <NumberField
+          value={year}
+          onChange={setYear}
+          formatOptions={YEAR_FORMAT}
+          isInvalid={fields.toYear !== undefined}
+          validationBehavior="aria"
+        >
           <Label>新的目前遊戲年</Label>
           <Input />
+          <FieldError>{fields.toYear}</FieldError>
         </NumberField>
-        {error !== undefined && <p role="alert">{error}</p>}
+        {error !== undefined && (
+          <p role="alert" id={errorId}>
+            {error}
+          </p>
+        )}
         <Button type="submit">更新遊戲年</Button>
       </Form>
       {preview !== undefined && (
@@ -173,12 +195,17 @@ function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefine
   const [startYear, setStartYear] = useState(1968);
   const [copyMode, setCopyMode] = useState<'blank' | 'copy'>('blank');
   const [error, setError] = useState<string>();
+  const [fields, setFields] = useState<FieldIssues>({});
   const [busy, setBusy] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorId = useId();
+  useFocusFirstInvalid(formRef, fields);
 
   const submit = async () => {
-    const issues = checkNewGameInput({ name, startYear });
-    if (issues.length > 0) {
-      setError(issues.join('；'));
+    const issues = inspectNewGameInput({ name, startYear });
+    if (!issues.isEmpty) {
+      setError(issues.messages.join('；'));
+      setFields(issues.fields);
       return;
     }
     setBusy(true);
@@ -191,8 +218,10 @@ function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefine
       setName('');
       setCopyMode('blank');
       setError(undefined);
+      setFields({});
     } catch (caught) {
       setError(errorMessage(caught));
+      setFields(fieldIssuesOf(caught));
     } finally {
       setBusy(false);
       notifyChanged();
@@ -201,20 +230,26 @@ function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefine
 
   return (
     <Form
+      ref={formRef}
       aria-labelledby="create-game-heading"
+      {...describedByError(errorId, error)}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
     >
       <h3 id="create-game-heading">建立遊戲局</h3>
-      <TextField value={name} onChange={setName}>
-        <Label>遊戲局名稱</Label>
-        <Input />
-      </TextField>
-      <NumberField value={startYear} onChange={setStartYear} formatOptions={YEAR_FORMAT}>
+      <TextInputField label="遊戲局名稱" value={name} onChange={setName} error={fields.name} />
+      <NumberField
+        value={startYear}
+        onChange={setStartYear}
+        formatOptions={YEAR_FORMAT}
+        isInvalid={fields.startYear !== undefined}
+        validationBehavior="aria"
+      >
         <Label>起始年</Label>
         <Input />
+        <FieldError>{fields.startYear}</FieldError>
       </NumberField>
       {currentGame !== undefined && (
         <RadioGroup
@@ -232,7 +267,11 @@ function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefine
           </RadioField>
         </RadioGroup>
       )}
-      {error !== undefined && <p role="alert">{error}</p>}
+      {error !== undefined && (
+        <p role="alert" id={errorId}>
+          {error}
+        </p>
+      )}
       <Button type="submit" isDisabled={busy}>
         建立遊戲局
       </Button>

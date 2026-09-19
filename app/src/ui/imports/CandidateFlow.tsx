@@ -13,7 +13,8 @@ import {
   MARE_POSITION_OPTIONS,
   MARE_SITE_OPTIONS,
 } from '../../services/mares.ts';
-import { Feedback, useAction } from '../actions.tsx';
+import { useAction } from '../actions.tsx';
+import { PreviewControls } from './PreviewControls.tsx';
 import { OptionalIntegerField, SelectField, type SelectOption } from '../fields.tsx';
 import { ORIGIN_LABELS, SITE_LABELS } from '../mares/labels.ts';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
@@ -102,10 +103,7 @@ export function CandidateFlow({ file, choice, onApplied }: ImportFlowProps) {
 
   return (
     <>
-      <button type="button" onClick={preview} disabled={action.busy}>
-        產生預覽
-      </button>
-      <Feedback message={action.message} error={action.error} />
+      <PreviewControls action={action} onPreview={preview} />
 
       {prepared !== undefined && (
         <>

@@ -11,7 +11,7 @@ import {
   setPlannedSuccessor,
   type HorseStallionStatus,
 } from '../../services/stallions.ts';
-import { Feedback, useAction, type ActionState } from '../actions.tsx';
+import { Feedback, useAction, useErrorLink, type ActionState } from '../actions.tsx';
 import { SelectField } from '../fields.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 import { DUTY_STATUS_LABELS, READINESS_LABELS } from './labels.ts';
@@ -54,9 +54,11 @@ function StallionNoField({
 interface FormProps {
   readonly card: FoalCard;
   readonly action: ActionState;
+  /** 共用的結果訊息與表單的關聯（需求規格 13.5）。 */
+  readonly errorLink: ReturnType<typeof useErrorLink>;
 }
 
-function RegisterForm({ card, action }: FormProps) {
+function RegisterForm({ card, action, errorLink }: FormProps) {
   const { context } = useServices();
   const { busy, run } = action;
   const headingId = useId();
@@ -64,6 +66,7 @@ function RegisterForm({ card, action }: FormProps) {
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -82,7 +85,7 @@ function RegisterForm({ card, action }: FormProps) {
   );
 }
 
-function AssignForm({ card, action }: FormProps) {
+function AssignForm({ card, action, errorLink }: FormProps) {
   const { context } = useServices();
   const { busy, run } = action;
   const headingId = useId();
@@ -90,6 +93,7 @@ function AssignForm({ card, action }: FormProps) {
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -108,7 +112,12 @@ function AssignForm({ card, action }: FormProps) {
   );
 }
 
-function PlannedForm({ card, action, position }: FormProps & { readonly position: number }) {
+function PlannedForm({
+  card,
+  action,
+  errorLink,
+  position,
+}: FormProps & { readonly position: number }) {
   const { context } = useServices();
   const { busy, run } = action;
   const headingId = useId();
@@ -116,6 +125,7 @@ function PlannedForm({ card, action, position }: FormProps & { readonly position
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -150,6 +160,7 @@ export function HorseStallionActions({ card }: { readonly card: FoalCard }) {
   );
   const { data, error } = useServiceQuery(load);
   const action = useAction();
+  const errorLink = useErrorLink(action.error);
   if (data === undefined) {
     return error === undefined ? <p role="status">載入中…</p> : <p role="alert">{error}</p>;
   }
@@ -160,11 +171,16 @@ export function HorseStallionActions({ card }: { readonly card: FoalCard }) {
     <section aria-label="種牡馬" className="field-group">
       <h5>種牡馬</h5>
       <p data-testid="horse-stallion-status">{statusText(data)}</p>
-      <Feedback message={action.message} error={action.error} />
-      {!data.isStallion && <RegisterForm card={card} action={action} />}
-      {eligible && !onDuty && <AssignForm card={card} action={action} />}
+      <Feedback message={action.message} error={action.error} id={errorLink.id} />
+      {!data.isStallion && <RegisterForm card={card} action={action} errorLink={errorLink} />}
+      {eligible && !onDuty && <AssignForm card={card} action={action} errorLink={errorLink} />}
       {eligible && !onDuty && data.planned === undefined && (
-        <PlannedForm card={card} action={action} position={lineage.position} />
+        <PlannedForm
+          card={card}
+          action={action}
+          errorLink={errorLink}
+          position={lineage.position}
+        />
       )}
       {!eligible && <p className="notice">自由配種產駒只能登記去向，不能成為八系後繼。</p>}
     </section>

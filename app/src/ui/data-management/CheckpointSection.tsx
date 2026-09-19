@@ -13,6 +13,7 @@ import { COLLECTION_LABELS } from '../collection-labels.ts';
 import { ConfirmDialog } from '../dialogs.tsx';
 import { downloadFile } from '../download.ts';
 import { errorMessage, formatBytes, formatDateTime } from '../format.ts';
+import { useErrorLink } from '../actions.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 
 function checkpointLabel(checkpoint: Checkpoint): string {
@@ -153,6 +154,7 @@ export function CheckpointSection() {
     });
 
   const shownError = error ?? loadError;
+  const errorLink = useErrorLink(error);
 
   return (
     <section aria-labelledby="checkpoint-heading">
@@ -160,6 +162,7 @@ export function CheckpointSection() {
       <p>檢查點是遊戲局某個時點的完整快照，可以回溯；超過保留數時自動清除最舊且未釘選的檢查點。</p>
       <Form
         aria-labelledby="checkpoint-create-heading"
+        {...errorLink.formProps}
         onSubmit={(event) => {
           event.preventDefault();
           void create();
@@ -175,7 +178,11 @@ export function CheckpointSection() {
         </Button>
       </Form>
       {message !== undefined && <p role="status">{message}</p>}
-      {shownError !== undefined && <p role="alert">{shownError}</p>}
+      {shownError !== undefined && (
+        <p role="alert" id={errorLink.id}>
+          {shownError}
+        </p>
+      )}
       {checkpoints?.length === 0 && <p>尚無檢查點。</p>}
       {checkpoints !== undefined && checkpoints.length > 0 && (
         <div className="table-scroll">

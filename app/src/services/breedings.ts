@@ -22,7 +22,7 @@ import { listStallionDuties } from '../storage/stallion-duties.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { loadHorseNames } from './horse-names.ts';
 import { resolveTaskBreeding } from './tasks.ts';
-import { ServiceError } from './errors.ts';
+import { InputIssues, ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
 
@@ -152,20 +152,23 @@ export async function saveBreeding(
   const { mareId, gameYear, breedingType, conception } = input;
   const stallionName = input.stallionName.trim();
   const stallionId = input.stallionId === '' ? undefined : input.stallionId;
-  const issues: string[] = [];
+  const issues = new InputIssues();
   if (
     gameYear === undefined ||
     !Number.isInteger(gameYear) ||
     gameYear < MIN_GAME_YEAR ||
     gameYear > game.currentYear
   ) {
-    issues.push(`配種年必須是 ${String(MIN_GAME_YEAR)}～${String(game.currentYear)} 的整數`);
+    issues.add(
+      'gameYear',
+      `配種年必須是 ${String(MIN_GAME_YEAR)}～${String(game.currentYear)} 的整數`,
+    );
   }
   if (stallionId !== undefined && stallionName !== '') {
-    issues.push('種牡馬請選擇內部馬匹或填寫外部馬名，只能擇一');
+    issues.add('stallionName', '種牡馬請選擇內部馬匹或填寫外部馬名，只能擇一');
   }
   if (stallionId === undefined && stallionName === '' && conception !== '空胎') {
-    issues.push('請選擇或填寫種牡馬（沒有進行受胎作業時登記為空胎）');
+    issues.add('stallionId', '請選擇或填寫種牡馬（沒有進行受胎作業時登記為空胎）');
   }
   if (stallionId !== undefined) {
     const [stallion, duties, ownFoal] = await Promise.all([
@@ -174,7 +177,7 @@ export async function saveBreeding(
       getFoal(context.database, game.id, stallionId),
     ]);
     if (stallion?.sex !== 'male') {
-      issues.push('找不到這匹種牡馬');
+      issues.add('stallionId', '找不到這匹種牡馬');
     } else if (
       breedingType === 'designated' &&
       stallionLineage(
@@ -182,22 +185,23 @@ export async function saveBreeding(
         ownFoal,
       ) === undefined
     ) {
-      issues.push('八系指定配種的種牡馬必須有系位置與代數');
+      issues.add('stallionId', '八系指定配種的種牡馬必須有系位置與代數');
     }
   } else if (breedingType === 'designated' && stallionName !== '') {
-    issues.push('八系指定配種必須選擇有系位置的內部種牡馬');
+    issues.add('stallionName', '八系指定配種必須選擇有系位置的內部種牡馬');
   }
   const mare = await getMare(context.database, game.id, mareId);
   if (mare === undefined) {
-    issues.push('找不到這匹繁殖牝馬');
+    issues.add(undefined, '找不到這匹繁殖牝馬');
   } else if (breedingType === 'designated' && mare.group.kind === 'unassigned') {
-    issues.push('待指定用途的母馬不能登記八系指定配種');
+    issues.add('breedingType', '待指定用途的母馬不能登記八系指定配種');
   }
   if (input.taskId !== undefined && breedingType !== 'designated') {
-    issues.push('只有八系指定配種可以依任務登記');
+    issues.add('breedingType', '只有八系指定配種可以依任務登記');
   }
-  if (issues.length > 0 || gameYear === undefined) {
-    throw new ServiceError('invalidInput', issues.join('；'));
+  issues.throwIfAny();
+  if (gameYear === undefined) {
+    throw new ServiceError('invalidInput', '請輸入配種年');
   }
   // 規則快照在登記當下解析；之後規則改變不重算已保存的快照（需求規格 7.4、LINE-16）。
   // 系與代數不符時在這裡阻止，血統警告未確認時要求確認（需求規格 10.2、10.3）。

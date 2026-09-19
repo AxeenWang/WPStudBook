@@ -56,7 +56,7 @@ import { getHorse, getHorsesByIds } from '../storage/horses.ts';
 import { listImports } from '../storage/imports.ts';
 import { getMare, listMares } from '../storage/mares.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
-import { ServiceError } from './errors.ts';
+import { InputIssues, ServiceError, type FieldIssues } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
 import { requireAcceptedWarnings, type ServiceWarning } from './warnings.ts';
@@ -93,16 +93,16 @@ type FoalDetails = Pick<
   'sp' | 'st' | 'subParams' | 'turf' | 'dirt' | 'distanceText' | 'kodashi' | 'note'
 >;
 
-function detailsFrom(input: FoalDetailsInput, issues: string[]): FoalDetails {
+function detailsFrom(input: FoalDetailsInput, issues: InputIssues): FoalDetails {
   const { sp, st, kodashi, turf, dirt } = input;
   if (sp !== undefined && !isAbilityValue(sp)) {
-    issues.push('SP 必須是 0～999 的整數');
+    issues.add('sp', 'SP 必須是 0～999 的整數');
   }
   if (st !== undefined && !isAbilityValue(st)) {
-    issues.push('ST 必須是 0～999 的整數');
+    issues.add('st', 'ST 必須是 0～999 的整數');
   }
   if (kodashi !== undefined && !isKodashi(kodashi)) {
-    issues.push('仔出必須是 0～15 的整數');
+    issues.add('kodashi', '仔出必須是 0～15 的整數');
   }
   const subParams = Object.fromEntries(
     SUB_PARAM_KEYS.flatMap((key) => {
@@ -150,6 +150,8 @@ export interface FoalPreview {
 
 export interface FoalCheck {
   readonly issues: readonly string[];
+  /** 問題屬於哪些欄位（需求規格 13.5、UI-05），鍵為 FoalInput 的屬性名稱。 */
+  readonly fields: FieldIssues;
   readonly warnings: readonly FoalWarning[];
   /** 有問題時為 undefined。 */
   readonly preview: FoalPreview | undefined;
@@ -194,18 +196,18 @@ function conceptionWarning(breedingYear: number, breeding: Breeding | undefined)
  * 讓寫入時的結果與確認時一致。
  */
 export function planFoal(game: Game, state: FoalBirthState, input: FoalInput): FoalPlan {
-  const issues: string[] = [];
+  const issues = new InputIssues();
   const yearIssue = birthYearIssue(input.birthYear, game.currentYear);
   if (yearIssue !== undefined) {
-    issues.push(yearIssue);
+    issues.add('birthYear', yearIssue);
   }
   if (input.sex === undefined) {
-    issues.push('請選擇性別');
+    issues.add('sex', '請選擇性別');
   }
   const details = detailsFrom(input, issues);
   const { dam, damHorse, existingFoal, breeding, sire } = state;
   if (dam === undefined || damHorse === undefined) {
-    issues.push('找不到這匹繁殖牝馬');
+    issues.add(undefined, '找不到這匹繁殖牝馬');
   }
   const birthYear = input.birthYear ?? 0;
   if (existingFoal !== undefined) {
@@ -213,13 +215,14 @@ export function planFoal(game: Game, state: FoalBirthState, input: FoalInput): F
       nameOf(state.existingFoalHorse) ??
       trackingName(damHorse === undefined ? undefined : nameForTracking(damHorse), birthYear) ??
       existingFoal.id;
-    issues.push(
+    issues.add(
+      'birthYear',
       `${String(birthYear)} 年出生的產駒已有「${existingName}」，同一母馬同一出生年只能有一匹`,
     );
   }
   const conceived = breeding?.conception === '受胎';
   if (conceived && breeding.foalId !== undefined && existingFoal === undefined) {
-    issues.push(`${String(birthYear - 1)} 年的繁殖紀錄已連結其他產駒`);
+    issues.add('birthYear', `${String(birthYear - 1)} 年的繁殖紀錄已連結其他產駒`);
   }
   const warnings: FoalWarning[] = [];
   let freeBred = true;
@@ -234,7 +237,7 @@ export function planFoal(game: Game, state: FoalBirthState, input: FoalInput): F
       const sireLineage = sire === undefined ? undefined : stallionLineage(sire.duties, sire.foal);
       const damGeneration = dam === undefined ? undefined : mareGeneration(dam.group);
       if (sireLineage === undefined || damGeneration === undefined) {
-        issues.push('無法推導產駒的系與代數：種牡馬沒有系位置，或母馬尚未指定用途');
+        issues.add(undefined, '無法推導產駒的系與代數：種牡馬沒有系位置，或母馬尚未指定用途');
       } else {
         lineage = offspringLineage(sireLineage, damGeneration);
       }
@@ -246,22 +249,30 @@ export function planFoal(game: Game, state: FoalBirthState, input: FoalInput): F
   }
   const disposition = input.disposition ?? defaultDisposition(freeBred);
   if (!isDispositionAllowed(freeBred, disposition)) {
-    issues.push('自由配種產駒只能待售或已售出，不能保留');
+    issues.add('disposition', '自由配種產駒只能待售或已售出，不能保留');
   }
-  const preview: FoalPreview | undefined =
-    issues.length > 0
-      ? undefined
-      : {
-          breedingYear: conceived ? breeding.gameYear : undefined,
-          freeBred,
-          lineage,
-          sireLabel: nameOf(sire?.horse) ?? sireName,
-          trackingName: trackingName(
-            damHorse === undefined ? undefined : nameForTracking(damHorse),
-            birthYear,
-          ),
-        };
-  return { issues, warnings, preview, sireId, sireName, disposition, details };
+  const preview: FoalPreview | undefined = !issues.isEmpty
+    ? undefined
+    : {
+        breedingYear: conceived ? breeding.gameYear : undefined,
+        freeBred,
+        lineage,
+        sireLabel: nameOf(sire?.horse) ?? sireName,
+        trackingName: trackingName(
+          damHorse === undefined ? undefined : nameForTracking(damHorse),
+          birthYear,
+        ),
+      };
+  return {
+    issues: issues.messages,
+    fields: issues.fields,
+    warnings,
+    preview,
+    sireId,
+    sireName,
+    disposition,
+    details,
+  };
 }
 
 async function planFromDatabase(context: ServiceContext, input: FoalInput) {
@@ -280,7 +291,12 @@ export async function checkRegisterFoal(
   input: FoalInput,
 ): Promise<FoalCheck> {
   const { plan } = await planFromDatabase(context, input);
-  return { issues: plan.issues, warnings: plan.warnings, preview: plan.preview };
+  return {
+    issues: plan.issues,
+    fields: plan.fields,
+    warnings: plan.warnings,
+    preview: plan.preview,
+  };
 }
 
 export interface RegisteredFoal {
@@ -389,7 +405,7 @@ export async function registerFoal(
 ): Promise<RegisteredFoal> {
   const { game, plan } = await planFromDatabase(context, input);
   if (plan.issues.length > 0) {
-    throw new ServiceError('invalidInput', plan.issues.join('；'));
+    throw new ServiceError('invalidInput', plan.issues.join('；'), { fields: plan.fields });
   }
   requireAcceptedWarnings(plan.warnings, input.acceptedWarnings ?? []);
   const { damId } = input;
@@ -404,7 +420,9 @@ export async function registerFoal(
       build: (stored, state) => {
         const current = planFoal(stored, state, input);
         if (current.issues.length > 0) {
-          throw new ServiceError('invalidInput', current.issues.join('；'));
+          throw new ServiceError('invalidInput', current.issues.join('；'), {
+            fields: current.fields,
+          });
         }
         requireAcceptedWarnings(current.warnings, input.acceptedWarnings ?? []);
         return buildFoalRecords({
@@ -558,11 +576,9 @@ function foalDetailValue(foal: Foal): JsonObject {
 export async function updateFoal(context: ServiceContext, input: FoalUpdateInput): Promise<Foal> {
   const game = await requireCurrentGame(context);
   await requireFoalHorse(context, game.id, input.foalId);
-  const issues: string[] = [];
+  const issues = new InputIssues();
   const details = detailsFrom(input, issues);
-  if (issues.length > 0) {
-    throw new ServiceError('invalidInput', issues.join('；'));
-  }
+  issues.throwIfAny();
   const now = context.now().toISOString();
   const result = await trackWrite(context, () =>
     modifyFoal(context.database, {

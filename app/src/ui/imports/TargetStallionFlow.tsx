@@ -7,7 +7,8 @@ import {
   type TargetStallionRow,
   type TargetStallionTarget,
 } from '../../services/target-stallion-import.ts';
-import { Feedback, useAction } from '../actions.tsx';
+import { useAction } from '../actions.tsx';
+import { PreviewControls } from './PreviewControls.tsx';
 import { SelectField, type SelectOption } from '../fields.tsx';
 import { useServices } from '../ServicesContext.tsx';
 import {
@@ -194,10 +195,7 @@ export function TargetStallionFlow({ file, choice, onApplied }: ImportFlowProps)
         )}
       </div>
 
-      <button type="button" onClick={preview} disabled={action.busy}>
-        產生預覽
-      </button>
-      <Feedback message={action.message} error={action.error} />
+      <PreviewControls action={action} onPreview={preview} />
 
       {prepared !== undefined && rows[0] !== undefined && (
         <>

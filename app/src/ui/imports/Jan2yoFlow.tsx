@@ -6,7 +6,8 @@ import {
   withCandidatesChosen,
   type Jan2yoRow,
 } from '../../services/jan2yo-import.ts';
-import { Feedback, useAction } from '../actions.tsx';
+import { useAction } from '../actions.tsx';
+import { PreviewControls } from './PreviewControls.tsx';
 import { CheckboxField } from '../fields.tsx';
 import { useServices } from '../ServicesContext.tsx';
 import {
@@ -69,10 +70,7 @@ export function Jan2yoFlow({ file, choice, onApplied }: ImportFlowProps) {
 
   return (
     <>
-      <button type="button" onClick={preview} disabled={action.busy}>
-        產生預覽
-      </button>
-      <Feedback message={action.message} error={action.error} />
+      <PreviewControls action={action} onPreview={preview} />
 
       {prepared !== undefined && (
         <>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ImportProgress } from '../../services/import-progress.ts';
 import { applyImport, prepareImport, type PreparedImport } from '../../services/imports.ts';
 import {
@@ -28,6 +28,7 @@ function countText(value: number): string {
 export function OctWorldMaresFlow({ file, choice, onApplied }: ImportFlowProps) {
   const { context } = useServices();
   const action = useAction();
+  const errorId = useId();
   const [prepared, setPrepared] = useState<PreparedImport<OctMareRow>>();
   const [progress, setProgress] = useState<ImportProgress>();
   const [confirmed, setConfirmed] = useState<ReadonlySet<string>>(new Set());
@@ -67,7 +68,12 @@ export function OctWorldMaresFlow({ file, choice, onApplied }: ImportFlowProps) 
 
   return (
     <>
-      <button type="button" onClick={preview} disabled={action.busy}>
+      <button
+        type="button"
+        onClick={preview}
+        disabled={action.busy}
+        aria-describedby={action.error === undefined ? undefined : errorId}
+      >
         產生預覽
       </button>
       {progress !== undefined && (
@@ -75,7 +81,7 @@ export function OctWorldMaresFlow({ file, choice, onApplied }: ImportFlowProps) 
           處理進度：{countText(progress.done)}／{countText(progress.total)} 筆
         </p>
       )}
-      <Feedback message={action.message} error={action.error} />
+      <Feedback message={action.message} error={action.error} id={errorId} />
 
       {prepared !== undefined && (
         <>

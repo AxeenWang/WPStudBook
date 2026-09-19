@@ -12,6 +12,10 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
+  // 本機預設 worker 數是 CPU 執行緒的一半（24 執行緒的機器是 12 個）。12 個 Edge 與 12 個 Node worker
+  // 同時跑時，本機會出現 file:// 載入 net::ERR_FAILED、Target crashed、Node 的 Zone Allocation failed，
+  // 點擊也會卡在等待畫面穩定而逾時；6 個則穩定且更快（約 24 秒）。CI 維持 Playwright 的預設。
+  ...(process.env.CI ? {} : { workers: '25%' }),
   retries: 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {

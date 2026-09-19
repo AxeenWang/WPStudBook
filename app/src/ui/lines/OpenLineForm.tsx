@@ -21,6 +21,7 @@ import {
 import { findParentSystem } from '../../services/system-map.ts';
 import { ConfirmDialog } from '../dialogs.tsx';
 import { errorMessage } from '../format.ts';
+import { useErrorLink } from '../actions.tsx';
 import { useServices } from '../ServicesContext.tsx';
 
 const YEAR_FORMAT = { useGrouping: false, maximumFractionDigits: 0 } as const;
@@ -38,6 +39,7 @@ export function OpenLineForm({ slot }: { readonly slot: OpenableLine }) {
   const [damName, setDamName] = useState('');
   const [warnings, setWarnings] = useState<readonly OpenLineWarning[]>();
   const [error, setError] = useState<string>();
+  const errorLink = useErrorLink(error);
   const [busy, setBusy] = useState(false);
   const heading = `開啟第 ${String(slot.position)} 系`;
 
@@ -106,6 +108,7 @@ export function OpenLineForm({ slot }: { readonly slot: OpenableLine }) {
     <>
       <Form
         aria-labelledby="open-line-heading"
+        {...errorLink.formProps}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -175,7 +178,11 @@ export function OpenLineForm({ slot }: { readonly slot: OpenableLine }) {
             <Input />
           </TextField>
         </fieldset>
-        {error !== undefined && <p role="alert">{error}</p>}
+        {error !== undefined && (
+          <p role="alert" id={errorLink.id}>
+            {error}
+          </p>
+        )}
         <Button type="submit" isDisabled={busy}>
           {heading}
         </Button>

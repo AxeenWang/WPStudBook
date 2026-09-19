@@ -167,6 +167,7 @@ describe('新增市場母馬', () => {
 
     expect(await checkAddMarketMare(context, input)).toEqual({
       issues: [],
+      fields: {},
       warnings: [
         {
           code: 'sireParentSystemDiffers',
@@ -205,6 +206,7 @@ describe('新增市場母馬', () => {
     });
     expect(await checkAddMarketMare(context, same)).toEqual({
       issues: [],
+      fields: {},
       warnings: [],
       notices: [],
     });
@@ -229,6 +231,7 @@ describe('新增市場母馬', () => {
     for (const [input, notice] of cases) {
       expect(await checkAddMarketMare(context, input)).toEqual({
         issues: [],
+        fields: {},
         warnings: [],
         notices: [notice],
       });
@@ -239,7 +242,7 @@ describe('新增市場母馬', () => {
     );
   });
 
-  it('輸入錯誤一次列出，不寫入任何資料', async () => {
+  it('[UI-05] 輸入錯誤一次列出並記在對應欄位，不寫入任何資料', async () => {
     const context = await openContext();
     const game = await createGame(context, { name: '母馬局', startYear: 1968 });
     const input: MarketMareInput = {
@@ -253,6 +256,15 @@ describe('新增市場母馬', () => {
       noNamedFemaleLine: true,
     };
 
+    // 每個問題都記在對應的欄位，介面據此把錯誤與欄位建立關聯（UI-05）。
+    expect((await checkAddMarketMare(context, input)).fields).toEqual({
+      generation: '代數 0（起點母馬群）只能用於第 1 系',
+      fullName: '馬名不能只有 (外)、[地] 前綴',
+      abilityNo: '能力番号必須是 0x0000～0xFFFF 的十六進位',
+      birthYear: '出生年必須是 1000～1968 的整數',
+      site: '請選擇據點',
+      femaleLine: '牝系名稱與「不屬於具名牝系」只能擇一',
+    });
     expect((await checkAddMarketMare(context, input)).issues).toEqual([
       '代數 0（起點母馬群）只能用於第 1 系',
       '馬名不能只有 (外)、[地] 前綴',
@@ -265,7 +277,10 @@ describe('新增市場母馬', () => {
       (await checkAddMarketMare(context, { ...MARE_INPUT, fullName: ' ', generation: Number.NaN }))
         .issues,
     ).toEqual(['代數必須是 0～9999 的整數', '請輸入馬名']);
-    await expect(addMarketMare(context, input)).rejects.toMatchObject({ code: 'invalidInput' });
+    await expect(addMarketMare(context, input)).rejects.toMatchObject({
+      code: 'invalidInput',
+      fields: { fullName: '馬名不能只有 (外)、[地] 前綴', site: '請選擇據點' },
+    });
     const counts = await countGameRecords(context.database, game.id);
     expect([counts.horses, counts.mares, counts.events]).toEqual([0, 0, 0]);
   });

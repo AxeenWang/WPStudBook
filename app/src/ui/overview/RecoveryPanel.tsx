@@ -10,7 +10,7 @@ import {
   RECOVERY_SIDE_OPTIONS,
 } from '../../services/recoveries.ts';
 import { loadTaskBoard } from '../../services/tasks.ts';
-import { Feedback, useAction } from '../actions.tsx';
+import { Feedback, useAction, useErrorLink } from '../actions.tsx';
 import { OptionalIntegerField, SelectField } from '../fields.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 
@@ -61,6 +61,7 @@ function DeclareForm({
 }) {
   const { context } = useServices();
   const action = useAction();
+  const errorLink = useErrorLink(action.error);
   const [side, setSide] = useState<RecoverySide>('dam');
   const [reason, setReason] = useState('');
   const [breakGeneration, setBreakGeneration] = useState<number | undefined>(generation);
@@ -68,6 +69,7 @@ function DeclareForm({
   return (
     <Form
       aria-label={`宣告第 ${String(position)} 系斷血`}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void action.run(async () => {
@@ -101,7 +103,7 @@ function DeclareForm({
         <Label>原因</Label>
         <Input />
       </TextField>
-      <Feedback message={action.message} error={action.error} />
+      <Feedback message={action.message} error={action.error} id={errorLink.id} />
       <Button type="submit" isDisabled={action.busy}>
         宣告斷血
       </Button>

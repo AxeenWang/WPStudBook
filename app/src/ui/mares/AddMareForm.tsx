@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Button, Form, Input, Label, TextField } from 'react-aria-components';
+import { useId, useRef, useState } from 'react';
+import { Button, Form } from 'react-aria-components';
 import type { LinePosition } from '../../domain/line.ts';
 import type { MareOrigin, MareSite } from '../../domain/mare.ts';
 import { UNASSIGNED_VIEW, type MareGroupView } from '../../services/mare-list.ts';
@@ -14,8 +14,16 @@ import {
   type AddedMare,
   type MarketMareInput,
 } from '../../services/mares.ts';
+import { fieldIssuesOf, type FieldIssues } from '../../services/errors.ts';
+import { describedByError } from '../actions.tsx';
 import { ConfirmDialog } from '../dialogs.tsx';
-import { CheckboxField, OptionalIntegerField, SelectField } from '../fields.tsx';
+import {
+  CheckboxField,
+  OptionalIntegerField,
+  SelectField,
+  TextInputField,
+  useFocusFirstInvalid,
+} from '../fields.tsx';
 import { errorMessage } from '../format.ts';
 import { useServices } from '../ServicesContext.tsx';
 import { ORIGIN_LABELS, SITE_LABELS } from './labels.ts';
@@ -60,7 +68,11 @@ export function AddMareForm(props: AddMareFormProps) {
   const [originNote, setOriginNote] = useState('');
   const [warnings, setWarnings] = useState<readonly AddMareWarning[]>();
   const [error, setError] = useState<string>();
+  const [fields, setFields] = useState<FieldIssues>({});
   const [busy, setBusy] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorId = useId();
+  useFocusFirstInvalid(formRef, fields);
 
   const effectiveOrigin: MareOrigin =
     origin ??
@@ -88,9 +100,11 @@ export function AddMareForm(props: AddMareFormProps) {
     try {
       const added = await addMarketMare(context, { ...currentInput(), acceptedWarnings });
       setError(undefined);
+      setFields({});
       props.onAdded(added);
     } catch (caught) {
       setError(errorMessage(caught));
+      setFields(fieldIssuesOf(caught));
     } finally {
       setBusy(false);
       notifyChanged();
@@ -106,10 +120,12 @@ export function AddMareForm(props: AddMareFormProps) {
       const check = await checkAddMarketMare(context, currentInput());
       if (check.issues.length > 0) {
         setError(check.issues.join('；'));
+        setFields(check.fields);
         setBusy(false);
         return;
       }
       setError(undefined);
+      setFields({});
       if (check.warnings.length > 0) {
         setWarnings(check.warnings);
         setBusy(false);
@@ -125,7 +141,9 @@ export function AddMareForm(props: AddMareFormProps) {
   return (
     <>
       <Form
+        ref={formRef}
         aria-labelledby="add-mare-heading"
+        {...describedByError(errorId, error)}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -150,32 +168,39 @@ export function AddMareForm(props: AddMareFormProps) {
           label="母馬群的代數（0＝第 1 系起點）"
           value={generation}
           onChange={setGeneration}
+          error={fields.generation}
         />
-        <TextField value={fullName} onChange={setFullName}>
-          <Label>馬名</Label>
-          <Input />
-        </TextField>
-        <TextField value={abilityNo} onChange={setAbilityNo}>
-          <Label>能力番号（選填，例如 0x0000）</Label>
-          <Input />
-        </TextField>
-        <OptionalIntegerField label="出生年（選填）" value={birthYear} onChange={setBirthYear} />
-        <TextField value={sireName} onChange={setSireName}>
-          <Label>父馬名（選填）</Label>
-          <Input />
-        </TextField>
-        <TextField value={damName} onChange={setDamName}>
-          <Label>母馬名（選填）</Label>
-          <Input />
-        </TextField>
-        <TextField value={sireSubsystem} onChange={setSireSubsystem}>
-          <Label>自身父系（選填）</Label>
-          <Input />
-        </TextField>
-        <TextField value={femaleLine} onChange={setFemaleLine}>
-          <Label>牝系名稱（選填）</Label>
-          <Input />
-        </TextField>
+        <TextInputField
+          label="馬名"
+          value={fullName}
+          onChange={setFullName}
+          error={fields.fullName}
+        />
+        <TextInputField
+          label="能力番号（選填，例如 0x0000）"
+          value={abilityNo}
+          onChange={setAbilityNo}
+          error={fields.abilityNo}
+        />
+        <OptionalIntegerField
+          label="出生年（選填）"
+          value={birthYear}
+          onChange={setBirthYear}
+          error={fields.birthYear}
+        />
+        <TextInputField label="父馬名（選填）" value={sireName} onChange={setSireName} />
+        <TextInputField label="母馬名（選填）" value={damName} onChange={setDamName} />
+        <TextInputField
+          label="自身父系（選填）"
+          value={sireSubsystem}
+          onChange={setSireSubsystem}
+        />
+        <TextInputField
+          label="牝系名稱（選填）"
+          value={femaleLine}
+          onChange={setFemaleLine}
+          error={fields.femaleLine}
+        />
         <CheckboxField
           label="不屬於具名牝系"
           checked={noNamedFemaleLine}
@@ -187,6 +212,7 @@ export function AddMareForm(props: AddMareFormProps) {
           options={SITE_CHOICES}
           emptyLabel="請選擇"
           onChange={setSite}
+          error={fields.site}
         />
         <SelectField
           label="來源"
@@ -194,11 +220,12 @@ export function AddMareForm(props: AddMareFormProps) {
           options={ORIGIN_CHOICES}
           onChange={setOrigin}
         />
-        <TextField value={originNote} onChange={setOriginNote}>
-          <Label>來源備註（選填）</Label>
-          <Input />
-        </TextField>
-        {error !== undefined && <p role="alert">{error}</p>}
+        <TextInputField label="來源備註（選填）" value={originNote} onChange={setOriginNote} />
+        {error !== undefined && (
+          <p role="alert" id={errorId}>
+            {error}
+          </p>
+        )}
         <div className="actions">
           <Button type="submit" isDisabled={busy}>
             新增母馬

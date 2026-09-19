@@ -8,6 +8,7 @@ import {
 } from '../../services/lines.ts';
 import { ConfirmDialog } from '../dialogs.tsx';
 import { errorMessage } from '../format.ts';
+import { useErrorLink } from '../actions.tsx';
 import { useServices } from '../ServicesContext.tsx';
 
 /**
@@ -30,6 +31,7 @@ export function LineSystemsForm({
   const [warnings, setWarnings] = useState<readonly OpenLineWarning[]>();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const errorLink = useErrorLink(error);
   const [busy, setBusy] = useState(false);
 
   const save = async (acceptedWarnings: readonly OpenLineWarning['code'][] | undefined) => {
@@ -82,6 +84,7 @@ export function LineSystemsForm({
     <>
       <Form
         aria-labelledby={headingId}
+        {...errorLink.formProps}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -97,7 +100,11 @@ export function LineSystemsForm({
           <Input />
         </TextField>
         {message !== undefined && <p role="status">{message}</p>}
-        {error !== undefined && <p role="alert">{error}</p>}
+        {error !== undefined && (
+          <p role="alert" id={errorLink.id}>
+            {error}
+          </p>
+        )}
         <Button type="submit" isDisabled={busy}>
           更新第 {position} 系系統名稱
         </Button>

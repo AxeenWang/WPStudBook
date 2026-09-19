@@ -8,7 +8,7 @@ import {
   saveMatingRating,
   type MareMatingRatings,
 } from '../../services/mating-ratings.ts';
-import { Feedback, useAction } from '../actions.tsx';
+import { Feedback, useAction, useErrorLink } from '../actions.tsx';
 import { OptionalIntegerField, SelectField } from '../fields.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 
@@ -23,6 +23,7 @@ function RatingForm({
 }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
+  const errorLink = useErrorLink(error);
   const headingId = useId();
   const [stallionId, setStallionId] = useState(data.stallionOptions[0]?.id);
   const currentOf = (id: string | undefined) =>
@@ -33,6 +34,7 @@ function RatingForm({
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -70,7 +72,7 @@ function RatingForm({
         onChange={setGrade}
       />
       <OptionalIntegerField label="爆發力" value={power} onChange={setPower} />
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorLink.id} />
       <Button type="submit" isPending={busy}>
         保存配種評價
       </Button>
