@@ -4,6 +4,7 @@ import { loadOverviewReminders } from '../../services/reminders.ts';
 import { loadStallionOverview } from '../../services/stallions.ts';
 import { loadTaskBoard, type LineCardView } from '../../services/tasks.ts';
 import { Feedback, useAction } from '../actions.tsx';
+import { lineColorStyle } from '../line-color.ts';
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 import { IMPORT_TYPE_LABELS, importSummaryText } from '../import-labels.ts';
@@ -22,7 +23,7 @@ function LineCard({
     <li
       className="line-card"
       data-testid={`overview-line-${String(card.position)}`}
-      style={card.color === undefined ? undefined : { borderLeftColor: card.color }}
+      style={lineColorStyle(card.color)}
     >
       <h4>第 {card.position} 系</h4>
       {!card.opened ? (
@@ -145,7 +146,7 @@ function OverviewView() {
       .filter((item) => item.dutyStatus === 'onDuty')
       .map((item) => `${String(item.generation)} 代 ${item.name}`);
   return (
-    <section aria-labelledby="overview-heading">
+    <section aria-labelledby="overview-heading" className="dashboard">
       <h2 id="overview-heading">總覽</h2>
       {error !== undefined && <p role="alert">{error}</p>}
       {stallionError !== undefined && <p role="alert">{stallionError}</p>}
