@@ -141,4 +141,19 @@ test.describe('母馬詳情欄', () => {
     await filters.getByLabel('今年計畫').selectOption({ label: '八系指定配種' });
     await expect(region.getByRole('article')).toHaveCount(0);
   });
+
+  test('母馬卡片的「配種」直接開啟詳情欄的配種頁，關閉後焦點回到該按鈕', async ({ page }) => {
+    await setupMare(page, '配種鈕局');
+    const card = herd(page).getByRole('article', { name: 'テストヒンバ' });
+    const breed = card.getByRole('button', { name: '配種', exact: true });
+    const drawer = page.getByRole('dialog', { name: '「テストヒンバ」詳情' });
+
+    await breed.click();
+    await expect(drawer.getByRole('tab', { name: '配種' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await closeDrawer(drawer);
+    await expect(breed).toBeFocused();
+  });
 });

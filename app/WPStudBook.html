@@ -772,7 +772,6 @@
         font-weight: 700;
       }
       .group-picker,
-      .filters,
       .field-group,
       .field-row {
         display: flex;
@@ -789,13 +788,6 @@
         border: 1px solid var(--rail);
         border-radius: var(--radius-sm);
         background: var(--surface);
-      }
-      .filters input:not([type='checkbox']) {
-        width: 7rem;
-      }
-      .filters .field:has(input[type='checkbox']) {
-        justify-content: center;
-        min-height: 2.25rem;
       }
 
       /* ── 表格與資料清單 ─────────────────────────────────────── */
@@ -1297,69 +1289,251 @@
         );
       }
 
-      /* ── 母馬群 ─────────────────────────────────────────────── */
+      /* ── 母馬群：群組標頭、篩選面板、母馬卡 ───────────────── */
+      .herd-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem 1rem;
+        margin: 1rem 0 0.75rem;
+        padding: 1rem 1.25rem;
+        border-radius: var(--radius);
+        background: linear-gradient(115deg, #17332a, var(--turf));
+        color: #ffffff;
+      }
       [data-testid='mare-group-title'] {
-        margin-top: 0.5rem;
+        margin: 0;
         font-size: 1.1875rem;
+      }
+      .herd-head .button-primary {
+        border-color: rgb(255 255 255 / 80%);
+        background: #ffffff;
+        box-shadow: none;
+        color: var(--turf-dark);
+      }
+      .herd-head .button-primary:hover {
+        background: var(--turf-soft);
+      }
+      .herd-head :focus-visible {
+        outline-color: #ffffff;
+      }
+      fieldset.filters {
+        display: grid;
+        gap: 0.75rem;
+        margin: 0.75rem 0;
+        padding: 0.875rem 1rem 1rem;
+        border: 1px solid var(--rail);
+        border-radius: 14px;
+        background: var(--surface-2);
+      }
+      fieldset.filters > legend {
+        float: left;
+        margin: 0 0 0.125rem;
+        padding: 0;
+        color: var(--muted);
+        font-size: 0.75rem;
+        letter-spacing: 0.12em;
+      }
+      .filter-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
+        gap: 0.625rem 0.75rem;
+        align-items: end;
+      }
+      /* 關鍵字欄在寬螢幕跨兩欄；窄螢幕只有一欄時不跨，避免撐出水平捲動。 */
+      @media (min-width: 40rem) {
+        .filter-row-primary > :first-child {
+          grid-column: span 2;
+        }
+      }
+      .filter-row :is(input, select) {
+        width: 100%;
+      }
+      .filter-row .react-aria-TextField input,
+      .filter-row .react-aria-NumberField input {
+        width: 100%;
+      }
+      .filter-checks {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 1.25rem;
+        padding-top: 0.625rem;
+        border-top: 1px solid var(--rail);
+      }
+      .filter-checks > button {
+        margin-left: auto;
+      }
+      .filter-summary {
+        margin: 0.75rem 0 0.5rem;
+        color: var(--muted);
+        font-size: 0.875rem;
+        font-weight: 600;
       }
       .mare-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
-        gap: 1rem;
-        margin: 0.75rem 0;
+        gap: 0.875rem;
+        margin: 0.5rem 0;
         padding: 0;
         list-style: none;
       }
       .mare-card {
         min-width: 0;
-        padding: 1rem 1rem 0.875rem;
+        padding: 1rem;
         border: 1px solid var(--rail);
-        border-radius: var(--radius);
-        background: var(--surface);
+        border-radius: 14px;
+        background: var(--surface-2);
         cursor: pointer;
         transition:
           border-color 120ms,
-          box-shadow 120ms;
+          box-shadow 120ms,
+          transform 120ms;
       }
       .mare-card:hover {
-        border-color: var(--rail-strong);
-        box-shadow: 0 4px 14px rgb(22 32 42 / 10%);
+        border-color: #9dc7b1;
+        box-shadow: 0 8px 22px rgb(22 32 42 / 9%);
+        transform: translateY(-1px);
+      }
+      .mare-card[data-status='left'] {
+        background: #eef0ee;
+        opacity: 0.85;
       }
       .mare-card > article {
         display: flex;
         flex-direction: column;
+        gap: 0.625rem;
         height: 100%;
       }
+      .mare-card p {
+        margin: 0;
+      }
       .mare-name {
-        margin: 0 0 0.625rem;
+        margin: 0;
         font-size: 1.1875rem;
         letter-spacing: 0.02em;
       }
       .mare-name .link-button {
         font-weight: 800;
       }
-      .mare-card dl {
-        margin: 0;
-      }
-      .mare-card dl > div {
-        grid-template-columns: 5.5rem 1fr;
-        gap: 0.5rem;
-        padding: 0.1875rem 0;
-        border-bottom: 0;
-      }
-      .mare-card dt {
+      .mare-meta {
+        margin-top: 0.125rem !important;
+        color: var(--muted);
         font-size: 0.8125rem;
       }
-      .mare-card dd {
-        font-size: 0.9375rem;
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.375rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
       }
-      .mare-card .notice {
-        margin: 0.375rem 0 0;
+      .tag-row .tag {
+        white-space: normal;
+      }
+      .tag strong {
+        margin-inline-start: 0.25rem;
+      }
+      .vitality-block {
+        display: grid;
+        gap: 0.3125rem;
+      }
+      .vitality-meta {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.5rem;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .vitality-meta strong {
+        color: var(--ink);
+        font-size: 0.875rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .vitality-track {
+        height: 0.5625rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--rail);
+      }
+      .vitality-track[data-state='pending'],
+      .vitality-track[data-state='notApplicable'] {
+        background: repeating-linear-gradient(
+          135deg,
+          #e8ece9,
+          #e8ece9 7px,
+          var(--rail) 7px,
+          var(--rail) 14px
+        );
+      }
+      .vitality-fill {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #c28a2c, #2f9a68);
+      }
+      .vitality-track[data-low='true'] .vitality-fill {
+        background: linear-gradient(90deg, var(--silk-red), #d6912c);
+      }
+      .mare-facts {
+        display: grid;
+        gap: 0.125rem;
+        margin: 0;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--rail);
+      }
+      .mare-facts > div {
+        grid-template-columns: 4.5rem 1fr;
+        gap: 0.5rem;
+        padding: 0.0625rem 0;
+        border-bottom: 0;
+      }
+      .mare-facts dt {
+        font-size: 0.75rem;
+      }
+      .mare-facts dd {
+        font-size: 0.875rem;
+      }
+      .mare-notices {
+        display: grid;
+        gap: 0.25rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .mare-notices > li {
+        padding: 0.3125rem 0.5rem;
+        border-left: 3px solid var(--dirt);
+        border-radius: 6px;
+        background: var(--dirt-soft);
         color: var(--dirt);
+        font-size: 0.8125rem;
       }
-      .mare-card .actions {
+      .mare-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.375rem;
         margin-top: auto;
-        padding-top: 0.75rem;
+        padding-top: 0.25rem;
+      }
+      .card-open-hint {
+        margin-left: auto;
+        color: var(--turf);
+        font-size: 0.6875rem;
+        font-weight: 700;
+      }
+      .button-danger {
+        border-color: #e3a29b;
+        background: var(--surface);
+        color: var(--silk-red);
+      }
+      .button-danger:hover {
+        border-color: var(--silk-red);
+        background: var(--silk-red-soft);
       }
       meter {
         width: 6rem;
@@ -1394,37 +1568,73 @@
         margin-top: 0.75rem;
       }
 
-      /* ── 詳情欄 ─────────────────────────────────────────────── */
+      /* ── 詳情欄：深藍標頭與膠囊頁籤，內容區淺色 ─────────────── */
       .drawer-overlay {
         position: fixed;
         inset: 0;
+        z-index: 10;
         display: flex;
         justify-content: flex-end;
-        background: rgb(22 32 42 / 36%);
+        background: rgb(8 20 34 / 38%);
+        backdrop-filter: blur(2px);
       }
       .drawer {
         box-sizing: border-box;
-        width: min(34rem, 100%);
+        width: min(36rem, 100%);
         height: 100%;
         overflow-y: auto;
-        border-left: 0.5rem solid #1565c0;
+        border-left: 4px solid #1565c0;
         background: var(--drawer-soft);
-        box-shadow: -8px 0 28px rgb(0 0 0 / 18%);
+        box-shadow: -18px 0 45px rgb(3 20 37 / 28%);
       }
       .drawer .dialog {
-        padding: 1.25rem 1.5rem 2rem;
+        margin: 0;
+        padding: 0;
+      }
+      .drawer-top {
+        padding: 1.375rem 1.5rem 1rem;
+        background: linear-gradient(160deg, #0a2d52, #0f4c8f);
+        color: #e6f1fc;
       }
       .drawer-header {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
-        gap: 0.5rem;
+        gap: 1rem;
       }
       .drawer-header h2,
       .drawer-header h3 {
         margin: 0;
-        font-size: 1.25rem;
+        color: #ffffff;
+        font-size: 1.375rem;
         letter-spacing: 0.02em;
+      }
+      .drawer-sub {
+        margin: 0.375rem 0 0;
+        color: #b9d7f4;
+        font-size: 0.8125rem;
+      }
+      .drawer-close {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 2.25rem;
+        min-height: 2.25rem;
+        padding: 0;
+        border: 1px solid rgb(255 255 255 / 24%);
+        background: rgb(255 255 255 / 12%);
+        color: #ffffff;
+        font-size: 1.25rem;
+      }
+      .drawer-close:hover {
+        border-color: rgb(255 255 255 / 50%);
+        background: rgb(255 255 255 / 22%);
+      }
+      .drawer-top :focus-visible {
+        outline-color: #ffffff;
+      }
+      .drawer-body {
+        padding: 0.25rem 1.5rem 2rem;
       }
       .drawer dl > div,
       .detail-list > div {
@@ -1456,6 +1666,30 @@
         border-bottom-color: #1565c0;
         color: #0d47a1;
         font-weight: 700;
+      }
+      .drawer-top [role='tablist'] {
+        gap: 0.25rem;
+        margin: 1.125rem 0 0;
+        padding: 0.25rem;
+        border: 0;
+        border-radius: 12px;
+        background: rgb(0 0 0 / 22%);
+      }
+      .drawer-top [role='tab'] {
+        margin: 0;
+        padding: 0.4375rem 0.875rem;
+        border-bottom: 0;
+        border-radius: 9px;
+        color: #d3e6f9;
+        font-size: 0.875rem;
+        font-weight: 700;
+      }
+      .drawer-top [role='tab'][data-hovered] {
+        background: rgb(255 255 255 / 10%);
+      }
+      .drawer-top [role='tab'][aria-selected='true'] {
+        background: #ffffff;
+        color: #0b3a6c;
       }
       .drawer section {
         margin-top: 1.25rem;
@@ -1754,6 +1988,13 @@
         }
         .status-dot {
           forced-color-adjust: none;
+        }
+        /* 詳情欄的膠囊頁籤以白底標示目前頁，強制色彩下改用外框。 */
+        .drawer-top [role='tab'] {
+          border: 2px solid Canvas;
+        }
+        .drawer-top [role='tab'][aria-selected='true'] {
+          border-color: Highlight;
         }
         .line-card > h3::before,
         .line-card > h4::before,

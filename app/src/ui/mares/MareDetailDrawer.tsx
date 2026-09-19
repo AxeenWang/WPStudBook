@@ -19,6 +19,7 @@ import { MareBreeding } from './MareBreeding.tsx';
 import { MareFoals } from './MareFoals.tsx';
 import { MareHistory } from './MareHistory.tsx';
 import { MareSummary } from './MareSummary.tsx';
+import { SITE_LABELS, formatMareGroup } from './labels.ts';
 
 export const MARE_DETAIL_TABS = [
   ['summary', '概要'],
@@ -63,6 +64,27 @@ interface MareDetailDrawerProps {
   readonly onClose: () => void;
 }
 
+/** 詳情欄的深藍標頭：馬名、用途與據點、關閉鈕。 */
+function DrawerHeader({ detail }: { readonly detail: MareDetail | undefined }) {
+  return (
+    <div className="drawer-header">
+      <div>
+        <Heading slot="title">
+          {detail === undefined ? '繁殖牝馬詳情' : `「${detail.card.name}」詳情`}
+        </Heading>
+        {detail !== undefined && (
+          <p className="drawer-sub">
+            {formatMareGroup(detail.card.group)}・{SITE_LABELS[detail.card.site]}
+          </p>
+        )}
+      </div>
+      <Button slot="close" aria-label="關閉" className="drawer-close">
+        <span aria-hidden="true">×</span>
+      </Button>
+    </div>
+  );
+}
+
 /**
  * 右側藍色詳情欄（需求規格 13.4、UI-02）：五個頁籤，預設概要並保留本次最後查看的頁籤（由母馬群頁保存）。
  * 點欄外、X 或 Esc 關閉；react-aria 的 Modal 在開啟時把焦點移入，關閉後還原到開啟前的焦點。
@@ -86,20 +108,15 @@ export function MareDetailDrawer({ mareId, tab, onTabChange, onClose }: MareDeta
     >
       <Modal className="drawer">
         <Dialog className="dialog">
-          <div className="drawer-header">
-            <Heading slot="title">
-              {detail === undefined ? '繁殖牝馬詳情' : `「${detail.card.name}」詳情`}
-            </Heading>
-            <Button slot="close" aria-label="關閉">
-              X
-            </Button>
-          </div>
           {detail === undefined ? (
-            error === undefined ? (
-              <p role="status">載入中…</p>
-            ) : (
-              <p role="alert">{error}</p>
-            )
+            <>
+              <div className="drawer-top">
+                <DrawerHeader detail={undefined} />
+              </div>
+              <div className="drawer-body">
+                {error === undefined ? <p role="status">載入中…</p> : <p role="alert">{error}</p>}
+              </div>
+            </>
           ) : (
             <Tabs
               selectedKey={tab}
@@ -109,28 +126,33 @@ export function MareDetailDrawer({ mareId, tab, onTabChange, onClose }: MareDeta
                 }
               }}
             >
-              <TabList aria-label="詳情頁籤">
-                {MARE_DETAIL_TABS.map(([id, label]) => (
-                  <Tab key={id} id={id}>
-                    {label}
-                  </Tab>
-                ))}
-              </TabList>
-              <TabPanel id="summary">
-                <MareSummary detail={detail} />
-              </TabPanel>
-              <TabPanel id="breeding">
-                <MareBreeding mareId={mareId} />
-              </TabPanel>
-              <TabPanel id="foals">
-                <MareFoals mareId={mareId} />
-              </TabPanel>
-              <TabPanel id="pedigree">
-                <PedigreeBrief detail={detail} />
-              </TabPanel>
-              <TabPanel id="history">
-                <MareHistory items={detail.history} />
-              </TabPanel>
+              <div className="drawer-top">
+                <DrawerHeader detail={detail} />
+                <TabList aria-label="詳情頁籤">
+                  {MARE_DETAIL_TABS.map(([id, label]) => (
+                    <Tab key={id} id={id}>
+                      {label}
+                    </Tab>
+                  ))}
+                </TabList>
+              </div>
+              <div className="drawer-body">
+                <TabPanel id="summary">
+                  <MareSummary detail={detail} />
+                </TabPanel>
+                <TabPanel id="breeding">
+                  <MareBreeding mareId={mareId} />
+                </TabPanel>
+                <TabPanel id="foals">
+                  <MareFoals mareId={mareId} />
+                </TabPanel>
+                <TabPanel id="pedigree">
+                  <PedigreeBrief detail={detail} />
+                </TabPanel>
+                <TabPanel id="history">
+                  <MareHistory items={detail.history} />
+                </TabPanel>
+              </div>
             </Tabs>
           )}
         </Dialog>

@@ -108,8 +108,13 @@ function MareHerdView() {
   };
 
   return (
-    <section aria-labelledby="mares-heading">
-      <h2 id="mares-heading">繁殖牝馬群</h2>
+    <section aria-labelledby="mares-heading" className="herd-page">
+      <div className="section-head">
+        <div>
+          <h2 id="mares-heading">繁殖牝馬群</h2>
+          <p>以「第 q 系 N 代母馬群」為單位，系、代數與篩選條件取交集；點卡片開啟右側詳情。</p>
+        </div>
+      </div>
       {error !== undefined && <p role="alert">{error}</p>}
       {messages !== undefined && (
         <div role="status">
@@ -165,13 +170,14 @@ function MareHerdView() {
           ))}
         </div>
       </div>
-      <h3 data-testid="mare-group-title">
-        {formatGroupTitle(view.position, view.generation)}
-        {producing !== undefined &&
-          `：在圈 ${String(producing)}／目標 ${String(MARE_TARGET_COUNT)}`}
-      </h3>
-      <div className="actions">
+      <div className="herd-head">
+        <h3 data-testid="mare-group-title">
+          {formatGroupTitle(view.position, view.generation)}
+          {producing !== undefined &&
+            `：在圈 ${String(producing)}／目標 ${String(MARE_TARGET_COUNT)}`}
+        </h3>
         <Button
+          className="button-primary"
           isDisabled={adding}
           onPress={() => {
             setMessages(undefined);
@@ -198,9 +204,9 @@ function MareHerdView() {
           setPage(1);
         }}
       />
-      <p>符合條件 {shown.total} 匹</p>
+      <p className="filter-summary">符合條件 {shown.total} 匹</p>
       {shown.total === 0 ? (
-        <p>沒有符合條件的母馬。</p>
+        <p className="empty-inline">沒有符合條件的母馬。</p>
       ) : (
         <ul className="mare-grid" aria-label="母馬清單">
           {shown.items.map((card) => (
@@ -208,7 +214,10 @@ function MareHerdView() {
               key={card.id}
               card={card}
               vitalityThreshold={herd.vitalityThreshold}
-              onOpen={() => {
+              onOpen={(tab) => {
+                if (tab !== undefined) {
+                  setDetailTab(tab);
+                }
                 setDetailId(card.id);
               }}
               onSell={() => {
@@ -219,7 +228,7 @@ function MareHerdView() {
         </ul>
       )}
       {shown.pageCount > 1 && (
-        <nav aria-label="分頁" className="actions">
+        <nav aria-label="分頁" className="pager">
           <Button
             isDisabled={shown.page <= 1}
             onPress={() => {
