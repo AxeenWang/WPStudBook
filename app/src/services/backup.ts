@@ -1,7 +1,12 @@
 import { checkGameName, type Game, type LastBackup } from '../domain/game.ts';
 import { GAME_SUBJECT_ID, type HistoryEvent } from '../domain/history-event.ts';
 import { validateCollections, type BackupIssue } from '../storage/backup/collections.ts';
-import { decodeBackup, type DecodedBackup, type DecodeStage } from '../storage/backup/decode.ts';
+import {
+  decodeBackup,
+  type DecodedBackup,
+  type DecodeResult,
+  type DecodeStage,
+} from '../storage/backup/decode.ts';
 import {
   buildBackupDocument,
   computeBackupHash,
@@ -195,15 +200,45 @@ export type BackupPreview =
     }
   | { readonly ok: false; readonly stage: DecodeStage; readonly issues: readonly BackupIssue[] };
 
+/** 還原備份的進度（需求規格 12.2「大型檔案顯示進度」）：驗證到哪一步，或已寫入幾筆。 */
+export type RestoreProgress =
+  | { readonly step: 'verify'; readonly stage: DecodeStage }
+  | { readonly step: 'write'; readonly done: number; readonly total: number };
+
+export type RestoreProgressReporter = (progress: RestoreProgress) => void;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
+/** 解碼並驗證備份檔；有回報函式時，每個驗證步驟開始前回報並讓出執行緒，畫面才能更新進度。 */
+export function decodeBackupFile(
+  context: ServiceContext,
+  bytes: Uint8Array<ArrayBuffer>,
+  onProgress?: RestoreProgressReporter,
+): Promise<DecodeResult> {
+  return decodeBackup(bytes, {
+    schemaVersion: context.schemaVersion,
+    migrations: context.migrations,
+    onStage:
+      onProgress === undefined
+        ? undefined
+        : async (stage) => {
+            onProgress({ step: 'verify', stage });
+            await yieldToEventLoop();
+          },
+  });
+}
+
 export async function previewBackupFile(
   context: ServiceContext,
   fileName: string,
   bytes: Uint8Array<ArrayBuffer>,
+  onProgress?: RestoreProgressReporter,
 ): Promise<BackupPreview> {
-  const result = await decodeBackup(bytes, {
-    schemaVersion: context.schemaVersion,
-    migrations: context.migrations,
-  });
+  const result = await decodeBackupFile(context, bytes, onProgress);
   if (!result.ok) {
     return { ok: false, stage: result.stage, issues: result.issues };
   }
@@ -252,6 +287,7 @@ export interface RestoreInput {
   readonly bytes: Uint8Array<ArrayBuffer>;
   /** 新遊戲局名稱，省略時沿用備份內的局名。 */
   readonly name?: string | undefined;
+  readonly onProgress?: RestoreProgressReporter | undefined;
 }
 
 /** 還原為新遊戲局並切換過去（需求規格 12.2）。寫入前重新驗證，不沿用預覽結果。 */
@@ -259,15 +295,25 @@ export async function restoreBackupAsNewGame(
   context: ServiceContext,
   input: RestoreInput,
 ): Promise<Game> {
-  const result = await decodeBackup(input.bytes, {
-    schemaVersion: context.schemaVersion,
-    migrations: context.migrations,
-  });
+  const result = await decodeBackupFile(context, input.bytes, input.onProgress);
   if (!result.ok) {
     throw new ServiceError('backupRejected', formatIssues(result.issues));
   }
-  const { document, sourceSchemaVersion } = result.backup;
-  const name = input.name ?? document.game.name;
+  return writeRestoredGame(context, result.backup, input);
+}
+
+/**
+ * 把已驗證的備份寫成新遊戲局並切換過去；還原備份與從封存檔還原共用。
+ * 較舊結構版本的備份另寫一筆遷移事件（DATA-05）。
+ */
+export async function writeRestoredGame(
+  context: ServiceContext,
+  backup: DecodedBackup,
+  options: Pick<RestoreInput, 'name' | 'onProgress'>,
+): Promise<Game> {
+  const { document, sourceSchemaVersion } = backup;
+  const { onProgress } = options;
+  const name = options.name ?? document.game.name;
   if (checkGameName(name) !== undefined) {
     throw new ServiceError('invalidInput', '請輸入遊戲局名稱');
   }
@@ -292,7 +338,15 @@ export async function restoreBackupAsNewGame(
         ]
       : [];
   await trackWrite(context, () =>
-    insertRestoredGame(context.database, { game, collections: document.collections, extraEvents }),
+    insertRestoredGame(
+      context.database,
+      { game, collections: document.collections, extraEvents },
+      onProgress === undefined
+        ? undefined
+        : (done, total) => {
+            onProgress({ step: 'write', done, total });
+          },
+    ),
   );
   return game;
 }

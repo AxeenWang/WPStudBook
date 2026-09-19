@@ -28,6 +28,7 @@ import {
 import { ConfirmDialog, TypedNameDialog } from '../dialogs.tsx';
 import { downloadFile } from '../download.ts';
 import { errorMessage, formatBytes, formatCount, formatDateTime } from '../format.ts';
+import { restoreProgressText } from '../restore-progress.ts';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 import { BackupSummaryList } from './BackupSection.tsx';
 
@@ -263,10 +264,14 @@ function ArchiveIndex() {
     setProblem(undefined);
     try {
       const chosen = await readChosenFile(file);
-      const preview = await previewArchiveRestore(context, entry.id, chosen);
+      const preview = await previewArchiveRestore(context, entry.id, chosen, (progress) => {
+        setMessage(restoreProgressText(progress));
+      });
+      setMessage(undefined);
       setRestoreName(entry.gameName);
       setPending({ preview, file: chosen });
     } catch (caught) {
+      setMessage(undefined);
       setProblem(problemFrom('無法從這個檔案還原，資料未變更', caught));
     }
   };
@@ -278,10 +283,14 @@ function ArchiveIndex() {
         archiveId: target.preview.entry.id,
         file: target.file,
         name: restoreName,
+        onProgress: (progress) => {
+          setMessage(restoreProgressText(progress));
+        },
       });
       setProblem(undefined);
       setMessage(`已從封存檔還原為新遊戲局「${game.name}」`);
     } catch (caught) {
+      setMessage(undefined);
       setProblem(problemFrom('還原失敗，資料未變更', caught));
     } finally {
       notifyChanged();

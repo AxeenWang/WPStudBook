@@ -72,18 +72,25 @@ export interface RestoredGame {
   readonly extraEvents: readonly HistoryEvent[];
 }
 
-/** 以單一交易建立還原的新遊戲局並設為目前遊戲局；任何一筆失敗時整筆退回。 */
+/** 寫入進度的回報次數上限；每筆都回報會讓畫面更新比寫入本身還慢。 */
+const WRITE_PROGRESS_STEPS = 50;
+
+/**
+ * 以單一交易建立還原的新遊戲局並設為目前遊戲局；任何一筆失敗時整筆退回。
+ * onWritten 回報已寫入的紀錄筆數（含設定），供大型檔案顯示進度（需求規格 12.2）。
+ */
 export async function insertRestoredGame(
   database: AppDatabase,
   restored: RestoredGame,
+  onWritten?: (done: number, total: number) => void,
 ): Promise<void> {
   const gameId = restored.game.id;
   const transaction = database.transaction(
     ['games', 'appMeta', ...BACKUP_COLLECTIONS],
     'readwrite',
   );
-  await Promise.all([
-    transaction.objectStore('games').add(restored.game),
+  const gameRequest = transaction.objectStore('games').add(restored.game);
+  const records = [
     ...restored.collections.gameSettings.map((settings) =>
       transaction.objectStore('gameSettings').add(withGameId(gameId, settings)),
     ),
@@ -95,6 +102,25 @@ export async function insertRestoredGame(
     ...restored.extraEvents.map((event) =>
       transaction.objectStore('events').add(withGameId(gameId, event)),
     ),
+  ];
+  const total = records.length;
+  const step = Math.max(1, Math.ceil(total / WRITE_PROGRESS_STEPS));
+  let done = 0;
+  const counted =
+    onWritten === undefined
+      ? records
+      : records.map((request) =>
+          request.then((key) => {
+            done += 1;
+            if (done % step === 0 || done === total) {
+              onWritten(done, total);
+            }
+            return key;
+          }),
+        );
+  await Promise.all([
+    gameRequest,
+    ...counted,
     transaction.objectStore('appMeta').put({ key: CURRENT_GAME_KEY, value: gameId }),
     transaction.done,
   ]);

@@ -1,14 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { buildPerfGame, type PerfGame } from '../../scripts/lib/perf-game.ts';
+import { buildPerfGame, encodePerfBackup, type PerfGame } from '../../scripts/lib/perf-game.ts';
 import {
   buildSampleBytes,
   syntheticSample,
   type SyntheticSample,
 } from '../../scripts/lib/synthetic-samples.ts';
-import { validateCollections } from '../../src/storage/backup/collections.ts';
-import { buildBackupDocument, encodeBackupDocument } from '../../src/storage/backup/document.ts';
 import { closeDrawer, gotoPage, openApp } from './helpers.ts';
 
 /**
@@ -31,21 +29,9 @@ function formatCount(count: number): string {
 }
 
 async function writePerfBackup(perf: PerfGame, size: number): Promise<string> {
-  const validation = validateCollections(perf.collections);
-  if (!validation.ok) {
-    throw new Error(validation.issues.map((item) => item.message).join('\n'));
-  }
-  const document = await buildBackupDocument({
-    schemaVersion: 1,
-    appVersion: '0.0.0-perf',
-    exportedAt: '2026-09-19T00:00:00.000Z',
-    game: perf.game,
-    collections: validation.collections,
-  });
-  const encoded = await encodeBackupDocument(document);
   mkdirSync(GENERATED, { recursive: true });
   const path = resolve(GENERATED, `perf-${String(size)}.json.gz`);
-  writeFileSync(path, encoded.bytes);
+  writeFileSync(path, await encodePerfBackup(perf));
   return path;
 }
 

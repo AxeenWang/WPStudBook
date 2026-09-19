@@ -10,7 +10,7 @@ import {
   verifyArchiveFile,
   type ChosenFile,
 } from '../../src/services/archives.ts';
-import { exportBackup } from '../../src/services/backup.ts';
+import { exportBackup, type RestoreProgress } from '../../src/services/backup.ts';
 import { createCheckpoint } from '../../src/services/checkpoints.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
 import {
@@ -208,11 +208,18 @@ describe('封存舊遊戲局', () => {
       migrated: false,
       summary: { fileName: file.fileName, recordCount: 16 },
     });
+    const steps: RestoreProgress[] = [];
     const restored = await restoreArchive(context, {
       archiveId: entry.id,
       file,
       name: '還原的局',
+      onProgress: (progress) => {
+        steps.push(progress);
+      },
     });
+    // 封存檔只解碼驗證一次，之後直接寫入。
+    expect(steps.filter((item) => item.step === 'verify')).toHaveLength(4);
+    expect(steps.at(-1)).toEqual({ step: 'write', done: 17, total: 17 });
     expect(restored).toMatchObject({ name: '還原的局', startYear: 1968, currentYear: 1968 });
     expect((await getCurrentGame(context))?.id).toBe(restored.id);
     const counts = await countGameRecords(context.database, restored.id);

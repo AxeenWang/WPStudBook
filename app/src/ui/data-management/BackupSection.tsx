@@ -14,6 +14,7 @@ import { ServiceError } from '../../services/errors.ts';
 import { ConfirmDialog } from '../dialogs.tsx';
 import { downloadFile } from '../download.ts';
 import { errorMessage, formatBytes, formatCount, formatDateTime } from '../format.ts';
+import { restoreProgressText } from '../restore-progress.ts';
 import { useServices } from '../ServicesContext.tsx';
 
 type AcceptedPreview = Extract<BackupPreview, { ok: true }>;
@@ -134,7 +135,9 @@ export function BackupSection({ currentGame }: { readonly currentGame: Game | un
     setProblem(undefined);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const preview = await previewBackupFile(context, file.name, bytes);
+      const preview = await previewBackupFile(context, file.name, bytes, (progress) => {
+        setMessage(restoreProgressText(progress));
+      });
       if (!preview.ok) {
         setProblem({
           title: `「${file.name}」無法使用，資料未變更`,
@@ -160,10 +163,14 @@ export function BackupSection({ currentGame }: { readonly currentGame: Game | un
       const game = await restoreBackupAsNewGame(context, {
         bytes: target.bytes,
         name: restoreName,
+        onProgress: (progress) => {
+          setMessage(restoreProgressText(progress));
+        },
       });
       setMessage(`已還原為新遊戲局「${game.name}」`);
       setProblem(undefined);
     } catch (caught) {
+      setMessage(undefined);
       setProblem({ title: '還原失敗，資料未變更', details: errorMessage(caught).split('\n') });
     } finally {
       notifyChanged();
