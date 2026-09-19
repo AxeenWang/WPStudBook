@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.ts';
 import { createGameViaUi, openApp } from './helpers.ts';
 
 test.describe('遊戲局設定', () => {

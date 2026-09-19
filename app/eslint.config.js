@@ -39,6 +39,25 @@ export default defineConfig(
     },
   },
   {
+    // 端到端測試從 tests/e2e/fixtures.ts 取得 test，才會檢查主控台錯誤。
+    files: ['tests/e2e/**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@playwright/test',
+              importNames: ['test'],
+              allowTypeImports: true,
+              message: '從 ./fixtures.ts 匯入 test：每個端到端測試都要檢查主控台錯誤。',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.js'],
     extends: [js.configs.recommended],
     languageOptions: { sourceType: 'module' },

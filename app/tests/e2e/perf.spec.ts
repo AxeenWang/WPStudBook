@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures.ts';
 import { buildPerfGame, encodePerfBackup, type PerfGame } from '../../scripts/lib/perf-game.ts';
 import {
   buildSampleBytes,
