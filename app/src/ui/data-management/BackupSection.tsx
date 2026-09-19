@@ -30,7 +30,8 @@ interface Problem {
   readonly offerRawExport?: boolean | undefined;
 }
 
-function BackupSummaryList({
+/** 備份檔摘要；封存檔與備份同格式，封存區塊也使用。 */
+export function BackupSummaryList({
   summary,
   testId,
 }: {

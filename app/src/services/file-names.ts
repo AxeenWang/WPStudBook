@@ -27,6 +27,11 @@ export function backupFileName(input: BackupFileNameInput): string {
   return `${fileNameStem(input)}.${input.compressed ? 'json.gz' : 'json'}`;
 }
 
+/** 封存檔（需求規格 12.3）：格式與備份相同，一律 `.json.gz`，檔名標示封存。 */
+export function archiveFileName(input: RawExportFileNameInput): string {
+  return `${fileNameStem(input)}_封存.json.gz`;
+}
+
 /** 原始資料匯出（設計決策 5.4 節）：檔名標示不能還原。 */
 export function rawExportFileName(input: RawExportFileNameInput): string {
   return `${fileNameStem(input)}_原始資料_不能還原.json`;

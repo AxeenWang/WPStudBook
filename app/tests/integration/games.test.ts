@@ -331,6 +331,7 @@ describe('遊戲局服務', () => {
       gameCount: 2,
       recordCount: 1,
       checkpointCount: 0,
+      archiveCount: 0,
     });
     await expect(deleteAllData(context, '第一局')).rejects.toMatchObject({
       code: 'confirmationMismatch',
