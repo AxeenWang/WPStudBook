@@ -48,16 +48,19 @@ function describeStatus(status: AppStatus) {
   };
 }
 
+const STORAGE_NOTICE =
+  '資料只存在這個瀏覽器的設定檔：換瀏覽器或設定檔、清除網站資料、關閉 InPrivate／無痕視窗後都看不到原資料；同一設定檔開啟的本機 HTML 檔共用同一份資料。請定期下載外部備份。';
+
 /**
- * 資料遺失風險（需求規格 12.1）：沒有持久保存或這一局還沒備份時顯示橫幅。
- * 說明文字原本常駐在狀態列，改成有風險時才出現，平常只留側欄的一行。
+ * 資料只存在瀏覽器的提醒（需求規格 12.2）一律顯示。沒有持久保存或這一局還沒備份時放大成砂色橫幅，
+ * 其餘時候是頂部一行小字。
  */
-function RiskNotice({ status }: { readonly status: AppStatus }) {
+function StorageNotice({ status }: { readonly status: AppStatus }) {
   const { currentGame, persistence } = status;
   const notPersisted = persistence === 'notPersisted' || persistence === 'unsupported';
   const noBackup = currentGame !== undefined && currentGame.lastBackup === undefined;
   if (!notPersisted && !noBackup) {
-    return null;
+    return <p className="storage-note">{STORAGE_NOTICE}</p>;
   }
   return (
     <aside className="risk-notice" aria-label="資料保存提醒">
@@ -66,11 +69,7 @@ function RiskNotice({ status }: { readonly status: AppStatus }) {
       </span>
       <div>
         <p className="risk-title">{noBackup ? '這一局還沒有外部備份' : '瀏覽器沒有給予持久保存'}</p>
-        <p>
-          資料只存在這個瀏覽器的設定檔：換瀏覽器或設定檔、清除網站資料、關閉
-          InPrivate／無痕視窗後都看不到原資料；同一設定檔開啟的本機 HTML
-          檔共用同一份資料。請定期下載外部備份。
-        </p>
+        <p>{STORAGE_NOTICE}</p>
       </div>
     </aside>
   );
@@ -161,7 +160,7 @@ export function TopBar({
           </li>
         </ul>
       )}
-      {status !== undefined && <RiskNotice status={status} />}
+      {status !== undefined && <StorageNotice status={status} />}
       {dialog === 'year' && currentGame !== undefined && (
         <FormDialog
           title="更新目前遊戲年"

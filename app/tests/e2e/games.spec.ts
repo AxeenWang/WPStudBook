@@ -108,6 +108,11 @@ test.describe('遊戲局管理', () => {
   }) => {
     await openApp(page);
     await createGameViaUi(page, '第一局', 1968);
+    // 資料只存在瀏覽器的提醒一律顯示；這一局還沒備份時放大成橫幅（需求規格 12.2）。
+    await expect(page.getByRole('complementary', { name: '資料保存提醒' })).toContainText(
+      '這一局還沒有外部備份',
+    );
+    await expect(page.getByText(/資料只存在這個瀏覽器的設定檔/)).toBeVisible();
     const actions = page.getByRole('group', { name: '常用操作' });
 
     await actions.getByRole('button', { name: '更新年份' }).click();
