@@ -6,6 +6,9 @@ const INTEGER_FORMAT = { useGrouping: false, maximumFractionDigits: 0 } as const
 /**
  * 欄位錯誤（需求規格 13.5、UI-05）：有錯誤時欄位標示 aria-invalid，錯誤訊息以 aria-describedby
  * 與欄位建立關聯；React Aria 的欄位由 FieldError 自動關聯，原生欄位由這裡的 id 關聯。
+ *
+ * React Aria 欄位一律用 validationBehavior="aria"：預設的 native 會以瀏覽器的約束驗證把欄位標成無效，
+ * 修正內容後再次送出時瀏覽器仍擋下 submit，舊的錯誤永遠無法清除。錯誤只由服務的檢查結果決定。
  */
 function NativeFieldError({ id, error }: { readonly id: string; readonly error: string }) {
   return (
@@ -25,7 +28,12 @@ interface TextInputFieldProps {
 /** 文字欄位；有錯誤時在欄位下方顯示並與欄位關聯。 */
 export function TextInputField(props: TextInputFieldProps) {
   return (
-    <TextField value={props.value} onChange={props.onChange} isInvalid={props.error !== undefined}>
+    <TextField
+      value={props.value}
+      onChange={props.onChange}
+      isInvalid={props.error !== undefined}
+      validationBehavior="aria"
+    >
       <Label>{props.label}</Label>
       <Input />
       <FieldError>{props.error}</FieldError>
@@ -50,6 +58,7 @@ export function OptionalIntegerField(props: OptionalIntegerFieldProps) {
       }}
       formatOptions={INTEGER_FORMAT}
       isInvalid={props.error !== undefined}
+      validationBehavior="aria"
     >
       <Label>{props.label}</Label>
       <Input />

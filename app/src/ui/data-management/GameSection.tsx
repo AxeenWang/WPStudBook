@@ -148,6 +148,7 @@ function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
           onChange={setYear}
           formatOptions={YEAR_FORMAT}
           isInvalid={fields.toYear !== undefined}
+          validationBehavior="aria"
         >
           <Label>新的目前遊戲年</Label>
           <Input />
@@ -244,6 +245,7 @@ function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefine
         onChange={setStartYear}
         formatOptions={YEAR_FORMAT}
         isInvalid={fields.startYear !== undefined}
+        validationBehavior="aria"
       >
         <Label>起始年</Label>
         <Input />
