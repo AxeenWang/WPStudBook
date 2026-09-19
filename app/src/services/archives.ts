@@ -1,17 +1,19 @@
 import { sortArchivesNewestFirst, type ArchiveEntry } from '../domain/archive.ts';
 import type { Game } from '../domain/game.ts';
 import { archiveGameData, deleteArchive, getArchive, listArchives } from '../storage/archives.ts';
-import { decodeBackup, type DecodedBackup } from '../storage/backup/decode.ts';
+import type { DecodedBackup } from '../storage/backup/decode.ts';
 import { canCompress } from '../storage/backup/gzip.ts';
 import { countGameRecords, getGame, sumRecordCounts } from '../storage/games.ts';
 import {
   computeGameHash,
+  decodeBackupFile,
   encodeGameBackup,
   formatIssues,
-  restoreBackupAsNewGame,
   summarizeDecodedBackup,
+  writeRestoredGame,
   type BackupFile,
   type BackupSummary,
+  type RestoreProgressReporter,
 } from './backup.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
@@ -37,13 +39,6 @@ async function requireGame(context: ServiceContext, gameId: string): Promise<Gam
   return game;
 }
 
-async function decode(context: ServiceContext, bytes: Uint8Array<ArrayBuffer>) {
-  return decodeBackup(bytes, {
-    schemaVersion: context.schemaVersion,
-    migrations: context.migrations,
-  });
-}
-
 /**
  * 產生封存檔（需求規格 12.3）：與備份相同格式的 `.json.gz`，交出前先在記憶體解壓驗證。
  * 不寫入資料庫；本機明細要等使用者選回下載的檔案核對通過、輸入局名後才移除（completeArchive）。
@@ -60,7 +55,7 @@ export async function prepareArchive(
     );
   }
   const { document, file } = await encodeGameBackup(context, gameId, archiveFileName);
-  const result = await decode(context, file.bytes);
+  const result = await decodeBackupFile(context, file.bytes);
   if (!result.ok || !result.backup.compressed || result.backup.sourceSha256 !== document.sha256) {
     const details = result.ok ? '' : `\n${formatIssues(result.issues)}`;
     throw new ServiceError(
@@ -91,7 +86,7 @@ export async function verifyArchiveFile(
   file: ChosenFile,
 ): Promise<ArchiveVerification> {
   await requireGame(context, gameId);
-  const result = await decode(context, file.bytes);
+  const result = await decodeBackupFile(context, file.bytes);
   if (!result.ok) {
     throw new ServiceError(
       'archiveRejected',
@@ -201,8 +196,9 @@ async function decodeMatchingArchive(
   context: ServiceContext,
   entry: ArchiveEntry,
   file: ChosenFile,
+  onProgress?: RestoreProgressReporter,
 ): Promise<DecodedBackup> {
-  const result = await decode(context, file.bytes);
+  const result = await decodeBackupFile(context, file.bytes, onProgress);
   if (!result.ok) {
     throw new ServiceError(
       'archiveRejected',
@@ -229,9 +225,10 @@ export async function previewArchiveRestore(
   context: ServiceContext,
   archiveId: string,
   file: ChosenFile,
+  onProgress?: RestoreProgressReporter,
 ): Promise<ArchiveRestorePreview> {
   const entry = await requireArchive(context, archiveId);
-  const backup = await decodeMatchingArchive(context, entry, file);
+  const backup = await decodeMatchingArchive(context, entry, file, onProgress);
   return {
     entry,
     summary: summarizeDecodedBackup(file.fileName, backup),
@@ -245,6 +242,7 @@ export interface ArchiveRestoreInput {
   readonly file: ChosenFile;
   /** 新遊戲局名稱，省略時沿用封存檔內的局名。 */
   readonly name?: string | undefined;
+  readonly onProgress?: RestoreProgressReporter | undefined;
 }
 
 /** 從封存檔還原為獨立的新遊戲局並切換過去（需求規格 12.3）；索引保留，同一份封存檔可以再還原。 */
@@ -253,8 +251,8 @@ export async function restoreArchive(
   input: ArchiveRestoreInput,
 ): Promise<Game> {
   const entry = await requireArchive(context, input.archiveId);
-  await decodeMatchingArchive(context, entry, input.file);
-  return restoreBackupAsNewGame(context, { bytes: input.file.bytes, name: input.name });
+  const backup = await decodeMatchingArchive(context, entry, input.file, input.onProgress);
+  return writeRestoredGame(context, backup, input);
 }
 
 /** 只移除索引；封存檔在瀏覽器外，不受影響，仍可從「備份與還原」選擇它還原。 */

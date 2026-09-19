@@ -21,6 +21,11 @@ export type DecodeStage =
 export interface DecodeOptions {
   readonly schemaVersion: number;
   readonly migrations: readonly BackupMigration[];
+  /**
+   * 每個驗證步驟開始前呼叫，供大型檔案顯示進度（需求規格 12.2）；呼叫端可在其中讓出執行緒讓畫面更新。
+   * 欄位與識別關聯在同一步驗證，只回報 fields。
+   */
+  readonly onStage?: ((stage: DecodeStage) => Promise<void> | void) | undefined;
 }
 
 export interface DecodedBackup {
@@ -63,6 +68,7 @@ export async function decodeBackup(
   options: DecodeOptions,
 ): Promise<DecodeResult> {
   const compressed = isGzip(bytes);
+  await options.onStage?.('parse');
   const parsed = await parseBytes(bytes, compressed);
   if (!parsed.ok) {
     return parsed;
@@ -72,10 +78,12 @@ export async function decodeBackup(
     return envelope;
   }
   const source = envelope.value;
+  await options.onStage?.('counts');
   const countIssues = checkCounts(source.counts, source.collections);
   if (countIssues.length > 0) {
     return { ok: false, stage: 'counts', issues: countIssues };
   }
+  await options.onStage?.('hash');
   let computedHash: string;
   try {
     computedHash = await computeBackupHash(source.game, source.collections);
@@ -89,6 +97,9 @@ export async function decodeBackup(
   if (computedHash !== source.sha256) {
     return rejected('hash', 'hashMismatch', 'SHA-256 不符：檔案內容已被修改或損壞');
   }
+  if (source.schemaVersion < options.schemaVersion) {
+    await options.onStage?.('migration');
+  }
   const migrated = migrateBackupPayload(
     { game: source.game, collections: source.collections },
     source.schemaVersion,
@@ -98,6 +109,7 @@ export async function decodeBackup(
   if (!migrated.ok) {
     return rejected('migration', migrated.code, migrated.message);
   }
+  await options.onStage?.('fields');
   const summary = readGameSummary(migrated.payload.game);
   if (!summary.ok) {
     return { ok: false, stage: 'fields', issues: summary.issues };

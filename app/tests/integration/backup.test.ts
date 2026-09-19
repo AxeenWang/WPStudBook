@@ -4,6 +4,7 @@ import {
   previewBackupFile,
   recordDeliveredBackup,
   restoreBackupAsNewGame,
+  type RestoreProgress,
 } from '../../src/services/backup.ts';
 import type { ServiceContext } from '../../src/services/context.ts';
 import { createGame, getCurrentGame, listAllGames } from '../../src/services/games.ts';
@@ -226,6 +227,38 @@ describe('備份匯出與還原', () => {
       ['new-daughter', 'new'],
       ['old-daughter', 'old'],
     ]);
+  });
+
+  it('大型檔案顯示進度（需求規格 12.2）：預覽回報驗證步驟，還原另回報寫入筆數直到全部寫完', async () => {
+    const { context } = await seededContext();
+    const file = await exportBackup(context);
+    const previewSteps: RestoreProgress[] = [];
+    await previewBackupFile(context, file.fileName, file.bytes, (progress) => {
+      previewSteps.push(progress);
+    });
+    expect(previewSteps).toEqual([
+      { step: 'verify', stage: 'parse' },
+      { step: 'verify', stage: 'counts' },
+      { step: 'verify', stage: 'hash' },
+      { step: 'verify', stage: 'fields' },
+    ]);
+
+    const restoreSteps: RestoreProgress[] = [];
+    const restored = await restoreBackupAsNewGame(context, {
+      bytes: file.bytes,
+      onProgress: (progress) => {
+        restoreSteps.push(progress);
+      },
+    });
+    expect(restoreSteps.slice(0, 4)).toEqual(previewSteps);
+    const writes = restoreSteps.slice(4);
+    // 設定 1 筆加上 16 筆紀錄；每筆都回報（少於 50 筆），逐筆遞增到全部寫完。
+    expect(writes).toHaveLength(17);
+    expect(writes.at(-1)).toEqual({ step: 'write', done: 17, total: 17 });
+    expect(writes.map((item) => (item.step === 'write' ? item.done : 0))).toEqual(
+      Array.from({ length: 17 }, (_, index) => index + 1),
+    );
+    expect(await readRecords(context.database, restored.id, 'horses')).toHaveLength(3);
   });
 
   it('[DATA-06] 不支援原生壓縮時匯出 JSON，並可還原', async () => {
