@@ -244,6 +244,11 @@ test.describe('總覽與任務看板（需求規格 13.2）', () => {
     await expect(choices).toContainText('市場補血');
     await expect(choices).toContainText('宣告斷血並補系');
 
+    // 斷血表單收在按鈕後，展開才填寫。
+    await page
+      .getByTestId('recovery-waiting-1')
+      .getByRole('button', { name: '宣告斷血並補系' })
+      .click();
     const declare = page.getByRole('form', { name: '宣告第 1 系斷血' });
     await declare.getByLabel('原因').fill('母馬群全部離圈');
     await declare.getByRole('button', { name: '宣告斷血' }).click();

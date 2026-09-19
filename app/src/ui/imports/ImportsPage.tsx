@@ -1,6 +1,7 @@
-import { useState, type DragEvent } from 'react';
+import { useEffect, useState, type DragEvent } from 'react';
 import type { Game } from '../../domain/game.ts';
 import type { ImportType } from '../../domain/import-type.ts';
+import type { Timing } from '../../domain/timing.ts';
 import {
   listImportHistory,
   readFileNameHint,
@@ -44,7 +45,21 @@ function ImportHistory() {
   );
 }
 
-function ImportsView({ currentGame }: { readonly currentGame: Game }) {
+/** 從總覽年度工作卡選好的檔案：卡片的類型是使用者明確的選擇，時點在檔名沒有時用卡片的月份。 */
+export interface ImportRequest {
+  readonly id: number;
+  readonly file: File;
+  readonly type: ImportType;
+  readonly timing: Timing;
+}
+
+function ImportsView({
+  currentGame,
+  request,
+}: {
+  readonly currentGame: Game;
+  readonly request: ImportRequest | undefined;
+}) {
   const { notifyChanged } = useServices();
   const [file, setFile] = useState<ImportSource>();
   const [type, setType] = useState<ImportType>();
@@ -52,16 +67,25 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
   const [month, setMonth] = useState<number | undefined>();
   const [week, setWeek] = useState<number | undefined>();
 
-  const receive = async (picked: File) => {
+  const receive = async (picked: File, preset?: Pick<ImportRequest, 'type' | 'timing'>) => {
     const bytes = new Uint8Array(await picked.arrayBuffer());
     setFile({ fileName: picked.name, bytes });
     // 檔名只是預選，仍由使用者確認（需求規格 11.1、IMP-02、IMP-03）。
     const hint = readFileNameHint(picked.name);
-    setType(hint?.importType);
+    setType(preset?.type ?? hint?.importType);
     setGameYear(hint?.gameYear ?? currentGame.currentYear);
-    setMonth(hint?.timing.month);
-    setWeek(hint?.timing.week);
+    setMonth(hint?.timing.month ?? preset?.timing.month);
+    setWeek(hint?.timing.week ?? preset?.timing.week);
   };
+
+  const requestId = request?.id;
+  useEffect(() => {
+    if (request !== undefined) {
+      void receive(request.file, request);
+    }
+    // 同一個請求只接收一次；換請求時 id 會變。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId]);
 
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -163,10 +187,16 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
   );
 }
 
-export function ImportsPage({ currentGame }: { readonly currentGame: Game | undefined }) {
+export function ImportsPage({
+  currentGame,
+  request,
+}: {
+  readonly currentGame: Game | undefined;
+  readonly request?: ImportRequest | undefined;
+}) {
   return currentGame === undefined ? (
     <NoGameNotice />
   ) : (
-    <ImportsView key={currentGame.id} currentGame={currentGame} />
+    <ImportsView key={currentGame.id} currentGame={currentGame} request={request} />
   );
 }

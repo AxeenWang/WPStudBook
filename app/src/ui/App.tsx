@@ -8,11 +8,11 @@ import {
 } from '../services/context.ts';
 import { DataManagementPage } from './data-management/DataManagementPage.tsx';
 import { FoalsPage } from './foals/FoalsPage.tsx';
-import { ImportsPage } from './imports/ImportsPage.tsx';
+import { ImportsPage, type ImportRequest } from './imports/ImportsPage.tsx';
 import { errorMessage } from './format.ts';
 import { LinesPage } from './lines/LinesPage.tsx';
 import { MaresPage } from './mares/MaresPage.tsx';
-import { OverviewPage } from './overview/OverviewPage.tsx';
+import { OverviewPage, type ImportHandoff } from './overview/OverviewPage.tsx';
 import { pageLabel, type PageKey } from './pages.ts';
 import { ServicesProvider, useServiceQuery } from './ServicesContext.tsx';
 import { Sidebar } from './Sidebar.tsx';
@@ -28,6 +28,7 @@ function AppShell() {
   const { data: status, error } = useServiceQuery(loadAppStatus);
   const [page, setPage] = useState<PageKey>();
   const [focusBackup, setFocusBackup] = useState(false);
+  const [importRequest, setImportRequest] = useState<ImportRequest>();
   // 第一次讀到狀態時決定起始頁：還沒有遊戲局就到資料管理建立，已有遊戲局就從總覽開始。
   // 之後建立或切換遊戲局都不再自動換頁。
   if (page === undefined && status !== undefined) {
@@ -42,9 +43,21 @@ function AppShell() {
     }
   }, [focusBackup, page]);
   const currentGame = status?.currentGame;
+  const handOffImport = (handoff: ImportHandoff) => {
+    setImportRequest((previous) => ({ ...handoff, id: (previous?.id ?? 0) + 1 }));
+    setPage('imports');
+  };
   return (
     <div className="app-shell">
-      <Sidebar status={status} page={page} onNavigate={setPage} />
+      <Sidebar
+        status={status}
+        page={page}
+        onNavigate={(key) => {
+          // 從側欄進年度匯入頁是重新開始，不再帶入總覽卡片交接過的檔案。
+          setImportRequest(undefined);
+          setPage(key);
+        }}
+      />
       <div className="workspace">
         <TopBar
           status={status}
@@ -56,11 +69,13 @@ function AppShell() {
           }}
         />
         <main>
-          {page === 'overview' && <OverviewPage currentGame={currentGame} />}
+          {page === 'overview' && (
+            <OverviewPage currentGame={currentGame} onImport={handOffImport} />
+          )}
           {page === 'lines' && <LinesPage currentGame={currentGame} />}
           {page === 'mares' && <MaresPage currentGame={currentGame} />}
           {page === 'foals' && <FoalsPage currentGame={currentGame} />}
-          {page === 'imports' && <ImportsPage currentGame={currentGame} />}
+          {page === 'imports' && <ImportsPage currentGame={currentGame} request={importRequest} />}
           {page === 'systemMap' && <SystemMapPage currentGame={currentGame} />}
           {page === 'data' && <DataManagementPage status={status} />}
         </main>

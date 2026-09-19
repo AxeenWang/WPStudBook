@@ -381,8 +381,8 @@
       }
       main > section.dashboard {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
-        gap: 1rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1.25rem;
         align-items: start;
         padding: 0;
         border: 0;
@@ -394,9 +394,10 @@
         margin: 0;
       }
       .dashboard > section {
+        grid-column: 1 / -1;
         min-width: 0;
         margin: 0;
-        padding: 1.125rem 1.25rem 1.25rem;
+        padding: 1.25rem;
         border: 1px solid rgb(169 181 172 / 60%);
         border-radius: var(--radius-lg);
         background: var(--surface);
@@ -405,10 +406,95 @@
       .dashboard > section > h3:first-child {
         margin-top: 0;
       }
-      .dashboard > section[aria-labelledby='line-cards-heading'],
-      .dashboard > section[aria-labelledby='task-board-heading'],
-      .dashboard > section[aria-labelledby='recovery-heading'] {
-        grid-column: 1 / -1;
+      .dashboard > .annual-work {
+        grid-column: span 2;
+      }
+      .dashboard > .parent-panel {
+        grid-column: span 1;
+      }
+      @media (max-width: 70rem) {
+        main > section.dashboard {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .dashboard > .annual-work,
+        .dashboard > .parent-panel {
+          grid-column: 1 / -1;
+        }
+      }
+
+      /* ── 共用小元件：區塊標頭、標籤、小按鈕、空狀態 ────────── */
+      .section-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.5rem 1rem;
+        margin-bottom: 1rem;
+      }
+      .section-head h2,
+      .section-head h3 {
+        margin: 0;
+      }
+      .section-head p:not(.tag) {
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+        font-size: 0.8125rem;
+      }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        min-height: 1.5rem;
+        margin: 0;
+        padding: 0 0.625rem;
+        border: 1px solid var(--rail);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--ink-2);
+        font-size: 0.75rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .tag-green {
+        border-color: #b7dcc8;
+        background: var(--turf-soft);
+        color: var(--turf-dark);
+      }
+      .tag-amber {
+        border-color: var(--dirt-rail);
+        background: var(--dirt-soft);
+        color: var(--dirt);
+      }
+      .tag-red {
+        border-color: #f0bdb6;
+        background: var(--silk-red-soft);
+        color: #8c1d14;
+      }
+      .button-small {
+        min-height: 2rem;
+        padding: 0.25rem 0.625rem;
+        border-radius: 8px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+      }
+      .button-quiet {
+        border-color: transparent;
+        background: var(--turf-soft);
+        color: var(--turf-dark);
+      }
+      .button-quiet:hover {
+        border-color: #b7dcc8;
+        background: #d5e9de;
+      }
+      .empty-inline {
+        margin: 0;
+        padding: 1rem;
+        border: 1px dashed var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 0.875rem;
+        text-align: center;
       }
       main > section.danger-zone {
         border-color: #e3a29b;
@@ -815,72 +901,323 @@
         white-space: nowrap;
       }
 
-      /* ── 總覽：年度工作、提醒、任務 ─────────────────────────── */
-      [data-testid='annual-work'],
-      [data-testid='import-history'],
-      .reminders,
-      .task-list,
-      .task-mares,
-      .history-list {
+      /* ── 總覽：指標卡、八系位置、任務、年度工作、提醒 ─────── */
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.875rem;
         margin: 0;
         padding: 0;
         list-style: none;
       }
-      [data-testid='annual-work'] > li {
+      .metric-card {
+        min-width: 0;
+        padding: 1.125rem;
+        border: 1px solid rgb(169 181 172 / 60%);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .metric-card p {
+        margin: 0;
+      }
+      .metric-label {
+        margin-bottom: 0.625rem !important;
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+      .metric-value {
+        font-family: var(--font-display);
+        font-size: 1.5rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.01em;
+        line-height: 1.25;
+      }
+      .metric-note {
+        margin-top: 0.375rem !important;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      @media (max-width: 70rem) {
+        .metric-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      .lines-panel .line-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.625rem;
+      }
+      @media (max-width: 70rem) {
+        .lines-panel .line-grid {
+          grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+        }
+      }
+      .lines-panel .line-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+        padding: 0.75rem 0.875rem 0.875rem 1.125rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface);
+        overflow: hidden;
+      }
+      .lines-panel .line-card::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 5px;
+        background: var(--line-color, var(--rail));
+      }
+      .lines-panel .line-card[data-opened='false'] {
+        border-style: dashed;
+        background: var(--surface-2);
+        color: var(--muted);
+      }
+      .lines-panel .line-card > h4 {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+      }
+      .lines-panel .line-card > h4::before {
+        width: 1.375rem;
+        height: 0.9375rem;
+      }
+      .lines-panel .line-card p {
+        margin: 0;
+      }
+      .line-card-name {
+        font-family: var(--font-display);
+        font-size: 1.0625rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      .line-card-empty {
+        font-size: 0.875rem;
+        font-weight: 600;
+      }
+      .lines-panel .line-card dl > div {
+        padding: 0.0625rem 0;
+        border: 0;
+      }
+      .lines-panel .line-card dt,
+      .lines-panel .line-card dd {
+        font-size: 0.8125rem;
+      }
+      .line-card-alert {
+        padding: 0.375rem 0.5rem;
+        border-left: 3px solid var(--dirt);
+        border-radius: 6px;
+        background: var(--dirt-soft);
+        color: var(--dirt);
+        font-size: 0.75rem;
+      }
+
+      /* 任務看板：一列一個配對，母馬逐列可登記。 */
+      .task-list {
+        display: grid;
+        gap: 0.625rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .task-card {
+        padding: 0.875rem 1rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .task-card h4 {
+        margin: 0 0 0.375rem;
+        font-size: 0.9375rem;
+      }
+      .task-card > p {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.75rem;
+        margin: 0.25rem 0;
+        color: var(--ink-2);
+        font-size: 0.8125rem;
+      }
+      .task-mares {
+        display: grid;
+        gap: 0.375rem;
+        margin: 0.625rem 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .task-mares > li {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        justify-content: space-between;
-        gap: 0.5rem 1rem;
-        padding: 0.5rem 0;
-        border-bottom: 1px solid var(--rail);
+        gap: 0.5rem 0.75rem;
+        padding: 0.5rem 0.625rem;
+        border-radius: var(--radius-sm);
+        background: var(--surface-2);
       }
-      [data-testid='import-history'] > li {
-        padding: 0.375rem 0;
-        border-bottom: 1px solid var(--rail);
-        font-size: 0.9375rem;
-        font-variant-numeric: tabular-nums;
+      .task-mares > li > span:first-child {
+        margin-right: auto;
+        font-weight: 700;
+      }
+
+      /* 年度工作：每種總表一張卡，月份徽章、狀態、選檔。 */
+      .workflow-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
+        gap: 0.625rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .workflow-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.375rem;
+        min-width: 0;
+        padding: 0.875rem;
+        border: 1px solid var(--rail);
+        border-radius: 13px;
+        background: var(--surface-2);
+      }
+      .workflow-card p {
+        margin: 0;
+      }
+      .workflow-card[data-done='true'] {
+        border-color: #b7dcc8;
+        background: #f3f9f5;
+      }
+      .workflow-card[data-dragging='true'] {
+        border: 2px dashed var(--turf);
+        background: var(--turf-soft);
+      }
+      .workflow-month {
+        display: grid;
+        place-items: center;
+        min-width: 2rem;
+        height: 1.75rem;
+        margin-bottom: 0.25rem;
+        padding: 0 0.375rem;
+        border-radius: 8px;
+        background: var(--turf-soft);
+        color: var(--turf-dark);
+        font-size: 0.75rem;
+        font-weight: 800;
+      }
+      .workflow-title {
+        font-size: 0.875rem;
+        font-weight: 700;
+      }
+      .workflow-hint,
+      .workflow-batch {
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .workflow-actions {
+        display: grid;
+        gap: 0.375rem;
+        width: 100%;
+        margin-top: auto;
+        padding-top: 0.5rem;
+      }
+      .workflow-actions button {
+        width: 100%;
+      }
+
+      /* 提醒：寬螢幕兩欄，前面一個砂色圓點。 */
+      .reminders {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+        gap: 0 1.5rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
       }
       .reminders > li {
         position: relative;
-        padding: 0.3125rem 0 0.3125rem 1rem;
+        padding: 0.4375rem 0 0.4375rem 1rem;
         border-bottom: 1px dashed var(--rail);
         color: var(--ink-2);
-        font-size: 0.9375rem;
+        font-size: 0.875rem;
       }
       .reminders > li::before {
         content: '';
         position: absolute;
-        top: 0.8125rem;
+        top: 0.9375rem;
         left: 0.125rem;
         width: 0.375rem;
         height: 0.375rem;
         border-radius: 50%;
         background: #c28a2c;
       }
-      .task-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
-        gap: 0.75rem;
+      .parent-panel .metric-value {
+        margin: 0.5rem 0 0.25rem;
+        font-size: 1.25rem;
       }
-      .task-card {
-        padding: 0.75rem 1rem;
+      /* 母馬群待補：每系一張卡，左側系代表色；補系進行中以紅色邊條標示。 */
+      .recovery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+        gap: 0.75rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .recovery-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        min-width: 0;
+        padding: 0.875rem 1rem;
         border: 1px solid var(--rail);
-        border-radius: var(--radius-sm);
+        border-left: 5px solid var(--rail-strong);
+        border-radius: var(--radius);
         background: var(--surface-2);
       }
-      .task-card h4 {
-        margin: 0 0 0.375rem;
+      .recovery-card h4 {
+        margin: 0;
+        font-size: 0.9375rem;
       }
-      .task-card > p {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.25rem 0.75rem;
-        font-size: 0.875rem;
+      .recovery-choices {
+        display: grid;
+        gap: 0.25rem;
+        margin: 0;
+        padding-left: 1.125rem;
+        color: var(--ink-2);
+        font-size: 0.8125rem;
       }
-      .task-mares > li {
+      .recovery-card .react-aria-Form {
+        width: 100%;
+        margin: 0.25rem 0 0;
+        padding: 0.75rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+      }
+      .recovery-active {
+        padding: 0.875rem 1rem;
+        border: 1px solid #f0bdb6;
+        border-left: 5px solid var(--silk-red);
+        border-radius: var(--radius);
+        background: #fffaf9;
+      }
+
+      [data-testid='import-history'],
+      .history-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      [data-testid='import-history'] > li {
         padding: 0.375rem 0;
-        border-top: 1px solid var(--rail);
+        border-bottom: 1px solid var(--rail);
+        font-size: 0.9375rem;
+        font-variant-numeric: tabular-nums;
       }
 
       /* ── 八系：勝負服色塊 ───────────────────────────────────── */
