@@ -1,10 +1,12 @@
 import { checkGameName, type Game, type LastBackup } from '../domain/game.ts';
 import { GAME_SUBJECT_ID, type HistoryEvent } from '../domain/history-event.ts';
 import { validateCollections, type BackupIssue } from '../storage/backup/collections.ts';
-import { decodeBackup, type DecodeStage } from '../storage/backup/decode.ts';
+import { decodeBackup, type DecodedBackup, type DecodeStage } from '../storage/backup/decode.ts';
 import {
   buildBackupDocument,
+  computeBackupHash,
   encodeBackupDocument,
+  type BackupCollections,
   type BackupCounts,
   type BackupDocument,
   type BackupGameSummary,
@@ -13,7 +15,7 @@ import { sumRecordCounts } from '../storage/games.ts';
 import { insertRestoredGame, readGameSnapshot, updateLastBackup } from '../storage/snapshot.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
-import { backupFileName, rawExportFileName } from './file-names.ts';
+import { backupFileName, rawExportFileName, type BackupFileNameInput } from './file-names.ts';
 import { requireCurrentGame } from './games.ts';
 
 export interface BackupSummary {
@@ -45,11 +47,14 @@ export function formatIssues(issues: readonly BackupIssue[]): string {
   return issues.map((item) => item.message).join('\n');
 }
 
-/** 產生一局的備份內容。匯出與檢查點共用；本機資料不符合資料契約時拒絕，確保產生的檔案可以還原。 */
-export async function encodeGameBackup(
-  context: ServiceContext,
-  gameId: string,
-): Promise<{ readonly document: BackupDocument; readonly file: BackupFile }> {
+interface ValidatedGame {
+  readonly game: Game;
+  readonly summary: BackupGameSummary;
+  readonly collections: BackupCollections;
+}
+
+/** 讀出一致快照並依資料契約驗證；不符合時拒絕，確保產生的檔案可以還原。 */
+async function readValidatedGame(context: ServiceContext, gameId: string): Promise<ValidatedGame> {
   const snapshot = await readGameSnapshot(context.database, gameId);
   if (snapshot === undefined) {
     throw new ServiceError('gameNotFound', '找不到這個遊戲局');
@@ -62,16 +67,42 @@ export async function encodeGameBackup(
     );
   }
   const { game } = snapshot;
+  return {
+    game,
+    summary: { name: game.name, startYear: game.startYear, currentYear: game.currentYear },
+    collections: validation.collections,
+  };
+}
+
+/**
+ * 一局目前資料的備份雜湊（設計決策 5.4 節），與同一份資料產生的備份檔 sha256 相同；
+ * 封存時用來核對選回的封存檔就是這一局目前的資料。回傳讀到的遊戲局，供寫入交易確認期間沒有異動。
+ */
+export async function computeGameHash(
+  context: ServiceContext,
+  gameId: string,
+): Promise<{ readonly game: Game; readonly sha256: string }> {
+  const { game, summary, collections } = await readValidatedGame(context, gameId);
+  return { game, sha256: await computeBackupHash(summary, collections) };
+}
+
+/** 產生一局的備份內容。匯出、檢查點與封存共用；naming 決定檔名（預設為備份檔名）。 */
+export async function encodeGameBackup(
+  context: ServiceContext,
+  gameId: string,
+  naming: (input: BackupFileNameInput) => string = backupFileName,
+): Promise<{ readonly document: BackupDocument; readonly file: BackupFile }> {
+  const { game, summary, collections } = await readValidatedGame(context, gameId);
   const exportedAt = context.now().toISOString();
   const document = await buildBackupDocument({
     schemaVersion: context.schemaVersion,
     appVersion: context.appVersion,
     exportedAt,
-    game: { name: game.name, startYear: game.startYear, currentYear: game.currentYear },
-    collections: validation.collections,
+    game: summary,
+    collections,
   });
   const encoded = await encodeBackupDocument(document);
-  const fileName = backupFileName({
+  const fileName = naming({
     gameName: game.name,
     currentYear: game.currentYear,
     exportedAt,
@@ -182,17 +213,22 @@ export async function previewBackupFile(
     game: backup.document.game,
     sourceSchemaVersion: backup.sourceSchemaVersion,
     migrated: backup.sourceSchemaVersion < context.schemaVersion,
-    summary: {
-      fileName,
-      gameName: backup.document.game.name,
-      counts: backup.document.counts,
-      recordCount: sumRecordCounts(backup.document.counts),
-      sizeBytes: backup.sizeBytes,
-      appVersion: backup.sourceAppVersion,
-      schemaVersion: backup.sourceSchemaVersion,
-      exportedAt: backup.document.exportedAt,
-      compressed: backup.compressed,
-    },
+    summary: summarizeDecodedBackup(fileName, backup),
+  };
+}
+
+/** 已驗證備份檔的摘要；版本顯示檔案原本的程式與結構版本。 */
+export function summarizeDecodedBackup(fileName: string, backup: DecodedBackup): BackupSummary {
+  return {
+    fileName,
+    gameName: backup.document.game.name,
+    counts: backup.document.counts,
+    recordCount: sumRecordCounts(backup.document.counts),
+    sizeBytes: backup.sizeBytes,
+    appVersion: backup.sourceAppVersion,
+    schemaVersion: backup.sourceSchemaVersion,
+    exportedAt: backup.document.exportedAt,
+    compressed: backup.compressed,
   };
 }
 

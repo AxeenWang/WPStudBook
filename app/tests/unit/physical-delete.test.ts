@@ -14,13 +14,20 @@ function deleteCalls(file: string): string[] {
 }
 
 describe('禁止物理刪除（需求規格 5.1、5.3、10.4）', () => {
-  it('[PED-10] 程式沒有逐筆刪除馬匹、母馬、產駒、任期或配種紀錄的路徑；只有整局刪除、回溯與檢查點、對照表的刪除', () => {
+  it('[PED-10] 程式沒有逐筆刪除馬匹、母馬、產駒、任期或配種紀錄的路徑；只有整局刪除、封存、回溯與檢查點、對照表的刪除', () => {
     const calls = Object.fromEntries(
       sourceFiles('src')
         .map((file) => [file, deleteCalls(file)] as const)
         .filter(([, found]) => found.length > 0),
     );
     expect(calls).toEqual({
+      // 封存：移除整局本機明細（同整局刪除），以及只移除封存索引。
+      'src/storage/archives.ts': [
+        "'archives', archiveId",
+        'gameId',
+        "name === 'gameSettings' ? gameId : range",
+        'CURRENT_GAME_KEY',
+      ],
       // 回溯前清除較晚的檢查點。
       'src/storage/checkpoints.ts': ['[gameId, id]', '[gameId, id]'],
       // 刪除整局：遊戲局、設定以外的資料表都以該局主鍵範圍刪除。

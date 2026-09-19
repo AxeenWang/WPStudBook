@@ -7,6 +7,7 @@ import {
   type GameSettings,
 } from '../domain/game.ts';
 import { GAME_SUBJECT_ID, type HistoryEvent } from '../domain/history-event.ts';
+import { listArchives } from '../storage/archives.ts';
 import {
   clearAllData,
   countCheckpointsAfterYear,
@@ -197,6 +198,18 @@ export async function deleteGame(
   if (typedName !== game.name) {
     throw new ServiceError('confirmationMismatch', '輸入的局名不符，沒有刪除任何資料');
   }
+  const nextCurrentGameId = await nextCurrentGameAfterRemoving(context, gameId);
+  await trackWrite(context, () => deleteGameData(context.database, gameId, nextCurrentGameId));
+}
+
+/**
+ * 移除一局（刪除或封存）後的目前遊戲局：移除的是目前遊戲局時改為最近更新的另一局，
+ * 沒有其他局時為 undefined；否則不變。
+ */
+export async function nextCurrentGameAfterRemoving(
+  context: ServiceContext,
+  gameId: string,
+): Promise<string | undefined> {
   const [currentGameId, games] = await Promise.all([
     getCurrentGameId(context.database),
     listGames(context.database),
@@ -204,18 +217,22 @@ export async function deleteGame(
   const others = games
     .filter((item) => item.id !== gameId)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const nextCurrentGameId = currentGameId === gameId ? others[0]?.id : currentGameId;
-  await trackWrite(context, () => deleteGameData(context.database, gameId, nextCurrentGameId));
+  return currentGameId === gameId ? others[0]?.id : currentGameId;
 }
 
 export interface DeleteAllPreview {
   readonly gameCount: number;
   readonly recordCount: number;
   readonly checkpointCount: number;
+  /** 封存索引也一併清除；封存檔本身不在瀏覽器內，不受影響。 */
+  readonly archiveCount: number;
 }
 
 export async function previewDeleteAll(context: ServiceContext): Promise<DeleteAllPreview> {
-  const games = await listGames(context.database);
+  const [games, archives] = await Promise.all([
+    listGames(context.database),
+    listArchives(context.database),
+  ]);
   const counts = await Promise.all(
     games.map((game) => countGameRecords(context.database, game.id)),
   );
@@ -223,6 +240,7 @@ export async function previewDeleteAll(context: ServiceContext): Promise<DeleteA
     gameCount: games.length,
     recordCount: counts.reduce((total, item) => total + sumRecordCounts(item), 0),
     checkpointCount: counts.reduce((total, item) => total + item.checkpoints, 0),
+    archiveCount: archives.length,
   };
 }
 
