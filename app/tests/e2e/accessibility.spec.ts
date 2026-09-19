@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures.ts';
 import { buildPerfGame, encodePerfBackup } from '../../scripts/lib/perf-game.ts';
 import { buildSampleBytes, syntheticSample } from '../../scripts/lib/synthetic-samples.ts';
 import { closeDrawer, createGameViaUi, gotoPage, openApp } from './helpers.ts';

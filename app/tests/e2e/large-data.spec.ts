@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.ts';
 import { buildPerfGame, encodePerfBackup } from '../../scripts/lib/perf-game.ts';
 import { closeDrawer, gotoPage, openApp } from './helpers.ts';
 

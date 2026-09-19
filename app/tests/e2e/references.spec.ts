@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.ts';
 import { REFERENCE_SAMPLES, readSampleBytes, sampleExists } from '../references/samples.ts';
 import { APP_URL } from './helpers.ts';
 
