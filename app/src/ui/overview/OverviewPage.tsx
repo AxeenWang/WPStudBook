@@ -25,7 +25,7 @@ import { BLOCKER_LABELS, PHASE_LABELS } from './labels.ts';
 import { RecoveryPanel } from './RecoveryPanel.tsx';
 import { TaskBoard } from './TaskBoard.tsx';
 
-export type ImportHandoff = Omit<ImportRequest, 'id'>;
+export type ImportHandoff = Omit<ImportRequest, 'id' | 'gameId'>;
 
 /** 年度工作卡的月份徽章；檔名沒有時點時也用這個月的第 1 週預填。 */
 const ANNUAL_MONTH: Partial<Readonly<Record<ImportType, number>>> = {

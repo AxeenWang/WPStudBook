@@ -68,8 +68,17 @@ test.describe('可及性', () => {
       await audit(page, name, findings);
     }
 
+    // 已離圈的母馬卡換成灰底，另外稽核一次對比。
     await gotoPage(page, '母馬群');
-    const card = page.getByRole('region', { name: '繁殖牝馬群' }).getByRole('article').first();
+    const herd = page.getByRole('region', { name: '繁殖牝馬群' });
+    const status = herd.getByRole('group', { name: '篩選' }).getByLabel('狀態');
+    await herd.getByRole('button', { name: '全部代數', exact: true }).click();
+    await status.selectOption({ label: '已離圈' });
+    await expect(herd.getByRole('article').first()).toBeVisible();
+    await audit(page, '母馬群（已離圈）', findings);
+    await status.selectOption({ label: '生產中' });
+
+    const card = herd.getByRole('article').first();
     const name = await card.getAttribute('aria-label');
     await card.getByTestId('mare-site').click();
     const drawer = page.getByRole('dialog', { name: `「${name ?? ''}」詳情` });

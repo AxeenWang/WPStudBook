@@ -167,8 +167,25 @@
         font-weight: 700;
         letter-spacing: 0.12em;
       }
+      .game-switcher-row {
+        display: flex;
+        gap: 0.375rem;
+      }
+      .game-switcher-row button {
+        flex: none;
+        min-height: 2.75rem;
+        border-color: rgb(255 255 255 / 22%);
+        border-radius: 12px;
+        background: rgb(255 255 255 / 12%);
+        color: #ffffff;
+        font-weight: 600;
+      }
+      .game-switcher-row button:hover:not(:disabled) {
+        background: rgb(255 255 255 / 20%);
+      }
       .game-switcher select {
         width: 100%;
+        min-width: 0;
         min-height: 2.75rem;
         border-color: rgb(255 255 255 / 16%);
         border-radius: 12px;
@@ -1455,7 +1472,6 @@
       }
       .mare-card[data-status='left'] {
         background: #eef0ee;
-        opacity: 0.85;
       }
       .mare-card > article {
         display: flex;

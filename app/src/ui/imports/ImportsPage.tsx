@@ -49,6 +49,8 @@ function ImportHistory() {
 /** 從總覽年度工作卡選好的檔案：卡片的類型是使用者明確的選擇，時點在檔名沒有時用卡片的月份。 */
 export interface ImportRequest {
   readonly id: number;
+  /** 交接時的遊戲局；換局後這個請求不再適用。 */
+  readonly gameId: string;
   readonly file: File;
   readonly type: ImportType;
   readonly timing: Timing;

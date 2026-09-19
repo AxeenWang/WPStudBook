@@ -151,6 +151,17 @@ test.describe('年度匯入：候選 TXT', () => {
     await expect(page.getByLabel('月', { exact: true })).toHaveValue('7');
     await expect(page.getByLabel('週', { exact: true })).toHaveValue('1');
 
+    // 交接的檔案只屬於原本那一局：在年度匯入頁建立（切換到）另一局後不再帶入。
+    await page
+      .getByRole('group', { name: '常用操作' })
+      .getByRole('button', { name: '新遊戲局' })
+      .click();
+    const create = page.getByRole('dialog', { name: '建立遊戲局' });
+    await create.getByLabel('遊戲局名稱').fill('另一局');
+    await create.getByRole('button', { name: '建立遊戲局' }).click();
+    await expect(page.getByTestId('status-game')).toHaveText('另一局');
+    await expect(page.getByTestId('import-file-name')).toHaveCount(0);
+
     // 從側欄重新進入年度匯入頁是重新開始，不再帶入同一個檔案。
     await gotoPage(page, '總覽');
     await gotoPage(page, '年度匯入');

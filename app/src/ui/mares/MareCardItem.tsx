@@ -127,7 +127,7 @@ export function MareCardItem({ card, vitalityThreshold, onOpen, onSell }: MareCa
             <span>{card.age === undefined ? '年齡未知' : `${String(card.age)} 歲`}</span>
           </p>
         </div>
-        <ul className="tag-row" aria-label="狀態">
+        <ul className="tag-row" aria-label="標籤">
           <li className={`tag ${producing ? 'tag-green' : ''}`} data-testid="mare-status">
             {formatStatus(card.status, card.leftReason)}・{ORIGIN_LABELS[card.origin]}
           </li>

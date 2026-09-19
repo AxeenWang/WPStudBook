@@ -5,13 +5,17 @@ import { errorMessage } from './format.ts';
 import { PAGE_GROUPS, type PageKey } from './pages.ts';
 import { useServices } from './ServicesContext.tsx';
 
-/** 側欄的遊戲局切換；與資料管理頁的遊戲局列表做同一件事。 */
+/**
+ * 側欄的遊戲局切換；與資料管理頁的遊戲局列表做同一件事。選好後按「切換」才生效：原生下拉選單
+ * 收合時按方向鍵就會觸發 change，直接切換會讓瀏覽選項變成一連串切局（WCAG 3.2.2）。
+ */
 function GameSwitcher({ status }: { readonly status: AppStatus | undefined }) {
   const { context, notifyChanged } = useServices();
   const [error, setError] = useState<string>();
   const id = useId();
   const games = status?.games ?? [];
   const current = status?.currentGame;
+  const [chosen, setChosen] = useState(current?.id ?? '');
 
   const switchTo = async (gameId: string) => {
     try {
@@ -27,21 +31,33 @@ function GameSwitcher({ status }: { readonly status: AppStatus | undefined }) {
   return (
     <div className="game-switcher">
       <label htmlFor={id}>目前遊戲局</label>
-      <select
-        id={id}
-        value={current?.id ?? ''}
-        disabled={games.length === 0}
-        onChange={(event) => {
-          void switchTo(event.target.value);
-        }}
-      >
-        {current === undefined && <option value="">尚未建立遊戲局</option>}
-        {games.map((game) => (
-          <option key={game.id} value={game.id}>
-            {game.name}・{game.currentYear} 年
-          </option>
-        ))}
-      </select>
+      <div className="game-switcher-row">
+        <select
+          id={id}
+          value={chosen}
+          disabled={games.length === 0}
+          onChange={(event) => {
+            setChosen(event.target.value);
+          }}
+        >
+          {current === undefined && <option value="">尚未建立遊戲局</option>}
+          {games.map((game) => (
+            <option key={game.id} value={game.id}>
+              {game.name}・{game.currentYear} 年
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          aria-label="切換遊戲局"
+          disabled={chosen === '' || chosen === current?.id}
+          onClick={() => {
+            void switchTo(chosen);
+          }}
+        >
+          切換
+        </button>
+      </div>
       {error !== undefined && <p role="alert">{error}</p>}
     </div>
   );
@@ -67,7 +83,7 @@ export function Sidebar({
           <p className="brand-sub">Winning Post 10 2026</p>
         </div>
       </div>
-      <GameSwitcher status={status} />
+      <GameSwitcher key={status?.currentGame?.id ?? ''} status={status} />
       <nav aria-label="主要頁面" className="main-nav">
         {PAGE_GROUPS.map((group) => (
           <div key={group.label} className="nav-group">

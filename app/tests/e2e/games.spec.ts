@@ -138,9 +138,12 @@ test.describe('遊戲局管理', () => {
     await expect(page.getByTestId('status-game')).toHaveText('第二局');
     await expect(createDialog).toBeHidden();
 
+    // 只選擇不會切換（方向鍵瀏覽選項不該一路切局），按「切換」才生效。
     await page
       .getByRole('combobox', { name: '目前遊戲局' })
       .selectOption({ label: '第一局・1969 年' });
+    await expect(page.getByTestId('status-game')).toHaveText('第二局');
+    await page.getByRole('button', { name: '切換遊戲局' }).click();
     await expect(page.getByTestId('status-game')).toHaveText('第一局');
 
     await page.reload();

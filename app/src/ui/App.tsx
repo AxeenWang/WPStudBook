@@ -44,9 +44,18 @@ function AppShell() {
   }, [focusBackup, page]);
   const currentGame = status?.currentGame;
   const handOffImport = (handoff: ImportHandoff) => {
-    setImportRequest((previous) => ({ ...handoff, id: (previous?.id ?? 0) + 1 }));
+    if (currentGame === undefined) {
+      return;
+    }
+    setImportRequest((previous) => ({
+      ...handoff,
+      id: (previous?.id ?? 0) + 1,
+      gameId: currentGame.id,
+    }));
     setPage('imports');
   };
+  // 交接的檔案只屬於交接時的那一局；在年度匯入頁切換遊戲局後不再帶入。
+  const activeImportRequest = importRequest?.gameId === currentGame?.id ? importRequest : undefined;
   return (
     <div className="app-shell">
       <Sidebar
@@ -75,7 +84,9 @@ function AppShell() {
           {page === 'lines' && <LinesPage currentGame={currentGame} />}
           {page === 'mares' && <MaresPage currentGame={currentGame} />}
           {page === 'foals' && <FoalsPage currentGame={currentGame} />}
-          {page === 'imports' && <ImportsPage currentGame={currentGame} request={importRequest} />}
+          {page === 'imports' && (
+            <ImportsPage currentGame={currentGame} request={activeImportRequest} />
+          )}
           {page === 'systemMap' && <SystemMapPage currentGame={currentGame} />}
           {page === 'data' && <DataManagementPage status={status} />}
         </main>
