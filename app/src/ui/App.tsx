@@ -8,64 +8,90 @@ import {
 } from '../services/context.ts';
 import { DataManagementPage } from './data-management/DataManagementPage.tsx';
 import { FoalsPage } from './foals/FoalsPage.tsx';
-import { ImportsPage } from './imports/ImportsPage.tsx';
+import { ImportsPage, type ImportRequest } from './imports/ImportsPage.tsx';
 import { errorMessage } from './format.ts';
 import { LinesPage } from './lines/LinesPage.tsx';
 import { MaresPage } from './mares/MaresPage.tsx';
-import { OverviewPage } from './overview/OverviewPage.tsx';
+import { OverviewPage, type ImportHandoff } from './overview/OverviewPage.tsx';
+import { pageLabel, type PageKey } from './pages.ts';
 import { ServicesProvider, useServiceQuery } from './ServicesContext.tsx';
-import { StatusBar } from './StatusBar.tsx';
+import { Sidebar } from './Sidebar.tsx';
 import { SystemMapPage } from './system-map/SystemMapPage.tsx';
+import { TopBar } from './TopBar.tsx';
 
 type Boot =
   | { readonly state: 'opening' }
   | { readonly state: 'ready'; readonly context: ServiceContext }
   | { readonly state: 'failed'; readonly message: string };
 
-type PageKey = 'overview' | 'lines' | 'mares' | 'foals' | 'imports' | 'systemMap' | 'data';
-
-const PAGES = [
-  ['overview', '總覽'],
-  ['lines', '八系'],
-  ['mares', '母馬群'],
-  ['foals', '產駒'],
-  ['imports', '年度匯入'],
-  ['systemMap', '系統對照表'],
-  ['data', '資料管理'],
-] as const satisfies ReadonlyArray<readonly [PageKey, string]>;
-
 function AppShell() {
   const { data: status, error } = useServiceQuery(loadAppStatus);
-  // 開啟時預設顯示資料管理：建立遊戲局、備份與檢查點都在這裡，沒有遊戲局時總覽只會顯示提示。
-  const [page, setPage] = useState<PageKey>('data');
+  const [page, setPage] = useState<PageKey>();
+  const [focusBackup, setFocusBackup] = useState(false);
+  const [importRequest, setImportRequest] = useState<ImportRequest>();
+  // 第一次讀到狀態時決定起始頁：還沒有遊戲局就到資料管理建立，已有遊戲局就從總覽開始。
+  // 之後建立或切換遊戲局都不再自動換頁。
+  if (page === undefined && status !== undefined) {
+    setPage(status.currentGame === undefined ? 'data' : 'overview');
+  }
+  useEffect(() => {
+    if (focusBackup && page === 'data') {
+      const heading = document.getElementById('backup-heading');
+      heading?.scrollIntoView({ block: 'start' });
+      heading?.focus({ preventScroll: true });
+      setFocusBackup(false);
+    }
+  }, [focusBackup, page]);
   const currentGame = status?.currentGame;
+  const handOffImport = (handoff: ImportHandoff) => {
+    if (currentGame === undefined) {
+      return;
+    }
+    setImportRequest((previous) => ({
+      ...handoff,
+      id: (previous?.id ?? 0) + 1,
+      gameId: currentGame.id,
+    }));
+    setPage('imports');
+  };
+  // 交接的檔案只屬於交接時的那一局；在年度匯入頁切換遊戲局後不再帶入。
+  const activeImportRequest = importRequest?.gameId === currentGame?.id ? importRequest : undefined;
   return (
-    <>
-      <StatusBar status={status} error={error} />
-      <nav aria-label="主要頁面" className="main-nav">
-        {PAGES.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            aria-current={page === key ? 'page' : undefined}
-            onClick={() => {
-              setPage(key);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-      <main>
-        {page === 'overview' && <OverviewPage currentGame={currentGame} />}
-        {page === 'lines' && <LinesPage currentGame={currentGame} />}
-        {page === 'mares' && <MaresPage currentGame={currentGame} />}
-        {page === 'foals' && <FoalsPage currentGame={currentGame} />}
-        {page === 'imports' && <ImportsPage currentGame={currentGame} />}
-        {page === 'systemMap' && <SystemMapPage currentGame={currentGame} />}
-        {page === 'data' && <DataManagementPage status={status} />}
-      </main>
-    </>
+    <div className="app-shell">
+      <Sidebar
+        status={status}
+        page={page}
+        onNavigate={(key) => {
+          // 從側欄進年度匯入頁是重新開始，不再帶入總覽卡片交接過的檔案。
+          setImportRequest(undefined);
+          setPage(key);
+        }}
+      />
+      <div className="workspace">
+        <TopBar
+          status={status}
+          error={error}
+          eyebrow={page === undefined ? '八系繁殖管理' : pageLabel(page)}
+          onOpenBackup={() => {
+            setPage('data');
+            setFocusBackup(true);
+          }}
+        />
+        <main>
+          {page === 'overview' && (
+            <OverviewPage currentGame={currentGame} onImport={handOffImport} />
+          )}
+          {page === 'lines' && <LinesPage currentGame={currentGame} />}
+          {page === 'mares' && <MaresPage currentGame={currentGame} />}
+          {page === 'foals' && <FoalsPage currentGame={currentGame} />}
+          {page === 'imports' && (
+            <ImportsPage currentGame={currentGame} request={activeImportRequest} />
+          )}
+          {page === 'systemMap' && <SystemMapPage currentGame={currentGame} />}
+          {page === 'data' && <DataManagementPage status={status} />}
+        </main>
+      </div>
+    </div>
   );
 }
 

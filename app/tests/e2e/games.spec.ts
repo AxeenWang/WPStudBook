@@ -4,7 +4,7 @@ import { createGameViaUi, openApp } from './helpers.ts';
 test.describe('遊戲局管理', () => {
   test('[BLD-01] 以 file:// 建立遊戲局，重新整理後資料仍在', async ({ page }) => {
     await openApp(page);
-    await expect(page.getByTestId('status-game')).toHaveText('尚未建立');
+    await expect(page.getByTestId('status-game')).toHaveText('尚未建立遊戲局');
     await createGameViaUi(page, 'テスト局', 1968);
     await expect(page.getByTestId('status-year')).toHaveText('1968 年');
     await expect(page.getByTestId('status-save')).toContainText('已保存');
@@ -98,8 +98,63 @@ test.describe('遊戲局管理', () => {
 
     const confirmed = await startDeleteAll();
     await confirmed.getByRole('button', { name: '刪除全部' }).click();
-    await expect(page.getByTestId('status-game')).toHaveText('尚未建立');
+    await expect(page.getByTestId('status-game')).toHaveText('尚未建立遊戲局');
     await page.reload();
-    await expect(page.getByTestId('status-game')).toHaveText('尚未建立');
+    await expect(page.getByTestId('status-game')).toHaveText('尚未建立遊戲局');
+  });
+
+  test('頂部常用操作以對話框更新年份與建立遊戲局；側欄切換遊戲局；已有遊戲局時開啟停在總覽', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await createGameViaUi(page, '第一局', 1968);
+    // 資料只存在瀏覽器的提醒一律顯示；這一局還沒備份時放大成橫幅（需求規格 12.2）。
+    await expect(page.getByRole('complementary', { name: '資料保存提醒' })).toContainText(
+      '這一局還沒有外部備份',
+    );
+    await expect(page.getByText(/資料只存在這個瀏覽器的設定檔/)).toBeVisible();
+    const actions = page.getByRole('group', { name: '常用操作' });
+
+    await actions.getByRole('button', { name: '更新年份' }).click();
+    const yearDialog = page.getByRole('dialog', { name: '更新目前遊戲年', exact: true });
+    const nextYear = yearDialog.getByLabel('新的目前遊戲年');
+    await nextYear.fill('1969');
+    await nextYear.blur();
+    await yearDialog.getByRole('button', { name: '更新遊戲年' }).click();
+    await page
+      .getByRole('dialog', { name: '確認更新目前遊戲年' })
+      .getByRole('button', { name: '確認更新' })
+      .click();
+    await expect(page.getByTestId('status-year')).toHaveText('1969 年');
+    await expect(yearDialog).toBeHidden();
+
+    await actions.getByRole('button', { name: '新遊戲局' }).click();
+    const createDialog = page.getByRole('dialog', { name: '建立遊戲局' });
+    await createDialog.getByLabel('遊戲局名稱').fill('第二局');
+    const startYear = createDialog.getByLabel('起始年');
+    await startYear.fill('1970');
+    await startYear.blur();
+    await createDialog.getByRole('button', { name: '建立遊戲局' }).click();
+    await expect(page.getByTestId('status-game')).toHaveText('第二局');
+    await expect(createDialog).toBeHidden();
+
+    // 只選擇不會切換（方向鍵瀏覽選項不該一路切局），按「切換」才生效。
+    await page
+      .getByRole('combobox', { name: '目前遊戲局' })
+      .selectOption({ label: '第一局・1969 年' });
+    await expect(page.getByTestId('status-game')).toHaveText('第二局');
+    await page.getByRole('button', { name: '切換遊戲局' }).click();
+    await expect(page.getByTestId('status-game')).toHaveText('第一局');
+
+    await page.reload();
+    await expect(page.getByTestId('status-game')).toHaveText('第一局');
+    await expect(
+      page
+        .getByRole('navigation', { name: '主要頁面' })
+        .getByRole('button', { name: '總覽', exact: true }),
+    ).toHaveAttribute('aria-current', 'page');
+
+    await actions.getByRole('button', { name: '備份與還原' }).click();
+    await expect(page.getByRole('heading', { name: '備份與還原' })).toBeFocused();
   });
 });

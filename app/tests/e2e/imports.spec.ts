@@ -119,4 +119,52 @@ test.describe('年度匯入：候選 TXT', () => {
     await chooseCandidate(page);
     await expect(page.getByTestId('import-summary')).toContainText('可套用 30');
   });
+
+  test('總覽的年度工作卡可直接選檔：帶到年度匯入頁，預選該卡的類型與月份', async ({ page }) => {
+    await openApp(page);
+    await createGameViaUi(page, '交接局', 1968);
+    await gotoPage(page, '總覽');
+
+    const chooser = page.waitForEvent('filechooser');
+    await page
+      .getByTestId('annual-work-julMares')
+      .getByRole('button', { name: '匯入七月繁殖牝馬總表' })
+      .click();
+    await (
+      await chooser
+    ).setFiles({
+      name: '受胎確認.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('x'),
+    });
+
+    const nav = page.getByRole('navigation', { name: '主要頁面' });
+    await expect(nav.getByRole('button', { name: '年度匯入', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(page.getByTestId('import-file-name')).toHaveText('已選擇：受胎確認.txt');
+    await expect(page.getByLabel('匯入類型').locator('option:checked')).toHaveText(
+      '七月繁殖牝馬總表',
+    );
+    await expect(page.getByLabel('遊戲年')).toHaveValue('1968');
+    await expect(page.getByLabel('月', { exact: true })).toHaveValue('7');
+    await expect(page.getByLabel('週', { exact: true })).toHaveValue('1');
+
+    // 交接的檔案只屬於原本那一局：在年度匯入頁建立（切換到）另一局後不再帶入。
+    await page
+      .getByRole('group', { name: '常用操作' })
+      .getByRole('button', { name: '新遊戲局' })
+      .click();
+    const create = page.getByRole('dialog', { name: '建立遊戲局' });
+    await create.getByLabel('遊戲局名稱').fill('另一局');
+    await create.getByRole('button', { name: '建立遊戲局' }).click();
+    await expect(page.getByTestId('status-game')).toHaveText('另一局');
+    await expect(page.getByTestId('import-file-name')).toHaveCount(0);
+
+    // 從側欄重新進入年度匯入頁是重新開始，不再帶入同一個檔案。
+    await gotoPage(page, '總覽');
+    await gotoPage(page, '年度匯入');
+    await expect(page.getByTestId('import-file-name')).toHaveCount(0);
+  });
 });

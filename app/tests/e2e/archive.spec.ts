@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures.ts';
-import { changeYearViaUi, createGameViaUi, openApp } from './helpers.ts';
+import { changeYearViaUi, createGameViaUi, gotoPage, openApp } from './helpers.ts';
 
 test.describe('封存舊遊戲局', () => {
   test('[DATA-09] 選回下載的封存檔核對並輸入局名後才移除本機明細；保留索引並可從封存檔還原', async ({
@@ -66,6 +66,7 @@ test.describe('封存舊遊戲局', () => {
     await expect(row).toContainText(/程式 \d+\.\d+\.\d+・結構第 1 版/);
 
     await page.reload();
+    await gotoPage(page, '資料管理');
     await expect(row).toBeVisible();
     await expect(games.getByRole('row')).toHaveCount(2);
 

@@ -79,12 +79,17 @@ function SystemMapView() {
 
   return (
     <section aria-labelledby="system-map-heading">
-      <h2 id="system-map-heading">系統對照表</h2>
-      <p>
-        記錄子系統所屬的親系統。子系統升格時，輸入同一個子系統與新的親系統即可更新，變更保存在歷程。
-      </p>
+      <div className="section-head">
+        <div>
+          <h2 id="system-map-heading">系統對照表</h2>
+          <p>
+            記錄子系統所屬的親系統。子系統升格時，輸入同一個子系統與新的親系統即可更新，變更保存在歷程。
+          </p>
+        </div>
+      </div>
       <Form
         ref={formRef}
+        className="react-aria-Form inline-form"
         aria-labelledby="system-map-form-heading"
         {...describedByError(errorId, error)}
         onSubmit={(event) => {

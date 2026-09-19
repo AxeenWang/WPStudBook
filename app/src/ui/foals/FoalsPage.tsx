@@ -99,34 +99,49 @@ function FoalRow({ card }: { readonly card: FoalCard }) {
   return (
     <li className="foal-row" aria-label={card.name}>
       <div className="foal-row-main">
-        <SexMarker sex={card.sex} />
-        <Button
-          className="link-button"
-          aria-expanded={managing}
-          onPress={() => {
-            setManaging(!managing);
-          }}
-        >
-          {card.name}
-        </Button>
-        <span>{card.birthYear} 年生</span>
-        <span>母 {card.damName ?? '未取得'}</span>
-        <span>父 {card.sireName ?? '未取得'}</span>
-        <span>{card.lineage === undefined ? '自由配種' : lineageText(card.lineage)}</span>
-        <span data-testid="foal-sp">{numberText('SP', card.sp)}</span>
-        <span data-testid="foal-st">{numberText('ST', card.st)}</span>
-        <span>{numberText('サ', card.subParamTotal)}</span>
-        <span>
-          芝 {card.turf ?? '—'}・ダ {card.dirt ?? '—'}
-          {card.surface === undefined ? '' : `（${SURFACE_LABELS[card.surface]}）`}
-        </span>
-        <span>{DISPOSITION_LABELS[card.disposition]}</span>
-        {!card.named && <span className="badge">未命名</span>}
-        <span data-testid="foal-naming">{NAMING_STATUS_LABELS[card.naming]}</span>
-        {card.isStallion && <span className="badge">已成為種牡馬</span>}
-        {card.mareElsewhere !== undefined && (
-          <span className="badge">{mareElsewhereText(card.mareElsewhere)}</span>
-        )}
+        <div className="foal-id">
+          <p className="foal-name">
+            <SexMarker sex={card.sex} />
+            <Button
+              className="link-button"
+              aria-expanded={managing}
+              onPress={() => {
+                setManaging(!managing);
+              }}
+            >
+              {card.name}
+            </Button>
+            {!card.named && <span className="badge">未命名</span>}
+            {card.isStallion && <span className="badge">已成為種牡馬</span>}
+            {card.mareElsewhere !== undefined && (
+              <span className="badge">{mareElsewhereText(card.mareElsewhere)}</span>
+            )}
+          </p>
+          <p className="foal-meta">
+            <span>{card.birthYear} 年生</span>
+            <span>母 {card.damName ?? '未取得'}</span>
+            <span>父 {card.sireName ?? '未取得'}</span>
+            <span>{card.lineage === undefined ? '自由配種' : lineageText(card.lineage)}</span>
+          </p>
+        </div>
+        <p className="ability-chips">
+          <span data-testid="foal-sp">{numberText('SP', card.sp)}</span>
+          <span data-testid="foal-st">{numberText('ST', card.st)}</span>
+          <span>{numberText('サ', card.subParamTotal)}</span>
+          <span>
+            芝 {card.turf ?? '—'}・ダ {card.dirt ?? '—'}
+            {card.surface === undefined ? '' : `（${SURFACE_LABELS[card.surface]}）`}
+          </span>
+        </p>
+        <p className="foal-state">
+          <span className="tag">{DISPOSITION_LABELS[card.disposition]}</span>
+          <span
+            className={`tag ${card.naming === 'done' ? 'tag-green' : ''}`}
+            data-testid="foal-naming"
+          >
+            {NAMING_STATUS_LABELS[card.naming]}
+          </span>
+        </p>
       </div>
       {managing && <FoalPanel card={card} />}
     </li>
@@ -154,12 +169,16 @@ function FoalListView() {
   );
   return (
     <section aria-labelledby="foals-heading">
-      <h2 id="foals-heading">產駒</h2>
+      <div className="section-head">
+        <div>
+          <h2 id="foals-heading">產駒</h2>
+          <p>
+            產駒由母馬詳情欄的配種或產駒頁籤登記。未命名的產駒顯示追蹤名（母馬名＋出生年）。SP
+            越高越好；ST 是距離定位，只依數值排序。
+          </p>
+        </div>
+      </div>
       {error !== undefined && <p role="alert">{error}</p>}
-      <p>
-        產駒由母馬詳情欄的配種或產駒頁籤登記。未命名的產駒顯示追蹤名（母馬名＋出生年）。SP
-        越高越好；ST 是距離定位，只依數值排序。
-      </p>
       <NamingSummary
         list={data}
         selected={options.naming}
@@ -169,71 +188,75 @@ function FoalListView() {
       />
       <fieldset className="filters">
         <legend>篩選與排序</legend>
-        <OptionalIntegerField
-          label="出生年"
-          value={options.birthYear}
-          onChange={(birthYear) => {
-            update({ birthYear });
-          }}
-        />
-        <SelectField
-          label="性別"
-          value={options.sex}
-          options={SEX_FILTER_CHOICES}
-          onChange={(sex) => {
-            update({ sex: sex ?? 'any' });
-          }}
-        />
-        <SelectField
-          label="牧場處置"
-          value={options.disposition}
-          options={DISPOSITION_CHOICES}
-          emptyLabel="全部"
-          onChange={(disposition) => {
-            update({ disposition });
-          }}
-        />
-        <SelectField
-          label="補名狀態"
-          value={options.naming}
-          options={NAMING_CHOICES}
-          emptyLabel="全部"
-          onChange={(naming) => {
-            update({ naming });
-          }}
-        />
-        <CheckboxField
-          label="只看未命名"
-          checked={options.unnamedOnly}
-          onChange={(unnamedOnly) => {
-            update({ unnamedOnly });
-          }}
-        />
-        <TextField
-          value={options.keyword}
-          onChange={(keyword) => {
-            update({ keyword });
-          }}
-        >
-          <Label>關鍵字（馬名、追蹤名）</Label>
-          <Input />
-        </TextField>
-        <SelectField
-          label="排序"
-          value={sort}
-          options={SORT_CHOICES}
-          onChange={(next) => {
-            if (next !== undefined) {
-              setSort(next);
-            }
-          }}
-        />
+        <div className="filter-row filter-row-primary">
+          <TextField
+            value={options.keyword}
+            onChange={(keyword) => {
+              update({ keyword });
+            }}
+          >
+            <Label>關鍵字（馬名、追蹤名）</Label>
+            <Input />
+          </TextField>
+          <OptionalIntegerField
+            label="出生年"
+            value={options.birthYear}
+            onChange={(birthYear) => {
+              update({ birthYear });
+            }}
+          />
+          <SelectField
+            label="性別"
+            value={options.sex}
+            options={SEX_FILTER_CHOICES}
+            onChange={(sex) => {
+              update({ sex: sex ?? 'any' });
+            }}
+          />
+          <SelectField
+            label="牧場處置"
+            value={options.disposition}
+            options={DISPOSITION_CHOICES}
+            emptyLabel="全部"
+            onChange={(disposition) => {
+              update({ disposition });
+            }}
+          />
+          <SelectField
+            label="補名狀態"
+            value={options.naming}
+            options={NAMING_CHOICES}
+            emptyLabel="全部"
+            onChange={(naming) => {
+              update({ naming });
+            }}
+          />
+          <SelectField
+            label="排序"
+            value={sort}
+            options={SORT_CHOICES}
+            onChange={(next) => {
+              if (next !== undefined) {
+                setSort(next);
+              }
+            }}
+          />
+        </div>
+        <div className="filter-checks">
+          <CheckboxField
+            label="只看未命名"
+            checked={options.unnamedOnly}
+            onChange={(unnamedOnly) => {
+              update({ unnamedOnly });
+            }}
+          />
+        </div>
       </fieldset>
-      <p>符合條件 {shown.total} 匹</p>
+      <p className="filter-summary">符合條件 {shown.total} 匹</p>
       {data.cards.length === 0 ? (
-        <p>目前沒有產駒。遊戲第一年沒有自產幼駒是正常的。</p>
+        <p className="empty-inline">目前沒有產駒。遊戲第一年沒有自產幼駒是正常的。</p>
       ) : shown.total === 0 ? (
-        <p>沒有符合條件的產駒。</p>
+        <p className="empty-inline">沒有符合條件的產駒。</p>
       ) : (
         <ul className="foal-list" aria-label="產駒清單">
           {shown.items.map((card) => (
@@ -242,7 +265,7 @@ function FoalListView() {
         </ul>
       )}
       {shown.pageCount > 1 && (
-        <nav aria-label="分頁" className="actions">
+        <nav aria-label="分頁" className="pager">
           <Button
             isDisabled={shown.page <= 1}
             onPress={() => {

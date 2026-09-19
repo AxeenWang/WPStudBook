@@ -28,9 +28,14 @@
         --drawer-soft: #eef4fc;
         --drawer-rail: #c9d7ea;
         --focus: #0b57d0;
-        --radius: 8px;
-        --radius-sm: 6px;
-        --shadow: 0 1px 2px rgb(22 32 42 / 6%), 0 2px 8px rgb(22 32 42 / 5%);
+        --sidebar: #121b23;
+        --sidebar-text: #b9c6be;
+        --sidebar-muted: #93a59a;
+        --radius-lg: 16px;
+        --radius: 12px;
+        --radius-sm: 9px;
+        --shadow: 0 1px 2px rgb(22 32 42 / 7%), 0 6px 18px rgb(22 32 42 / 5%);
+        --shadow-lg: 0 24px 64px rgb(22 32 42 / 22%);
         --font-ui:
           'Segoe UI Variable Text', 'Segoe UI', 'Microsoft JhengHei UI', 'Microsoft JhengHei',
           'Yu Gothic UI', 'Meiryo UI', system-ui, sans-serif;
@@ -44,13 +49,26 @@
         color: var(--ink);
       }
       body {
+        min-height: 100vh;
         margin: 0;
+        background: var(--paper);
       }
       .app {
-        max-width: 80rem;
-        margin: 0 auto;
-        padding: 0 1.25rem 3rem;
         overflow-wrap: anywhere;
+      }
+      .app > p {
+        margin: 1rem;
+      }
+      .visually-hidden {
+        position: absolute !important;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+        border: 0;
       }
       h1,
       h2,
@@ -85,128 +103,349 @@
         font-size: 0.875rem;
       }
 
-      /* ── 頂部狀態列：出馬表的表頭 ─────────────────────────────── */
-      .status-bar {
+      /* ── 外殼：左側欄＋工作區 ───────────────────────────────── */
+      .app-shell {
         display: grid;
-        grid-template-columns: auto 1fr;
-        align-items: baseline;
-        column-gap: 0.75rem;
-        margin: 0 -1.25rem;
-        padding: 1rem 1.5rem 0.875rem;
-        border-radius: 0 0 var(--radius) var(--radius);
-        background: var(--ink);
-        color: #e9eee9;
+        grid-template-columns: 16.5rem minmax(0, 1fr);
+        min-height: 100vh;
       }
-      .status-bar > * {
-        grid-column: 1 / -1;
+      .sidebar {
+        position: sticky;
+        top: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        height: 100vh;
+        box-sizing: border-box;
+        overflow-y: auto;
+        padding: 1.375rem 1rem;
+        background: var(--sidebar);
+        color: #e7eee9;
       }
-      .status-bar h1 {
-        grid-column: 1;
+      .sidebar p {
         margin: 0;
-        font-size: 1.375rem;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0 0.25rem;
+      }
+      .brand-mark {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 2.625rem;
+        height: 2.625rem;
+        border-radius: 14px;
+        background: var(--turf);
+        box-shadow: 0 10px 24px rgb(0 0 0 / 28%);
+        color: #ffffff;
+        font-family: var(--font-display);
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      .brand-name {
+        font-family: var(--font-display);
+        font-size: 1.0625rem;
+        font-weight: 700;
         letter-spacing: 0.01em;
       }
-      .status-bar [data-testid='app-version'] {
-        grid-column: 2;
+      .brand-sub {
+        color: var(--sidebar-muted);
+        font-size: 0.75rem;
+      }
+      .game-switcher {
+        display: grid;
+        gap: 0.375rem;
+      }
+      .game-switcher label,
+      .sidebar-label {
+        padding: 0 0.375rem;
+        color: var(--sidebar-muted);
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+      }
+      .game-switcher-row {
+        display: flex;
+        gap: 0.375rem;
+      }
+      .game-switcher-row button {
+        flex: none;
+        min-height: 2.75rem;
+        border-color: rgb(255 255 255 / 22%);
+        border-radius: 12px;
+        background: rgb(255 255 255 / 12%);
+        color: #ffffff;
+        font-weight: 600;
+      }
+      .game-switcher-row button:hover:not(:disabled) {
+        background: rgb(255 255 255 / 20%);
+      }
+      .game-switcher select {
+        width: 100%;
+        min-width: 0;
+        min-height: 2.75rem;
+        border-color: rgb(255 255 255 / 16%);
+        border-radius: 12px;
+        background: rgb(255 255 255 / 8%);
+        color: #ffffff;
+      }
+      .game-switcher option {
+        background: #ffffff;
+        color: var(--ink);
+      }
+      .main-nav {
+        display: grid;
+        gap: 1.125rem;
+      }
+      .nav-group {
+        display: grid;
+        gap: 0.375rem;
+      }
+      .nav-list {
+        display: grid;
+        gap: 0.25rem;
         margin: 0;
-        color: #9fb0a5;
+        padding: 0;
+        list-style: none;
+      }
+      .main-nav button {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        width: 100%;
+        min-height: 2.75rem;
+        padding: 0 0.75rem;
+        border: 0;
+        border-radius: 11px;
+        background: transparent;
+        color: var(--sidebar-text);
+        font-weight: 600;
+        text-align: left;
+      }
+      .main-nav button:hover {
+        background: rgb(255 255 255 / 7%);
+        color: #ffffff;
+      }
+      .main-nav button[aria-current='page'] {
+        background: rgb(47 138 102 / 38%);
+        box-shadow: inset 3px 0 0 #7fd3aa;
+        color: #ffffff;
+        font-weight: 700;
+      }
+      .nav-icon {
+        width: 1.375rem;
+        font-size: 1.0625rem;
+        text-align: center;
+      }
+      .sidebar-footer {
+        display: grid;
+        gap: 0.25rem;
+        margin-top: auto;
+        padding: 0.875rem;
+        border: 1px solid rgb(255 255 255 / 8%);
+        border-radius: 14px;
+        background: rgb(255 255 255 / 5%);
+        color: var(--sidebar-text);
+        font-size: 0.75rem;
+      }
+      .sidebar-footer [data-testid='app-version'] {
+        color: #ffffff;
+        font-weight: 700;
+      }
+      .sidebar [role='alert'] {
         font-size: 0.8125rem;
       }
-      .status-bar dl {
+      .sidebar :focus-visible {
+        outline-color: #9ec5ff;
+      }
+      .workspace {
+        min-width: 0;
+        padding: 1.5rem clamp(1rem, 3vw, 2.5rem) 3rem;
+      }
+
+      /* ── 頂部列：頁名、遊戲局、常用操作與保存狀態 ───────────── */
+      .topbar {
+        margin-bottom: 1.25rem;
+      }
+      .topbar-main {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5rem 1.5rem;
-        margin: 0.875rem 0 0;
-        padding-top: 0.75rem;
-        border-top: 1px solid rgb(255 255 255 / 14%);
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem 1.5rem;
       }
-      .status-bar dl > div {
-        display: block;
-        padding: 0;
-        border: 0;
-      }
-      .status-bar dt {
-        color: #9fb0a5;
+      .eyebrow {
+        margin: 0 0 0.25rem;
+        color: var(--turf);
         font-size: 0.75rem;
-        letter-spacing: 0.04em;
+        font-weight: 800;
+        letter-spacing: 0.14em;
       }
-      .status-bar dd {
+      .topbar h1 {
         margin: 0;
-        color: #ffffff;
+        font-size: clamp(1.5rem, 2.6vw, 2.125rem);
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        line-height: 1.2;
+      }
+      .subtitle {
+        margin: 0.5rem 0 0;
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      .subtitle strong {
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+      .top-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.5rem;
+      }
+      .status-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin: 1rem 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4375rem;
+        min-height: 1.875rem;
+        padding: 0.1875rem 0.75rem;
+        border: 1px solid var(--rail);
+        border-radius: 999px;
+        background: rgb(255 255 255 / 82%);
+        color: var(--ink-2);
+        font-size: 0.8125rem;
         font-weight: 600;
         font-variant-numeric: tabular-nums;
       }
-      .status-bar [data-testid='status-game'],
-      .status-bar [data-testid='status-year'],
-      .status-bar [data-testid='status-records'] {
-        font-family: var(--font-display);
-        font-size: 1.25rem;
-        font-weight: 700;
-      }
-      .status-bar [data-testid='status-save'],
-      .status-bar [data-testid='status-persistence'],
-      .status-bar [data-testid='status-backup'],
-      .status-bar [data-testid='status-checkpoint'] {
-        font-size: 0.875rem;
+      .pill-label {
+        color: var(--muted);
         font-weight: 500;
       }
-      .status-bar .notice {
-        margin: 0.625rem 0 0;
-        color: #b4c2b8;
+      .status-dot {
+        flex: none;
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        background: var(--rail-strong);
+      }
+      .status-pill[data-tone='ok'] .status-dot {
+        background: #1f9d62;
+        box-shadow: 0 0 0 4px rgb(31 157 98 / 14%);
+      }
+      .status-pill[data-tone='warn'] .status-dot {
+        background: #d08a1e;
+        box-shadow: 0 0 0 4px rgb(208 138 30 / 16%);
+      }
+      .status-pill[data-tone='error'] {
+        border-color: #f0bdb6;
+        background: var(--silk-red-soft);
+        color: #8c1d14;
+      }
+      .status-pill[data-tone='error'] .status-dot {
+        background: var(--silk-red);
+      }
+      .storage-note {
+        margin: 0.75rem 0 0;
+        color: var(--muted);
         font-size: 0.8125rem;
       }
-      .status-bar [role='alert'] {
-        margin: 0.5rem 0 0;
-      }
-
-      /* ── 主要頁面：頁籤 ─────────────────────────────────────── */
-      .main-nav {
+      .risk-notice {
         display: flex;
-        flex-wrap: wrap;
-        gap: 0.125rem;
-        margin: 0.75rem 0 1.25rem;
-        border-bottom: 1px solid var(--rail);
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-top: 1rem;
+        padding: 0.875rem 1rem;
+        border: 1px solid var(--dirt-rail);
+        border-radius: 14px;
+        background: var(--dirt-soft);
+        color: #5e3c0b;
+        font-size: 0.8125rem;
       }
-      .main-nav button {
-        min-height: 0;
-        margin-bottom: -1px;
-        padding: 0.625rem 0.875rem;
-        border: 0;
-        border-bottom: 3px solid transparent;
-        border-radius: 0;
-        background: none;
-        color: var(--ink-2);
-        font-weight: 600;
+      .risk-notice p {
+        margin: 0;
       }
-      .main-nav button:hover {
-        border-bottom-color: var(--rail-strong);
-        background: none;
-        color: var(--ink);
+      .risk-icon {
+        font-size: 1.125rem;
+        line-height: 1.3;
       }
-      .main-nav button[aria-current='page'] {
-        border-bottom-color: var(--turf);
-        color: var(--turf-dark);
+      .risk-title {
+        margin-bottom: 0.125rem !important;
+        color: #4d3108;
+        font-size: 0.9375rem;
         font-weight: 700;
       }
 
       /* ── 版面：頁面與卡片 ───────────────────────────────────── */
-      main > section {
-        margin: 0 0 1rem;
+      main > section,
+      .page-grid > section {
+        margin: 0 0 1.25rem;
         padding: 1.25rem 1.5rem 1.5rem;
-        border: 1px solid var(--rail);
-        border-radius: var(--radius);
+        border: 1px solid rgb(169 181 172 / 60%);
+        border-radius: var(--radius-lg);
         background: var(--surface);
         box-shadow: var(--shadow);
       }
-      main > section section {
+      main > section section,
+      .page-grid > section section {
         margin-top: 1.5rem;
         padding-top: 0.25rem;
         border-top: 1px solid var(--rail);
       }
+      /* 資料管理：寬螢幕兩欄，遊戲局佔整列；遊戲局內兩張表單並排。 */
+      .page-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+        gap: 1.25rem;
+        align-items: start;
+      }
+      .page-grid > section {
+        min-width: 0;
+        margin: 0;
+      }
+      .page-grid > .page-grid-wide {
+        grid-column: 1 / -1;
+      }
+      .form-pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+        gap: 1rem 1.5rem;
+        align-items: start;
+        margin-top: 1.25rem;
+      }
+      .form-pair > .react-aria-Form {
+        margin: 0;
+        padding: 1rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface-2);
+      }
+      .form-pair > .react-aria-Form > h3 {
+        margin: 0;
+      }
+      .inline-form {
+        display: flex !important;
+        flex-wrap: wrap;
+        align-items: flex-end;
+      }
+      .inline-form > h3,
+      .inline-form > p {
+        flex-basis: 100%;
+      }
       main > section.dashboard {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
-        gap: 1rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1.25rem;
         align-items: start;
         padding: 0;
         border: 0;
@@ -218,23 +457,110 @@
         margin: 0;
       }
       .dashboard > section {
+        grid-column: 1 / -1;
         min-width: 0;
         margin: 0;
-        padding: 1rem 1.25rem 1.25rem;
-        border: 1px solid var(--rail);
-        border-radius: var(--radius);
+        padding: 1.25rem;
+        border: 1px solid rgb(169 181 172 / 60%);
+        border-radius: var(--radius-lg);
         background: var(--surface);
         box-shadow: var(--shadow);
       }
       .dashboard > section > h3:first-child {
         margin-top: 0;
       }
-      .dashboard > section[aria-labelledby='line-cards-heading'],
-      .dashboard > section[aria-labelledby='task-board-heading'],
-      .dashboard > section[aria-labelledby='recovery-heading'] {
-        grid-column: 1 / -1;
+      .dashboard > .annual-work {
+        grid-column: span 2;
       }
-      main > section.danger-zone {
+      .dashboard > .parent-panel {
+        grid-column: span 1;
+      }
+      @media (max-width: 70rem) {
+        main > section.dashboard {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .dashboard > .annual-work,
+        .dashboard > .parent-panel {
+          grid-column: 1 / -1;
+        }
+      }
+
+      /* ── 共用小元件：區塊標頭、標籤、小按鈕、空狀態 ────────── */
+      .section-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.5rem 1rem;
+        margin-bottom: 1rem;
+      }
+      .section-head h2,
+      .section-head h3 {
+        margin: 0;
+      }
+      .section-head p:not(.tag) {
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+        font-size: 0.8125rem;
+      }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        min-height: 1.5rem;
+        margin: 0;
+        padding: 0 0.625rem;
+        border: 1px solid var(--rail);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--ink-2);
+        font-size: 0.75rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .tag-green {
+        border-color: #b7dcc8;
+        background: var(--turf-soft);
+        color: var(--turf-dark);
+      }
+      .tag-amber {
+        border-color: var(--dirt-rail);
+        background: var(--dirt-soft);
+        color: var(--dirt);
+      }
+      .tag-red {
+        border-color: #f0bdb6;
+        background: var(--silk-red-soft);
+        color: #8c1d14;
+      }
+      .button-small {
+        min-height: 2rem;
+        padding: 0.25rem 0.625rem;
+        border-radius: 8px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+      }
+      .button-quiet {
+        border-color: transparent;
+        background: var(--turf-soft);
+        color: var(--turf-dark);
+      }
+      .button-quiet:hover {
+        border-color: #b7dcc8;
+        background: #d5e9de;
+      }
+      .empty-inline {
+        margin: 0;
+        padding: 1rem;
+        border: 1px dashed var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 0.875rem;
+        text-align: center;
+      }
+      main > section.danger-zone,
+      .page-grid > section.danger-zone {
         border-color: #e3a29b;
         background: #fffbfa;
         box-shadow: none;
@@ -252,10 +578,10 @@
 
       /* ── 按鈕 ───────────────────────────────────────────────── */
       button {
-        min-height: 2.25rem;
-        padding: 0.375rem 0.875rem;
+        min-height: 2.375rem;
+        padding: 0.375rem 0.9375rem;
         border: 1px solid var(--rail-strong);
-        border-radius: var(--radius-sm);
+        border-radius: 10px;
         background: var(--surface);
         color: var(--ink);
         font: inherit;
@@ -280,16 +606,29 @@
         cursor: not-allowed;
       }
       button[type='submit'],
-      .dialog-actions > button:last-child {
+      .dialog-actions > button:last-child,
+      .button-primary {
         border-color: var(--turf);
         background: var(--turf);
+        box-shadow: 0 6px 16px rgb(31 107 79 / 18%);
         color: #ffffff;
         font-weight: 600;
       }
       button[type='submit']:hover,
-      .dialog-actions > button:last-child:hover {
+      .dialog-actions > button:last-child:hover,
+      .button-primary:hover {
         border-color: var(--turf-dark);
         background: var(--turf-dark);
+      }
+      .button-secondary {
+        min-height: 2.625rem;
+        border-color: var(--rail);
+        background: var(--surface);
+        font-weight: 600;
+      }
+      .top-actions .button-primary {
+        min-height: 2.625rem;
+        padding-inline: 1.125rem;
       }
       [role='alertdialog'] .dialog-actions > button:last-child {
         border-color: var(--silk-red);
@@ -361,8 +700,8 @@
       textarea {
         box-sizing: border-box;
         max-width: 100%;
-        min-height: 2.25rem;
-        padding: 0.375rem 0.625rem;
+        min-height: 2.375rem;
+        padding: 0.375rem 0.6875rem;
         border: 1px solid var(--rail-strong);
         border-radius: var(--radius-sm);
         background: #ffffff;
@@ -497,7 +836,6 @@
         font-weight: 700;
       }
       .group-picker,
-      .filters,
       .field-group,
       .field-row {
         display: flex;
@@ -514,13 +852,6 @@
         border: 1px solid var(--rail);
         border-radius: var(--radius-sm);
         background: var(--surface);
-      }
-      .filters input:not([type='checkbox']) {
-        width: 7rem;
-      }
-      .filters .field:has(input[type='checkbox']) {
-        justify-content: center;
-        min-height: 2.25rem;
       }
 
       /* ── 表格與資料清單 ─────────────────────────────────────── */
@@ -626,72 +957,333 @@
         white-space: nowrap;
       }
 
-      /* ── 總覽：年度工作、提醒、任務 ─────────────────────────── */
-      [data-testid='annual-work'],
-      [data-testid='import-history'],
-      .reminders,
-      .task-list,
-      .task-mares,
-      .history-list {
+      /* ── 總覽：指標卡、八系位置、任務、年度工作、提醒 ─────── */
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.875rem;
         margin: 0;
         padding: 0;
         list-style: none;
       }
-      [data-testid='annual-work'] > li {
+      .metric-card {
+        min-width: 0;
+        padding: 1.125rem;
+        border: 1px solid rgb(169 181 172 / 60%);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .metric-card p {
+        margin: 0;
+      }
+      .metric-label {
+        margin-bottom: 0.625rem !important;
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+      .metric-value {
+        font-family: var(--font-display);
+        font-size: 1.5rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.01em;
+        line-height: 1.25;
+      }
+      .metric-note {
+        margin-top: 0.375rem !important;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      @media (max-width: 70rem) {
+        .metric-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      :is(.lines-panel .line-grid, .line-slots) {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.625rem;
+      }
+      @media (max-width: 70rem) {
+        :is(.lines-panel .line-grid, .line-slots) {
+          grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+        }
+      }
+      :is(.lines-panel, .line-slots) .line-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+        padding: 0.75rem 0.875rem 0.875rem;
+        border: 1px solid var(--rail);
+        border-left: 5px solid var(--line-color, var(--rail));
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      :is(.lines-panel, .line-slots) .line-card[data-opened='false'] {
+        border-style: dashed;
+        background: var(--surface-2);
+        color: var(--muted);
+      }
+      :is(.lines-panel, .line-slots) .line-card > :is(h3, h4) {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+      }
+      :is(.lines-panel, .line-slots) .line-card > :is(h3, h4)::before {
+        width: 1.375rem;
+        height: 0.9375rem;
+      }
+      :is(.lines-panel, .line-slots) .line-card p {
+        margin: 0;
+      }
+      .line-slots .line-card > button {
+        align-self: flex-start;
+        margin-top: 0.25rem;
+      }
+      .line-slots .react-aria-Form {
+        margin: 0.25rem 0 0;
+        padding: 0.75rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius-sm);
+        background: var(--surface-2);
+      }
+      .line-slots .react-aria-Form h4 {
+        margin: 0;
+        font-size: 0.875rem;
+      }
+      .line-slots .react-aria-TextField input {
+        width: 100%;
+      }
+      .line-card-name {
+        font-family: var(--font-display);
+        font-size: 1.0625rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      .line-card-empty {
+        font-size: 0.875rem;
+        font-weight: 600;
+      }
+      :is(.lines-panel, .line-slots) .line-card dl > div {
+        padding: 0.0625rem 0;
+        border: 0;
+      }
+      :is(.lines-panel, .line-slots) .line-card dt,
+      :is(.lines-panel, .line-slots) .line-card dd {
+        font-size: 0.8125rem;
+      }
+      .line-card-alert {
+        padding: 0.375rem 0.5rem;
+        border-left: 3px solid var(--dirt);
+        border-radius: 6px;
+        background: var(--dirt-soft);
+        color: var(--dirt);
+        font-size: 0.75rem;
+      }
+
+      /* 任務看板：一列一個配對，母馬逐列可登記。 */
+      .task-list {
+        display: grid;
+        gap: 0.625rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .task-card {
+        padding: 0.875rem 1rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .task-card h4 {
+        margin: 0 0 0.375rem;
+        font-size: 0.9375rem;
+      }
+      .task-card > p {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.75rem;
+        margin: 0.25rem 0;
+        color: var(--ink-2);
+        font-size: 0.8125rem;
+      }
+      .task-mares {
+        display: grid;
+        gap: 0.375rem;
+        margin: 0.625rem 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .task-mares > li {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        justify-content: space-between;
-        gap: 0.5rem 1rem;
-        padding: 0.5rem 0;
-        border-bottom: 1px solid var(--rail);
+        gap: 0.5rem 0.75rem;
+        padding: 0.5rem 0.625rem;
+        border-radius: var(--radius-sm);
+        background: var(--surface-2);
       }
-      [data-testid='import-history'] > li {
-        padding: 0.375rem 0;
-        border-bottom: 1px solid var(--rail);
-        font-size: 0.9375rem;
-        font-variant-numeric: tabular-nums;
+      .task-mares > li > span:first-child {
+        margin-right: auto;
+        font-weight: 700;
+      }
+
+      /* 年度工作：每種總表一張卡，月份徽章、狀態、選檔。 */
+      .workflow-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
+        gap: 0.625rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .workflow-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.375rem;
+        min-width: 0;
+        padding: 0.875rem;
+        border: 1px solid var(--rail);
+        border-radius: 13px;
+        background: var(--surface-2);
+      }
+      .workflow-card p {
+        margin: 0;
+      }
+      .workflow-card[data-done='true'] {
+        border-color: #b7dcc8;
+        background: #f3f9f5;
+      }
+      .workflow-card[data-dragging='true'] {
+        border: 2px dashed var(--turf);
+        background: var(--turf-soft);
+      }
+      .workflow-month {
+        display: grid;
+        place-items: center;
+        min-width: 2rem;
+        height: 1.75rem;
+        margin-bottom: 0.25rem;
+        padding: 0 0.375rem;
+        border-radius: 8px;
+        background: var(--turf-soft);
+        color: var(--turf-dark);
+        font-size: 0.75rem;
+        font-weight: 800;
+      }
+      .workflow-title {
+        font-size: 0.875rem;
+        font-weight: 700;
+      }
+      .workflow-hint,
+      .workflow-batch {
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .workflow-actions {
+        display: grid;
+        gap: 0.375rem;
+        width: 100%;
+        margin-top: auto;
+        padding-top: 0.5rem;
+      }
+      .workflow-actions button {
+        width: 100%;
+      }
+
+      /* 提醒：寬螢幕兩欄，前面一個砂色圓點。 */
+      .reminders {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+        gap: 0 1.5rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
       }
       .reminders > li {
         position: relative;
-        padding: 0.3125rem 0 0.3125rem 1rem;
+        padding: 0.4375rem 0 0.4375rem 1rem;
         border-bottom: 1px dashed var(--rail);
         color: var(--ink-2);
-        font-size: 0.9375rem;
+        font-size: 0.875rem;
       }
       .reminders > li::before {
         content: '';
         position: absolute;
-        top: 0.8125rem;
+        top: 0.9375rem;
         left: 0.125rem;
         width: 0.375rem;
         height: 0.375rem;
         border-radius: 50%;
         background: #c28a2c;
       }
-      .task-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
-        gap: 0.75rem;
+      .parent-panel .metric-value {
+        margin: 0.5rem 0 0.25rem;
+        font-size: 1.25rem;
       }
-      .task-card {
-        padding: 0.75rem 1rem;
+      /* 母馬群待補：每系一張卡，左側系代表色；補系進行中以紅色邊條標示。 */
+      .recovery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+        gap: 0.75rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .recovery-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        min-width: 0;
+        padding: 0.875rem 1rem;
         border: 1px solid var(--rail);
-        border-radius: var(--radius-sm);
+        border-left: 5px solid var(--rail-strong);
+        border-radius: var(--radius);
         background: var(--surface-2);
       }
-      .task-card h4 {
-        margin: 0 0 0.375rem;
+      .recovery-card h4 {
+        margin: 0;
+        font-size: 0.9375rem;
       }
-      .task-card > p {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.25rem 0.75rem;
-        font-size: 0.875rem;
+      .recovery-choices {
+        display: grid;
+        gap: 0.25rem;
+        margin: 0;
+        padding-left: 1.125rem;
+        color: var(--ink-2);
+        font-size: 0.8125rem;
       }
-      .task-mares > li {
+      .recovery-card .react-aria-Form {
+        width: 100%;
+        margin: 0.25rem 0 0;
+        padding: 0.75rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+      }
+      .recovery-active {
+        padding: 0.875rem 1rem;
+        border: 1px solid #f0bdb6;
+        border-left: 5px solid var(--silk-red);
+        border-radius: var(--radius);
+        background: #fffaf9;
+      }
+
+      [data-testid='import-history'],
+      .history-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      [data-testid='import-history'] > li {
         padding: 0.375rem 0;
-        border-top: 1px solid var(--rail);
+        border-bottom: 1px solid var(--rail);
+        font-size: 0.9375rem;
+        font-variant-numeric: tabular-nums;
       }
 
       /* ── 八系：勝負服色塊 ───────────────────────────────────── */
@@ -771,69 +1363,250 @@
         );
       }
 
-      /* ── 母馬群 ─────────────────────────────────────────────── */
+      /* ── 母馬群：群組標頭、篩選面板、母馬卡 ───────────────── */
+      .herd-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem 1rem;
+        margin: 1rem 0 0.75rem;
+        padding: 1rem 1.25rem;
+        border-radius: var(--radius);
+        background: var(--turf-dark);
+        color: #ffffff;
+      }
       [data-testid='mare-group-title'] {
-        margin-top: 0.5rem;
+        margin: 0;
         font-size: 1.1875rem;
+      }
+      .herd-head .button-primary {
+        border-color: rgb(255 255 255 / 80%);
+        background: #ffffff;
+        box-shadow: none;
+        color: var(--turf-dark);
+      }
+      .herd-head .button-primary:hover {
+        background: var(--turf-soft);
+      }
+      .herd-head :focus-visible {
+        outline-color: #ffffff;
+      }
+      fieldset.filters {
+        display: grid;
+        gap: 0.75rem;
+        margin: 0.75rem 0;
+        padding: 0.875rem 1rem 1rem;
+        border: 1px solid var(--rail);
+        border-radius: 14px;
+        background: var(--surface-2);
+      }
+      fieldset.filters > legend {
+        float: left;
+        margin: 0 0 0.125rem;
+        padding: 0;
+        color: var(--muted);
+        font-size: 0.75rem;
+        letter-spacing: 0.12em;
+      }
+      .filter-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
+        gap: 0.625rem 0.75rem;
+        align-items: end;
+      }
+      /* 關鍵字欄在寬螢幕跨兩欄；窄螢幕只有一欄時不跨，避免撐出水平捲動。 */
+      @media (min-width: 40rem) {
+        .filter-row-primary > :first-child {
+          grid-column: span 2;
+        }
+      }
+      .filter-row :is(input, select) {
+        width: 100%;
+      }
+      .filter-row .react-aria-TextField input,
+      .filter-row .react-aria-NumberField input {
+        width: 100%;
+      }
+      .filter-checks {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 1.25rem;
+        padding-top: 0.625rem;
+        border-top: 1px solid var(--rail);
+      }
+      .filter-checks > button {
+        margin-left: auto;
+      }
+      .filter-summary {
+        margin: 0.75rem 0 0.5rem;
+        color: var(--muted);
+        font-size: 0.875rem;
+        font-weight: 600;
       }
       .mare-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
-        gap: 1rem;
-        margin: 0.75rem 0;
+        gap: 0.875rem;
+        margin: 0.5rem 0;
         padding: 0;
         list-style: none;
       }
       .mare-card {
         min-width: 0;
-        padding: 1rem 1rem 0.875rem;
+        padding: 1rem;
         border: 1px solid var(--rail);
-        border-radius: var(--radius);
-        background: var(--surface);
+        border-radius: 14px;
+        background: var(--surface-2);
         cursor: pointer;
         transition:
           border-color 120ms,
-          box-shadow 120ms;
+          box-shadow 120ms,
+          transform 120ms;
       }
       .mare-card:hover {
-        border-color: var(--rail-strong);
-        box-shadow: 0 4px 14px rgb(22 32 42 / 10%);
+        border-color: #9dc7b1;
+        box-shadow: 0 8px 22px rgb(22 32 42 / 9%);
+        transform: translateY(-1px);
+      }
+      .mare-card[data-status='left'] {
+        background: #eef0ee;
       }
       .mare-card > article {
         display: flex;
         flex-direction: column;
+        gap: 0.625rem;
         height: 100%;
       }
+      .mare-card p {
+        margin: 0;
+      }
       .mare-name {
-        margin: 0 0 0.625rem;
+        margin: 0;
         font-size: 1.1875rem;
         letter-spacing: 0.02em;
       }
       .mare-name .link-button {
         font-weight: 800;
       }
-      .mare-card dl {
-        margin: 0;
-      }
-      .mare-card dl > div {
-        grid-template-columns: 5.5rem 1fr;
-        gap: 0.5rem;
-        padding: 0.1875rem 0;
-        border-bottom: 0;
-      }
-      .mare-card dt {
+      .mare-meta {
+        margin-top: 0.125rem !important;
+        color: var(--muted);
         font-size: 0.8125rem;
       }
-      .mare-card dd {
-        font-size: 0.9375rem;
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.375rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
       }
-      .mare-card .notice {
-        margin: 0.375rem 0 0;
+      .tag-row .tag {
+        white-space: normal;
+      }
+      .tag strong {
+        margin-inline-start: 0.25rem;
+      }
+      .vitality-block {
+        display: grid;
+        gap: 0.3125rem;
+      }
+      .vitality-meta {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.5rem;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .vitality-meta strong {
+        color: var(--ink);
+        font-size: 0.875rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .vitality-track {
+        height: 0.5625rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--rail);
+      }
+      .vitality-track[data-state='pending'],
+      .vitality-track[data-state='notApplicable'] {
+        background: repeating-linear-gradient(
+          135deg,
+          #e8ece9,
+          #e8ece9 7px,
+          var(--rail) 7px,
+          var(--rail) 14px
+        );
+      }
+      .vitality-fill {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #c28a2c, #2f9a68);
+      }
+      .vitality-track[data-low='true'] .vitality-fill {
+        background: linear-gradient(90deg, var(--silk-red), #d6912c);
+      }
+      .mare-facts {
+        display: grid;
+        gap: 0.125rem;
+        margin: 0;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--rail);
+      }
+      .mare-facts > div {
+        grid-template-columns: 4.5rem 1fr;
+        gap: 0.5rem;
+        padding: 0.0625rem 0;
+        border-bottom: 0;
+      }
+      .mare-facts dt {
+        font-size: 0.75rem;
+      }
+      .mare-facts dd {
+        font-size: 0.875rem;
+      }
+      .mare-notices {
+        display: grid;
+        gap: 0.25rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .mare-notices > li {
+        padding: 0.3125rem 0.5rem;
+        border-left: 3px solid var(--dirt);
+        border-radius: 6px;
+        background: var(--dirt-soft);
         color: var(--dirt);
+        font-size: 0.8125rem;
       }
-      .mare-card .actions {
+      .mare-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.375rem;
         margin-top: auto;
-        padding-top: 0.75rem;
+        padding-top: 0.25rem;
+      }
+      .card-open-hint {
+        margin-left: auto;
+        color: var(--turf);
+        font-size: 0.6875rem;
+        font-weight: 700;
+      }
+      .button-danger {
+        border-color: #e3a29b;
+        background: var(--surface);
+        color: var(--silk-red);
+      }
+      .button-danger:hover {
+        border-color: var(--silk-red);
+        background: var(--silk-red-soft);
       }
       meter {
         width: 6rem;
@@ -868,37 +1641,73 @@
         margin-top: 0.75rem;
       }
 
-      /* ── 詳情欄 ─────────────────────────────────────────────── */
+      /* ── 詳情欄：深藍標頭與膠囊頁籤，內容區淺色 ─────────────── */
       .drawer-overlay {
         position: fixed;
         inset: 0;
+        z-index: 10;
         display: flex;
         justify-content: flex-end;
-        background: rgb(22 32 42 / 36%);
+        background: rgb(8 20 34 / 38%);
+        backdrop-filter: blur(2px);
       }
       .drawer {
         box-sizing: border-box;
-        width: min(34rem, 100%);
+        width: min(36rem, 100%);
         height: 100%;
         overflow-y: auto;
-        border-left: 0.5rem solid #1565c0;
+        border-left: 4px solid #1565c0;
         background: var(--drawer-soft);
-        box-shadow: -8px 0 28px rgb(0 0 0 / 18%);
+        box-shadow: -18px 0 45px rgb(3 20 37 / 28%);
       }
       .drawer .dialog {
-        padding: 1.25rem 1.5rem 2rem;
+        margin: 0;
+        padding: 0;
+      }
+      .drawer-top {
+        padding: 1.375rem 1.5rem 1rem;
+        background: #0d3d6e;
+        color: #e6f1fc;
       }
       .drawer-header {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
-        gap: 0.5rem;
+        gap: 1rem;
       }
       .drawer-header h2,
       .drawer-header h3 {
         margin: 0;
-        font-size: 1.25rem;
+        color: #ffffff;
+        font-size: 1.375rem;
         letter-spacing: 0.02em;
+      }
+      .drawer-sub {
+        margin: 0.375rem 0 0;
+        color: #b9d7f4;
+        font-size: 0.8125rem;
+      }
+      .drawer-close {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 2.25rem;
+        min-height: 2.25rem;
+        padding: 0;
+        border: 1px solid rgb(255 255 255 / 24%);
+        background: rgb(255 255 255 / 12%);
+        color: #ffffff;
+        font-size: 1.25rem;
+      }
+      .drawer-close:hover {
+        border-color: rgb(255 255 255 / 50%);
+        background: rgb(255 255 255 / 22%);
+      }
+      .drawer-top :focus-visible {
+        outline-color: #ffffff;
+      }
+      .drawer-body {
+        padding: 0.25rem 1.5rem 2rem;
       }
       .drawer dl > div,
       .detail-list > div {
@@ -930,6 +1739,30 @@
         border-bottom-color: #1565c0;
         color: #0d47a1;
         font-weight: 700;
+      }
+      .drawer-top [role='tablist'] {
+        gap: 0.25rem;
+        margin: 1.125rem 0 0;
+        padding: 0.25rem;
+        border: 0;
+        border-radius: 12px;
+        background: rgb(0 0 0 / 22%);
+      }
+      .drawer-top [role='tab'] {
+        margin: 0;
+        padding: 0.4375rem 0.875rem;
+        border-bottom: 0;
+        border-radius: 9px;
+        color: #d3e6f9;
+        font-size: 0.875rem;
+        font-weight: 700;
+      }
+      .drawer-top [role='tab'][data-hovered] {
+        background: rgb(255 255 255 / 10%);
+      }
+      .drawer-top [role='tab'][aria-selected='true'] {
+        background: #ffffff;
+        color: #0b3a6c;
       }
       .drawer section {
         margin-top: 1.25rem;
@@ -1018,6 +1851,129 @@
         color: #c2185b;
       }
 
+      /* ── 八系頁的種牡馬卡：兩欄格狀，現任以淺藍條表示 ─────── */
+      .stallion-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+        gap: 0.875rem;
+      }
+      .stallion-grid > .stallion-card {
+        margin: 0;
+        padding: 1rem;
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .stallion-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .stallion-card .stallion-head h3 {
+        margin: 0;
+      }
+      .stallion-card h4 {
+        margin: 0.875rem 0 0.375rem;
+        color: var(--muted);
+        font-size: 0.75rem;
+        letter-spacing: 0.1em;
+      }
+      .stallion-card .stallion-list > li {
+        margin-bottom: 0.375rem;
+        padding: 0.625rem 0.75rem;
+        border: 1px solid var(--drawer-rail);
+        border-radius: var(--radius-sm);
+        background: var(--drawer-soft);
+      }
+      .stallion-card [data-testid='current-stallion'] {
+        margin: 0 0 0.375rem;
+        font-weight: 600;
+      }
+      .stallion-card .actions button {
+        min-height: 2rem;
+        padding: 0.25rem 0.625rem;
+        font-size: 0.8125rem;
+      }
+      .stallion-tools {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.375rem;
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--rail);
+      }
+      .stallion-card .react-aria-Form {
+        margin: 0.625rem 0 0;
+        padding: 0.75rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius-sm);
+        background: var(--surface-2);
+      }
+
+      /* ── 產駒清單：馬名與基本資料、能力徽章、狀態標籤三欄 ──── */
+      .foal-list > .foal-row {
+        margin-bottom: 0.5rem;
+        padding: 0.75rem 0.875rem;
+        border: 1px solid var(--rail);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .foal-list .foal-row-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) auto;
+        align-items: center;
+        gap: 0.5rem 1rem;
+      }
+      .foal-row-main p {
+        margin: 0;
+      }
+      .foal-name {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.25rem 0.5rem;
+      }
+      .foal-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 0.75rem;
+        margin-top: 0.125rem !important;
+        color: var(--muted);
+        font-size: 0.8125rem;
+      }
+      .ability-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3125rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .ability-chips > span {
+        padding: 0.125rem 0.5rem;
+        border-radius: 999px;
+        background: #eaeeea;
+        color: var(--ink-2);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .foal-state {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.3125rem;
+      }
+      @media (max-width: 52rem) {
+        .foal-list .foal-row-main {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .foal-state {
+          justify-content: flex-start;
+        }
+      }
+
       /* ── 血緣表 ─────────────────────────────────────────────── */
       .pedigree-view {
         margin-top: 0.5rem;
@@ -1054,11 +2010,43 @@
 
       /* ── 年度匯入 ───────────────────────────────────────────── */
       .drop-zone {
+        display: grid;
+        justify-items: center;
+        gap: 0.5rem;
         margin: 0.75rem 0;
-        padding: 1.25rem;
-        border: 2px dashed var(--rail-strong);
+        padding: 1.75rem 1.25rem;
+        border: 2px dashed #9dc7b1;
+        border-radius: var(--radius-lg);
+        background: #eef6f1;
+        text-align: center;
+      }
+      .drop-zone label {
+        font-weight: 700;
+      }
+      .drop-icon {
+        display: grid;
+        place-items: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        color: var(--turf);
+        font-size: 1.375rem;
+      }
+      section.import-history {
+        margin-top: 1.5rem;
+      }
+      .import-history [data-testid='import-history'] {
+        max-height: 24rem;
+        overflow-y: auto;
+        padding: 0 0.75rem;
+        border: 1px solid var(--rail);
         border-radius: var(--radius);
         background: var(--surface-2);
+      }
+      .import-history [data-testid='import-history'] > li:last-child {
+        border-bottom: 0;
       }
       .may-preview > p:first-child {
         font-weight: 600;
@@ -1068,20 +2056,53 @@
       .modal-overlay {
         position: fixed;
         inset: 0;
+        z-index: 20;
         display: grid;
         place-items: center;
         padding: 1rem;
-        background: rgb(22 32 42 / 45%);
+        background: rgb(12 20 26 / 55%);
+        backdrop-filter: blur(3px);
       }
       .modal {
         box-sizing: border-box;
         width: 100%;
-        max-width: 34rem;
+        max-width: 36rem;
         max-height: 90vh;
         overflow-y: auto;
-        border-radius: 12px;
+        border-radius: 18px;
         background: var(--surface);
-        box-shadow: 0 20px 48px rgb(0 0 0 / 24%);
+        box-shadow: var(--shadow-lg);
+      }
+      .dialog-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.25rem;
+      }
+      .dialog-head h2 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+      .dialog-head p {
+        margin: 0.375rem 0 0;
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      .dialog-close {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 2.25rem;
+        min-height: 2.25rem;
+        padding: 0;
+        border: 0;
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 1.25rem;
+      }
+      .dialog .react-aria-Form {
+        margin-bottom: 0;
       }
       .dialog {
         padding: 1.5rem;
@@ -1101,31 +2122,57 @@
         outline: 2px solid var(--focus);
         outline-offset: 2px;
       }
-      .status-bar :focus-visible {
-        outline-color: #9ec5ff;
-      }
-      @media (max-width: 40rem) {
-        .app {
-          padding: 0 0.75rem 2rem;
+      /* 窄螢幕：側欄收成頂部區塊，導覽改為可換行的膠囊，頁面本身不水平捲動（需求規格 13.1）。 */
+      @media (max-width: 52rem) {
+        .app-shell {
+          grid-template-columns: 1fr;
         }
-        .status-bar {
-          margin: 0 -0.75rem;
-          padding: 0.875rem 1rem 0.75rem;
-          border-radius: 0;
+        .sidebar {
+          position: static;
+          gap: 0.875rem;
+          height: auto;
+          padding: 0.875rem 1rem 1rem;
         }
-        .status-bar dl {
-          gap: 0.375rem 1.25rem;
+        .brand-sub,
+        .sidebar-label,
+        .sidebar-footer {
+          display: none;
         }
-        .status-bar [data-testid='status-game'],
-        .status-bar [data-testid='status-year'],
-        .status-bar [data-testid='status-records'] {
-          font-size: 1.0625rem;
+        .main-nav {
+          gap: 0.375rem;
         }
-        .status-bar .notice {
-          font-size: 0.75rem;
+        .nav-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.375rem;
         }
         .main-nav button {
-          padding: 0.5rem 0.625rem;
+          width: auto;
+          min-height: 2.375rem;
+          padding: 0 0.75rem;
+          background: rgb(255 255 255 / 6%);
+        }
+        .nav-icon {
+          width: auto;
+        }
+        .topbar-main {
+          flex-direction: column;
+        }
+        .top-actions {
+          justify-content: flex-start;
+        }
+      }
+      @media (max-width: 40rem) {
+        .workspace {
+          padding: 1rem 0.75rem 2rem;
+        }
+        .top-actions {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          width: 100%;
+        }
+        .top-actions .button-primary {
+          grid-column: 1 / -1;
         }
         main > section {
           padding: 1rem;
@@ -1151,17 +2198,31 @@
       }
       /* 強制色彩：透明的底線會被畫成文字色，改用系統色區分目前頁籤；代表色色塊保留原色。 */
       @media (forced-colors: active) {
-        .main-nav,
         [role='tablist'] {
           gap: 0;
         }
-        .main-nav button,
         [role='tab'] {
           border-bottom-color: Canvas;
         }
-        .main-nav button[aria-current='page'],
         [role='tab'][aria-selected='true'] {
           border-bottom-color: Highlight;
+        }
+        /* 目前頁在一般模式以底色與內側色條標示，強制色彩下兩者都會消失，改用外框。 */
+        .main-nav button {
+          border: 2px solid Canvas;
+        }
+        .main-nav button[aria-current='page'] {
+          border-color: Highlight;
+        }
+        .status-dot {
+          forced-color-adjust: none;
+        }
+        /* 詳情欄的膠囊頁籤以白底標示目前頁，強制色彩下改用外框。 */
+        .drawer-top [role='tab'] {
+          border: 2px solid Canvas;
+        }
+        .drawer-top [role='tab'][aria-selected='true'] {
+          border-color: Highlight;
         }
         .line-card > h3::before,
         .line-card > h4::before,

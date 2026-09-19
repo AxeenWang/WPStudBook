@@ -12,6 +12,7 @@ import {
 import { loadTaskBoard } from '../../services/tasks.ts';
 import { Feedback, useAction, useErrorLink } from '../actions.tsx';
 import { OptionalIntegerField, SelectField } from '../fields.tsx';
+import { lineColorStyle } from '../line-color.ts';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 
 const SIDE_LABELS: Readonly<Record<RecoverySide, string>> = {
@@ -46,7 +47,8 @@ function RecoveryChoices({
         代的市場母馬，產駒承接下一代。
       </li>
       <li>
-        <strong>宣告斷血並補系</strong>：以下方表單登記，補入親馬為零代，產駒承接下一代。
+        <strong>宣告斷血並補系</strong>
+        ：按「宣告斷血並補系…」展開表單登記，補入親馬為零代，產駒承接下一代。
       </li>
     </ul>
   );
@@ -83,7 +85,6 @@ function DeclareForm({
         });
       }}
     >
-      <h4>宣告斷血並補系</h4>
       <OptionalIntegerField
         label="斷血的代數"
         value={breakGeneration}
@@ -111,6 +112,31 @@ function DeclareForm({
   );
 }
 
+/** 宣告斷血是少用且影響整個循環的操作，表單收在按鈕後，按下才展開。 */
+function DeclareToggle({
+  position,
+  generation,
+}: {
+  readonly position: LinePosition;
+  readonly generation: number;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        className="button-small"
+        aria-expanded={open}
+        onPress={() => {
+          setOpen(!open);
+        }}
+      >
+        {open ? '收起斷血表單' : '宣告斷血並補系…'}
+      </Button>
+      {open && <DeclareForm position={position} generation={generation} />}
+    </>
+  );
+}
+
 /** 補系進行中：顯示進度與結束操作（需求規格 7.6、LINE-20、LINE-21）。 */
 export function RecoveryPanel() {
   const load = useCallback(
@@ -133,23 +159,38 @@ export function RecoveryPanel() {
     return null;
   }
   return (
-    <section aria-labelledby="recovery-heading">
-      <h3 id="recovery-heading">母馬群待補與斷血補系</h3>
+    <section aria-labelledby="recovery-heading" className="recovery-panel">
+      <div className="section-head">
+        <div>
+          <h3 id="recovery-heading">母馬群待補與斷血補系</h3>
+          <p>已成立的代數母馬群降為 0 時，從三種處理方式中自行選擇，系統不代選。</p>
+        </div>
+        <p className={`tag ${active === undefined ? 'tag-amber' : 'tag-red'}`}>
+          {active === undefined ? `${String(waiting.length)} 系待補` : '補系進行中'}
+        </p>
+      </div>
       <div data-testid="recovery-feedback">
         <Feedback message={action.message} error={action.error} />
       </div>
       {active === undefined ? (
-        waiting.map((line) => (
-          <div key={line.position} data-testid={`recovery-waiting-${String(line.position)}`}>
-            <h4>
-              第 {line.position} 系 {line.latestGeneration} 代已成立，母馬群待補
-            </h4>
-            <RecoveryChoices position={line.position} generation={line.latestGeneration ?? 1} />
-            <DeclareForm position={line.position} generation={line.latestGeneration ?? 1} />
-          </div>
-        ))
+        <ul className="recovery-grid">
+          {waiting.map((line) => (
+            <li
+              key={line.position}
+              className="recovery-card"
+              style={lineColorStyle(line.color)}
+              data-testid={`recovery-waiting-${String(line.position)}`}
+            >
+              <h4>
+                第 {line.position} 系 {line.latestGeneration} 代已成立，母馬群待補
+              </h4>
+              <RecoveryChoices position={line.position} generation={line.latestGeneration ?? 1} />
+              <DeclareToggle position={line.position} generation={line.latestGeneration ?? 1} />
+            </li>
+          ))}
+        </ul>
       ) : (
-        <div data-testid="recovery-active">
+        <div className="recovery-active" data-testid="recovery-active">
           <p>
             第 {active.recovery.position} 系 {active.recovery.generation} 代於{' '}
             {active.recovery.gameYear} 年宣告斷血（{SIDE_LABELS[active.recovery.side]}）：

@@ -1,6 +1,7 @@
-import { useState, type DragEvent } from 'react';
+import { useEffect, useState, type DragEvent } from 'react';
 import type { Game } from '../../domain/game.ts';
 import type { ImportType } from '../../domain/import-type.ts';
+import type { Timing } from '../../domain/timing.ts';
 import {
   listImportHistory,
   readFileNameHint,
@@ -32,7 +33,8 @@ function ImportHistory() {
     return <p>這一局還沒有匯入紀錄。</p>;
   }
   return (
-    <ul data-testid="import-history">
+    // 歷程在固定高度的框內捲動；可捲動區域要能用鍵盤聚焦（axe scrollable-region-focusable）。
+    <ul data-testid="import-history" tabIndex={0} aria-labelledby="import-history-heading">
       {history.map((batch) => (
         <li key={batch.id}>
           {batch.gameYear} 年 {formatTiming(batch.timing.month, batch.timing.week)} ·{' '}
@@ -44,7 +46,23 @@ function ImportHistory() {
   );
 }
 
-function ImportsView({ currentGame }: { readonly currentGame: Game }) {
+/** 從總覽年度工作卡選好的檔案：卡片的類型是使用者明確的選擇，時點在檔名沒有時用卡片的月份。 */
+export interface ImportRequest {
+  readonly id: number;
+  /** 交接時的遊戲局；換局後這個請求不再適用。 */
+  readonly gameId: string;
+  readonly file: File;
+  readonly type: ImportType;
+  readonly timing: Timing;
+}
+
+function ImportsView({
+  currentGame,
+  request,
+}: {
+  readonly currentGame: Game;
+  readonly request: ImportRequest | undefined;
+}) {
   const { notifyChanged } = useServices();
   const [file, setFile] = useState<ImportSource>();
   const [type, setType] = useState<ImportType>();
@@ -52,16 +70,25 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
   const [month, setMonth] = useState<number | undefined>();
   const [week, setWeek] = useState<number | undefined>();
 
-  const receive = async (picked: File) => {
+  const receive = async (picked: File, preset?: Pick<ImportRequest, 'type' | 'timing'>) => {
     const bytes = new Uint8Array(await picked.arrayBuffer());
     setFile({ fileName: picked.name, bytes });
     // 檔名只是預選，仍由使用者確認（需求規格 11.1、IMP-02、IMP-03）。
     const hint = readFileNameHint(picked.name);
-    setType(hint?.importType);
+    setType(preset?.type ?? hint?.importType);
     setGameYear(hint?.gameYear ?? currentGame.currentYear);
-    setMonth(hint?.timing.month);
-    setWeek(hint?.timing.week);
+    setMonth(hint?.timing.month ?? preset?.timing.month);
+    setWeek(hint?.timing.week ?? preset?.timing.week);
   };
+
+  const requestId = request?.id;
+  useEffect(() => {
+    if (request !== undefined) {
+      void receive(request.file, request);
+    }
+    // 同一個請求只接收一次；換請求時 id 會變。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId]);
 
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -81,12 +108,16 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
 
   return (
     <section aria-labelledby="imports-heading">
-      <h2 id="imports-heading">年度匯入</h2>
-      <p>
-        支援一月二歲馬總表、四月誕生幼駒總表、五月繁殖牝馬總表、七月繁殖牝馬總表、
-        五月種牡馬總表、候選 TXT、目標種牡馬 TXT 與選用的十月全世界繁殖牝馬總表。
-        匯入前會先顯示預覽，有阻擋錯誤時資料不變。
-      </p>
+      <div className="section-head">
+        <div>
+          <h2 id="imports-heading">年度匯入</h2>
+          <p>
+            支援一月二歲馬總表、四月誕生幼駒總表、五月繁殖牝馬總表、七月繁殖牝馬總表、
+            五月種牡馬總表、候選 TXT、目標種牡馬 TXT 與選用的十月全世界繁殖牝馬總表。
+            匯入前會先顯示預覽，有阻擋錯誤時資料不變。
+          </p>
+        </div>
+      </div>
 
       <div
         className="drop-zone"
@@ -96,6 +127,9 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
         }}
         onDrop={onDrop}
       >
+        <span className="drop-icon" aria-hidden="true">
+          ⇩
+        </span>
         <label htmlFor="import-file">選擇匯入檔（也可以把檔案拖放到這裡）</label>
         <input
           id="import-file"
@@ -157,16 +191,24 @@ function ImportsView({ currentGame }: { readonly currentGame: Game }) {
         <TargetStallionFlow key={flowKey} file={file} choice={choice} onApplied={notifyChanged} />
       )}
 
-      <h3>匯入歷程</h3>
-      <ImportHistory />
+      <section aria-labelledby="import-history-heading" className="import-history">
+        <h3 id="import-history-heading">匯入歷程</h3>
+        <ImportHistory />
+      </section>
     </section>
   );
 }
 
-export function ImportsPage({ currentGame }: { readonly currentGame: Game | undefined }) {
+export function ImportsPage({
+  currentGame,
+  request,
+}: {
+  readonly currentGame: Game | undefined;
+  readonly request?: ImportRequest | undefined;
+}) {
   return currentGame === undefined ? (
     <NoGameNotice />
   ) : (
-    <ImportsView key={currentGame.id} currentGame={currentGame} />
+    <ImportsView key={currentGame.id} currentGame={currentGame} request={request} />
   );
 }
