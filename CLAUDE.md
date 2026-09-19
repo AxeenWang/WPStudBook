@@ -75,5 +75,6 @@ They live here because they describe how Claude Code works, not what the product
   (5-2), so that virtualization settles the list and card structure first, and before
   accessibility (5-4), so that the contrast, focus, and forced-colours checks run once against the
   final styling.
-- Until 5-3 starts, keep the existing basic styling, do not add visual design tasks, and say
-  plainly that the interface is still basic styling when reporting on it.
+- Sub-plan 5-3 set the visual design; it is recorded in `docs/設計決策.md` section 9. New or
+  changed screens follow its colours, type, and component styles, and must not fall back to
+  browser-default styling.

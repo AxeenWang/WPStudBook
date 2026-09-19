@@ -47,6 +47,17 @@ const STALLION_TURNOVER = 40;
 const MARES_PER_LINE = 5;
 const LINES = 8;
 const RATINGS_PER_MARE = 3;
+/** 與程式提供的八個代表色相同（domain/line.ts）。 */
+const LINE_COLORS = [
+  '#c62828',
+  '#ef6c00',
+  '#9e7c00',
+  '#2e7d32',
+  '#00838f',
+  '#1565c0',
+  '#6a1b9a',
+  '#6d4c41',
+];
 const SUBSYSTEMS = [
   'ネアルコ',
   'ナスルーラ',
@@ -163,7 +174,7 @@ export function buildPerfGame(targetRecords: number, seed = 20260919): PerfGame 
       position: index + 1,
       subsystem,
       parentSystem: subsystem,
-      color: `#${pad((index + 1) * 111111, 6).slice(0, 6)}`,
+      color: LINE_COLORS[index],
       branch: { targetGeneration: 1, openedYear: START_YEAR },
       establishedGenerations: [{ generation: 1, gameYear: START_YEAR }],
     });

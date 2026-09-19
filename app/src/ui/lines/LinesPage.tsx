@@ -1,5 +1,6 @@
 import type { Game } from '../../domain/game.ts';
 import { lineColorLabel, listLineSlots, type LineSlot } from '../../services/lines.ts';
+import { lineColorStyle } from '../line-color.ts';
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery } from '../ServicesContext.tsx';
 import { StallionsSection } from '../stallions/StallionsSection.tsx';
@@ -11,7 +12,7 @@ function LineCard({ slot }: { readonly slot: LineSlot }) {
     <li
       className="line-card"
       data-testid={`line-slot-${String(slot.position)}`}
-      style={line === undefined ? undefined : { borderLeftColor: line.color }}
+      style={lineColorStyle(line?.color)}
     >
       <h3>第 {slot.position} 系</h3>
       {line === undefined ? (
