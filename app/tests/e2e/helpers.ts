@@ -4,9 +4,17 @@ import { expect, type Locator, type Page } from '@playwright/test';
 
 export const APP_URL = pathToFileURL(resolve('dist/WPStudBook.html')).href;
 
+/**
+ * 第一次畫面出現最多等 20 秒，之後的斷言照預設 5 秒。
+ *
+ * GitHub Actions 的 Windows 環境裡，每個 worker 的第一個測試都要 6～11 秒（之後每個約 1～1.5 秒），
+ * 多出來的是冷啟動的瀏覽器第一次載入頁面。PR #25 合併後 main 的推送 CI，Chrome 第一個測試的
+ * 狀態列超過 5 秒才出現而失敗，同樣內容的 PR CI 則通過。這裡驗的是程式能開啟，不是冷啟動速度；
+ * 啟動時間由階段 5 的效能量測另外記錄。
+ */
 export async function openApp(page: Page): Promise<void> {
   await page.goto(APP_URL);
-  await expect(page.getByTestId('status-game')).toBeVisible();
+  await expect(page.getByTestId('status-game')).toBeVisible({ timeout: 20_000 });
 }
 
 export async function createGameViaUi(page: Page, name: string, startYear = 1968): Promise<void> {
