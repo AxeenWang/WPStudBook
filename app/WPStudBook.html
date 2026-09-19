@@ -332,6 +332,12 @@
         color: var(--turf-dark);
         font-weight: 700;
       }
+      /* 選取狀態不只靠顏色（需求規格 13.5）：加上勾號；替代文字留空，不改變按鈕名稱。 */
+      .react-aria-ToggleButton[data-selected]::before,
+      button[aria-pressed='true']::before {
+        content: '✓' / '';
+        margin-inline-end: 0.25rem;
+      }
       .actions,
       .dialog-actions {
         display: flex;
@@ -1124,6 +1130,27 @@
         .mare-card dl > div,
         .line-card dl > div {
           grid-template-columns: 5.5rem 1fr;
+        }
+      }
+      /* 強制色彩：透明的底線會被畫成文字色，改用系統色區分目前頁籤；代表色色塊保留原色。 */
+      @media (forced-colors: active) {
+        .main-nav,
+        [role='tablist'] {
+          gap: 0;
+        }
+        .main-nav button,
+        [role='tab'] {
+          border-bottom-color: Canvas;
+        }
+        .main-nav button[aria-current='page'],
+        [role='tab'][aria-selected='true'] {
+          border-bottom-color: Highlight;
+        }
+        .line-card > h3::before,
+        .line-card > h4::before,
+        .color-swatch,
+        .color-swatch::after {
+          forced-color-adjust: none;
         }
       }
       @media (prefers-reduced-motion: reduce) {
