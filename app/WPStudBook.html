@@ -538,6 +538,9 @@
       .table-scroll caption {
         padding: 0.625rem 0.75rem;
       }
+      .table-scroll :is(td, th) {
+        overflow-wrap: normal;
+      }
       .table-scroll tbody tr:last-child > * {
         border-bottom: 0;
       }
@@ -1114,6 +1117,9 @@
         dl > div {
           grid-template-columns: 1fr;
           gap: 0;
+        }
+        .table-scroll table {
+          min-width: 36rem;
         }
         .mare-card dl > div,
         .line-card dl > div {
