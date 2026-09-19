@@ -91,7 +91,10 @@ export function DangerZone({ currentGame }: { readonly currentGame: Game }) {
             <p>
               將刪除全部 {deleteAll.preview.gameCount} 個遊戲局、資料{' '}
               {formatCount(deleteAll.preview.recordCount)}、檢查點{' '}
-              {deleteAll.preview.checkpointCount} 個。
+              {deleteAll.preview.checkpointCount} 個
+              {deleteAll.preview.archiveCount > 0 &&
+                `，以及封存索引 ${String(deleteAll.preview.archiveCount)} 筆（封存檔本身不受影響）`}
+              。
             </p>
           }
           onCancel={() => {
