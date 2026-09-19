@@ -45,14 +45,13 @@ export default defineConfig(
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
-          paths: [
-            {
-              name: '@playwright/test',
-              importNames: ['test'],
-              allowTypeImports: true,
-              message: '從 ./fixtures.ts 匯入 test：每個端到端測試都要檢查主控台錯誤。',
-            },
-          ],
+          // test 也是兩個套件的預設匯出，一併擋下。
+          paths: ['@playwright/test', 'playwright/test'].map((name) => ({
+            name,
+            importNames: ['test', 'default'],
+            allowTypeImports: true,
+            message: '從 ./fixtures.ts 匯入 test：每個端到端測試都要檢查主控台錯誤。',
+          })),
         },
       ],
     },
