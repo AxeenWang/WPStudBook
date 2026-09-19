@@ -8,6 +8,8 @@ if (!channels.includes('chrome') && !process.env.CI) {
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  // 瀏覽器第一次啟動的一次性成本在測試開始前付掉（見 global-setup.ts）。
+  globalSetup: './tests/e2e/global-setup.ts',
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
