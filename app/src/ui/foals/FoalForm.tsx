@@ -1,5 +1,5 @@
-import { useId, useState } from 'react';
-import { Button, Form, Input, Label, TextField } from 'react-aria-components';
+import { useId, useRef, useState } from 'react';
+import { Button, Form } from 'react-aria-components';
 import type { Disposition } from '../../domain/foal.ts';
 import type { Sex } from '../../domain/horse.ts';
 import {
@@ -11,8 +11,15 @@ import {
   type FoalWarning,
   type RegisteredFoal,
 } from '../../services/foals.ts';
+import { fieldIssuesOf, type FieldIssues } from '../../services/errors.ts';
+import { describedByError } from '../actions.tsx';
 import { ConfirmDialog } from '../dialogs.tsx';
-import { OptionalIntegerField, SelectField } from '../fields.tsx';
+import {
+  OptionalIntegerField,
+  SelectField,
+  TextInputField,
+  useFocusFirstInvalid,
+} from '../fields.tsx';
 import { errorMessage } from '../format.ts';
 import { useServices } from '../ServicesContext.tsx';
 import { EMPTY_FOAL_DETAILS, FoalDetailsFields } from './FoalDetailsFields.tsx';
@@ -47,6 +54,10 @@ export function FoalForm(props: FoalFormProps) {
   const [details, setDetails] = useState<FoalDetailsInput>(EMPTY_FOAL_DETAILS);
   const [warnings, setWarnings] = useState<readonly FoalWarning[]>();
   const [error, setError] = useState<string>();
+  const [fields, setFields] = useState<FieldIssues>({});
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorId = useId();
+  useFocusFirstInvalid(formRef, fields);
   const [busy, setBusy] = useState(false);
   const headingId = useId();
 
@@ -64,9 +75,11 @@ export function FoalForm(props: FoalFormProps) {
     try {
       const registered = await registerFoal(context, { ...input(), acceptedWarnings });
       setError(undefined);
+      setFields({});
       props.onRegistered(registered);
     } catch (caught) {
       setError(errorMessage(caught));
+      setFields(fieldIssuesOf(caught));
     } finally {
       setBusy(false);
       notifyChanged();
@@ -83,9 +96,11 @@ export function FoalForm(props: FoalFormProps) {
       setBusy(false);
       if (check.issues.length > 0) {
         setError(check.issues.join('；'));
+        setFields(check.fields);
         return;
       }
       setError(undefined);
+      setFields({});
       if (check.warnings.length > 0) {
         setWarnings(check.warnings);
         return;
@@ -100,7 +115,9 @@ export function FoalForm(props: FoalFormProps) {
   return (
     <>
       <Form
+        ref={formRef}
         aria-labelledby={headingId}
+        {...describedByError(errorId, error)}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -111,27 +128,39 @@ export function FoalForm(props: FoalFormProps) {
           前一年受胎紀錄相符時，父馬與系、代數由紀錄帶入；自由配種產駒只能待售或已售出。
           未命名的產駒顯示追蹤名。
         </p>
-        <OptionalIntegerField label="出生年" value={birthYear} onChange={setBirthYear} />
+        <OptionalIntegerField
+          label="出生年"
+          value={birthYear}
+          onChange={setBirthYear}
+          error={fields.birthYear}
+        />
         <SelectField
           label="性別"
           value={sex}
           options={SEX_CHOICES}
           emptyLabel="請選擇"
           onChange={setSex}
+          error={fields.sex}
         />
-        <TextField value={sireName} onChange={setSireName}>
-          <Label>父馬名（沒有受胎紀錄時填寫，選填）</Label>
-          <Input />
-        </TextField>
+        <TextInputField
+          label="父馬名（沒有受胎紀錄時填寫，選填）"
+          value={sireName}
+          onChange={setSireName}
+        />
         <SelectField
           label="牧場處置"
           value={disposition}
           options={DISPOSITION_CHOICES}
           emptyLabel="自動（自由配種待售，其他保留）"
           onChange={setDisposition}
+          error={fields.disposition}
         />
-        <FoalDetailsFields value={details} onChange={setDetails} />
-        {error !== undefined && <p role="alert">{error}</p>}
+        <FoalDetailsFields value={details} onChange={setDetails} errors={fields} />
+        {error !== undefined && (
+          <p role="alert" id={errorId}>
+            {error}
+          </p>
+        )}
         <div className="actions">
           <Button type="submit" isPending={busy}>
             登記產駒

@@ -4,7 +4,7 @@ import type { JsonObject } from '../domain/json.ts';
 import { isVitalityValue } from '../domain/mare-yearly.ts';
 import { modifyGameSettings, readGameSettings } from '../storage/games.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
-import { ServiceError } from './errors.ts';
+import { InputIssues, ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
 
@@ -77,26 +77,29 @@ export async function updateGameRuleSettings(
 ): Promise<GameRuleSettings> {
   const game = await requireCurrentGame(context);
   const { retirementAge, highAgeReminderAge, stallionAgeReminderAge, vitalityThreshold } = input;
-  const issues: string[] = [];
+  const issues = new InputIssues();
   if (!isReminderAge(retirementAge)) {
-    issues.push(`定年必須是 1～${String(REMINDER_AGE_MAX)} 的整數`);
+    issues.add('retirementAge', `定年必須是 1～${String(REMINDER_AGE_MAX)} 的整數`);
   }
   if (!isReminderAge(highAgeReminderAge)) {
-    issues.push(`高齡提醒年齡必須是 1～${String(REMINDER_AGE_MAX)} 的整數`);
+    issues.add('highAgeReminderAge', `高齡提醒年齡必須是 1～${String(REMINDER_AGE_MAX)} 的整數`);
   }
   if (!isReminderAge(stallionAgeReminderAge)) {
-    issues.push(`種牡馬提醒年齡必須是 1～${String(REMINDER_AGE_MAX)} 的整數`);
+    issues.add(
+      'stallionAgeReminderAge',
+      `種牡馬提醒年齡必須是 1～${String(REMINDER_AGE_MAX)} 的整數`,
+    );
   }
   if (vitalityThreshold !== undefined && !isVitalityValue(vitalityThreshold)) {
-    issues.push('活力建議門檻必須是 0～100 的整數，或留空不使用');
+    issues.add('vitalityThreshold', '活力建議門檻必須是 0～100 的整數，或留空不使用');
   }
+  issues.throwIfAny();
   if (
-    issues.length > 0 ||
     !isReminderAge(retirementAge) ||
     !isReminderAge(highAgeReminderAge) ||
     !isReminderAge(stallionAgeReminderAge)
   ) {
-    throw new ServiceError('invalidInput', issues.join('；'));
+    throw new ServiceError('invalidInput', '設定不完整');
   }
   const next: GameRuleSettings = {
     retirementAge,

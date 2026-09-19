@@ -1,4 +1,5 @@
 import { Input, Label, TextField } from 'react-aria-components';
+import type { FieldIssues } from '../../services/errors.ts';
 import type { SubParamGrade } from '../../domain/foal.ts';
 import {
   APTITUDE_OPTIONS,
@@ -26,10 +27,12 @@ export const EMPTY_FOAL_DETAILS: FoalDetailsInput = {
 interface FoalDetailsFieldsProps {
   readonly value: FoalDetailsInput;
   readonly onChange: (value: FoalDetailsInput) => void;
+  /** 服務回報的欄位問題（sp、st、kodashi），顯示在對應欄位並建立關聯。 */
+  readonly errors?: FieldIssues | undefined;
 }
 
 /** 能力、適性與備註欄位（需求規格 9.3）：芝與ダート分開選擇，空白表示未取得。 */
-export function FoalDetailsFields({ value, onChange }: FoalDetailsFieldsProps) {
+export function FoalDetailsFields({ value, onChange, errors = {} }: FoalDetailsFieldsProps) {
   const update = (patch: Partial<FoalDetailsInput>) => {
     onChange({ ...value, ...patch });
   };
@@ -42,6 +45,7 @@ export function FoalDetailsFields({ value, onChange }: FoalDetailsFieldsProps) {
         onChange={(sp) => {
           update({ sp });
         }}
+        error={errors.sp}
       />
       <OptionalIntegerField
         label="ST"
@@ -49,6 +53,7 @@ export function FoalDetailsFields({ value, onChange }: FoalDetailsFieldsProps) {
         onChange={(st) => {
           update({ st });
         }}
+        error={errors.st}
       />
       {SUB_PARAM_KEY_OPTIONS.map((key) => (
         <SelectField<SubParamGrade>
@@ -95,6 +100,7 @@ export function FoalDetailsFields({ value, onChange }: FoalDetailsFieldsProps) {
         onChange={(kodashi) => {
           update({ kodashi });
         }}
+        error={errors.kodashi}
       />
       <TextField
         value={value.note}

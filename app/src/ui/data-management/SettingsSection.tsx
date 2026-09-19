@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Button, Form } from 'react-aria-components';
 import {
   loadGameRuleSettings,
   updateGameRuleSettings,
   type GameRuleSettings,
 } from '../../services/settings.ts';
-import { OptionalIntegerField } from '../fields.tsx';
+import { fieldIssuesOf, type FieldIssues } from '../../services/errors.ts';
+import { describedByError } from '../actions.tsx';
+import { OptionalIntegerField, useFocusFirstInvalid } from '../fields.tsx';
 import { errorMessage } from '../format.ts';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 
@@ -35,7 +37,11 @@ function GameRuleForm({ initial }: { readonly initial: GameRuleSettings }) {
   }
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const [fields, setFields] = useState<FieldIssues>({});
   const [busy, setBusy] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorId = useId();
+  useFocusFirstInvalid(formRef, fields);
 
   const save = async () => {
     if (busy) {
@@ -51,9 +57,11 @@ function GameRuleForm({ initial }: { readonly initial: GameRuleSettings }) {
       });
       setMessage('已保存設定');
       setError(undefined);
+      setFields({});
     } catch (caught) {
       setMessage(undefined);
       setError(errorMessage(caught));
+      setFields(fieldIssuesOf(caught));
     } finally {
       setBusy(false);
       notifyChanged();
@@ -62,7 +70,9 @@ function GameRuleForm({ initial }: { readonly initial: GameRuleSettings }) {
 
   return (
     <Form
+      ref={formRef}
       aria-labelledby="reminder-form-heading"
+      {...describedByError(errorId, error)}
       onSubmit={(event) => {
         event.preventDefault();
         void save();
@@ -73,24 +83,36 @@ function GameRuleForm({ initial }: { readonly initial: GameRuleSettings }) {
         定年會改變判斷：達定年的母馬不列入任務，五月匯入時缺席的母馬也依定年決定預設處置。
         其餘三項只影響提示與排序，不會阻止任何操作。
       </p>
-      <OptionalIntegerField label="定年" value={retirementAge} onChange={setRetirementAge} />
+      <OptionalIntegerField
+        label="定年"
+        value={retirementAge}
+        onChange={setRetirementAge}
+        error={fields.retirementAge}
+      />
       <OptionalIntegerField
         label="高齡提醒年齡"
         value={highAgeReminderAge}
         onChange={setHighAgeReminderAge}
+        error={fields.highAgeReminderAge}
       />
       <OptionalIntegerField
         label="種牡馬提醒年齡"
         value={stallionAgeReminderAge}
         onChange={setStallionAgeReminderAge}
+        error={fields.stallionAgeReminderAge}
       />
       <OptionalIntegerField
         label="活力建議門檻（留空＝不使用）"
         value={vitalityThreshold}
         onChange={setVitalityThreshold}
+        error={fields.vitalityThreshold}
       />
       {message !== undefined && <p role="status">{message}</p>}
-      {error !== undefined && <p role="alert">{error}</p>}
+      {error !== undefined && (
+        <p role="alert" id={errorId}>
+          {error}
+        </p>
+      )}
       <Button type="submit" isDisabled={busy}>
         保存設定
       </Button>

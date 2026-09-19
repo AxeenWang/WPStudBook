@@ -9,6 +9,7 @@ import {
 } from '../../services/may-mares-import.ts';
 import { saveSystemMapEntry } from '../../services/system-map.ts';
 import { Feedback, useAction } from '../actions.tsx';
+import { PreviewControls } from './PreviewControls.tsx';
 import { useServices } from '../ServicesContext.tsx';
 import { summaryText, type ImportFlowProps } from './flow.ts';
 import { MayMaresPreview } from './MayMaresPreview.tsx';
@@ -117,10 +118,7 @@ export function MayMaresFlow({ file, choice, onApplied }: ImportFlowProps) {
 
   return (
     <>
-      <button type="button" onClick={preview} disabled={action.busy}>
-        產生預覽
-      </button>
-      <Feedback message={action.message} error={action.error} />
+      <PreviewControls action={action} onPreview={preview} />
 
       {prepared !== undefined && (
         <>

@@ -1,5 +1,5 @@
-import { useCallback, useId, useState } from 'react';
-import { Button, Form, Input, Label, TextField } from 'react-aria-components';
+import { useCallback, useId, useRef, useState } from 'react';
+import { Button, Form } from 'react-aria-components';
 import type { Breeding, BreedingType, Conception } from '../../domain/breeding.ts';
 import { formatLineage, PEDIGREE_WARNING_LABELS } from '../lineage-labels.ts';
 import {
@@ -12,10 +12,15 @@ import {
   type MareBreedings,
 } from '../../services/breedings.ts';
 import type { ServiceContext } from '../../services/context.ts';
-import { Feedback, useAction } from '../actions.tsx';
+import { describedByError, Feedback, useAction } from '../actions.tsx';
 import { FoalForm } from '../foals/FoalForm.tsx';
 import { BREEDING_TYPE_LABELS, conceptionText, lineageText } from '../foals/labels.ts';
-import { OptionalIntegerField, SelectField } from '../fields.tsx';
+import {
+  OptionalIntegerField,
+  SelectField,
+  TextInputField,
+  useFocusFirstInvalid,
+} from '../fields.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
 import { MatingRatings } from './MatingRatings.tsx';
 
@@ -62,8 +67,11 @@ function fieldsFor(record: Breeding | undefined, data: MareBreedings): BreedingF
 
 function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data: MareBreedings }) {
   const { context } = useServices();
-  const { busy, message, error, run } = useAction();
+  const { busy, message, error, fields: issues, run } = useAction();
   const headingId = useId();
+  const errorId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstInvalid(formRef, issues);
   const recordFor = (year: number | undefined) =>
     data.rows.find((row) => row.record.gameYear === year)?.record;
   const [gameYear, setGameYear] = useState<number | undefined>(data.currentYear);
@@ -82,7 +90,9 @@ function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data
   ];
   return (
     <Form
+      ref={formRef}
       aria-labelledby={headingId}
+      {...describedByError(errorId, error)}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -110,6 +120,7 @@ function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data
           setGameYear(year);
           setFields(fieldsFor(recordFor(year), data));
         }}
+        error={issues.gameYear}
       />
       <SelectField
         label="配種類型"
@@ -120,6 +131,7 @@ function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data
             update({ breedingType: next });
           }
         }}
+        error={issues.breedingType}
       />
       <SelectField
         label="種牡馬"
@@ -129,17 +141,17 @@ function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data
         onChange={(next) => {
           update({ stallion: next });
         }}
+        error={issues.stallionId}
       />
       {external && (
-        <TextField
+        <TextInputField
+          label="外部種牡馬馬名"
           value={stallionName}
           onChange={(next) => {
             update({ stallionName: next });
           }}
-        >
-          <Label>外部種牡馬馬名</Label>
-          <Input />
-        </TextField>
+          error={issues.stallionName}
+        />
       )}
       <SelectField
         label="受胎狀態"
@@ -150,7 +162,7 @@ function BreedingForm({ mareId, data }: { readonly mareId: string; readonly data
           update({ conception: next });
         }}
       />
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorId} />
       <Button type="submit" isPending={busy}>
         保存繁殖紀錄
       </Button>

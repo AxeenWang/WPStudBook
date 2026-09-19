@@ -62,7 +62,7 @@ import {
 import { getMare, insertMare, listMares, modifyMare } from '../storage/mares.ts';
 import { listSystemMapEntries } from '../storage/system-map.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
-import { ServiceError } from './errors.ts';
+import { InputIssues, ServiceError, type FieldIssues } from './errors.ts';
 import { userEvent } from './events.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
 import { buildMareCard, type MareCard } from './mare-list.ts';
@@ -126,6 +126,8 @@ export type AddMareWarning = ServiceWarning<AddMareWarningCode>;
 
 export interface AddMareCheck {
   readonly issues: readonly string[];
+  /** 問題屬於哪些欄位（需求規格 13.5、UI-05），鍵為 MarketMareInput 的屬性名稱。 */
+  readonly fields: FieldIssues;
   readonly warnings: readonly AddMareWarning[];
   /** 只提示、不要求確認（需求規格 8.3：無法判斷替代母馬的父系時）。 */
   readonly notices: readonly string[];
@@ -222,7 +224,7 @@ async function inspectAddMarketMare(
   const sireSubsystem = normalizeSystemInput(input.sireSubsystem);
   const femaleLine = input.femaleLine.trim();
   const site = isMareSite(input.site) ? input.site : undefined;
-  const issues: string[] = [];
+  const issues = new InputIssues();
 
   const groupIssue = checkMarketGroup(input.position, input.generation);
   const group =
@@ -230,40 +232,55 @@ async function inspectAddMarketMare(
       ? marketGroupFor(input.position, input.generation)
       : undefined;
   if (groupIssue !== undefined) {
-    issues.push(GROUP_MESSAGES[groupIssue]);
+    issues.add('generation', GROUP_MESSAGES[groupIssue]);
   }
   if (fullName === '') {
-    issues.push('請輸入馬名');
+    issues.add('fullName', '請輸入馬名');
   } else if (toBaseName(fullName) === '') {
-    issues.push('馬名不能只有 (外)、[地] 前綴');
+    issues.add('fullName', '馬名不能只有 (外)、[地] 前綴');
   }
   if (abilityText !== '' && abilityNo === undefined) {
-    issues.push('能力番号必須是 0x0000～0xFFFF 的十六進位');
+    issues.add('abilityNo', '能力番号必須是 0x0000～0xFFFF 的十六進位');
   }
   if (
     birthYear !== undefined &&
     (!Number.isInteger(birthYear) || birthYear < MIN_GAME_YEAR || birthYear > game.currentYear)
   ) {
-    issues.push(`出生年必須是 ${String(MIN_GAME_YEAR)}～${String(game.currentYear)} 的整數`);
+    issues.add(
+      'birthYear',
+      `出生年必須是 ${String(MIN_GAME_YEAR)}～${String(game.currentYear)} 的整數`,
+    );
   }
   if (site === undefined) {
-    issues.push('請選擇據點');
+    issues.add('site', '請選擇據點');
   }
   if (input.noNamedFemaleLine && femaleLine !== '') {
-    issues.push('牝系名稱與「不屬於具名牝系」只能擇一');
+    issues.add('femaleLine', '牝系名稱與「不屬於具名牝系」只能擇一');
   }
-  if (issues.length === 0 && abilityNo !== undefined && birthYear !== undefined) {
+  if (issues.isEmpty && abilityNo !== undefined && birthYear !== undefined) {
     const existing = await findHorseByIdentity(context.database, game.id, abilityNo, birthYear);
     if (existing !== undefined) {
       const name = existing.fullName ?? existing.officialName ?? existing.id;
-      issues.push(
+      issues.add(
+        'abilityNo',
         `能力番号 ${formatAbilityNo(abilityNo)} 與出生年 ${String(birthYear)} 已屬於「${name}」`,
       );
     }
   }
 
   const { warnings, notices } = await inspectSubstituteSire(context, game.id, group, sireSubsystem);
-  return { issues, warnings, notices, group, site, fullName, abilityNo, sireSubsystem, femaleLine };
+  return {
+    issues: issues.messages,
+    fields: issues.fields,
+    warnings,
+    notices,
+    group,
+    site,
+    fullName,
+    abilityNo,
+    sireSubsystem,
+    femaleLine,
+  };
 }
 
 export async function checkAddMarketMare(
@@ -271,8 +288,8 @@ export async function checkAddMarketMare(
   input: MarketMareInput,
 ): Promise<AddMareCheck> {
   const game = await requireCurrentGame(context);
-  const { issues, warnings, notices } = await inspectAddMarketMare(context, game, input);
-  return { issues, warnings, notices };
+  const { issues, fields, warnings, notices } = await inspectAddMarketMare(context, game, input);
+  return { issues, fields, warnings, notices };
 }
 
 /**
@@ -287,7 +304,9 @@ export async function addMarketMare(
   const inspection = await inspectAddMarketMare(context, game, input);
   const { group, site } = inspection;
   if (inspection.issues.length > 0 || group === undefined || site === undefined) {
-    throw new ServiceError('invalidInput', inspection.issues.join('；'));
+    throw new ServiceError('invalidInput', inspection.issues.join('；'), {
+      fields: inspection.fields,
+    });
   }
   requireAcceptedWarnings(inspection.warnings, input.acceptedWarnings ?? []);
 

@@ -1,5 +1,5 @@
-import { useId, useState } from 'react';
-import { Button, Form, Input, Label, TextField } from 'react-aria-components';
+import { useId, useMemo, useRef, useState } from 'react';
+import { Button, Form } from 'react-aria-components';
 import type { Disposition } from '../../domain/foal.ts';
 import type { MareSite } from '../../domain/mare.ts';
 import {
@@ -11,8 +11,8 @@ import {
 } from '../../services/foals.ts';
 import { MARE_SITE_OPTIONS } from '../../services/mares.ts';
 import { convertFoalToMare } from '../../services/succession.ts';
-import { Feedback, useAction } from '../actions.tsx';
-import { SelectField } from '../fields.tsx';
+import { describedByError, Feedback, useAction, useErrorLink } from '../actions.tsx';
+import { SelectField, TextInputField, useFocusFirstInvalid } from '../fields.tsx';
 import { SITE_LABELS, SUCCESSION_LABELS, formatMareGroup } from '../mares/labels.ts';
 import { PedigreeView } from '../pedigree/PedigreeView.tsx';
 import { useServices } from '../ServicesContext.tsx';
@@ -26,10 +26,17 @@ function NameForm({ card }: { readonly card: FoalCard }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
   const headingId = useId();
+  const errorId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  // 只有一個欄位，錯誤一律屬於它。
+  const fields = useMemo(() => (error === undefined ? {} : { officialName: error }), [error]);
+  useFocusFirstInvalid(formRef, fields);
   const [name, setName] = useState(card.named ? card.name : '');
   return (
     <Form
+      ref={formRef}
       aria-labelledby={headingId}
+      {...describedByError(errorId, error)}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -45,11 +52,13 @@ function NameForm({ card }: { readonly card: FoalCard }) {
         留空並保存會清空正式馬名，改顯示追蹤名
         {card.trackingName === undefined ? '' : `「${card.trackingName}」`}。
       </p>
-      <TextField value={name} onChange={setName}>
-        <Label>正式馬名</Label>
-        <Input />
-      </TextField>
-      <Feedback message={message} error={error} />
+      <TextInputField
+        label="正式馬名"
+        value={name}
+        onChange={setName}
+        error={fields.officialName}
+      />
+      <Feedback message={message} error={error} id={errorId} />
       <Button type="submit" isPending={busy}>
         保存馬名
       </Button>
@@ -72,8 +81,11 @@ function detailsOf(card: FoalCard): FoalDetailsInput {
 
 function UpdateForm({ card }: { readonly card: FoalCard }) {
   const { context } = useServices();
-  const { busy, message, error, run } = useAction();
+  const { busy, message, error, fields: issues, run } = useAction();
   const headingId = useId();
+  const errorId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstInvalid(formRef, issues);
   const [disposition, setDisposition] = useState<Disposition>(card.disposition);
   const [details, setDetails] = useState(detailsOf(card));
   const choices = DISPOSITION_OPTIONS.filter((item) =>
@@ -81,7 +93,9 @@ function UpdateForm({ card }: { readonly card: FoalCard }) {
   ).map((item) => ({ value: item, label: DISPOSITION_LABELS[item] }));
   return (
     <Form
+      ref={formRef}
       aria-labelledby={headingId}
+      {...describedByError(errorId, error)}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -100,9 +114,10 @@ function UpdateForm({ card }: { readonly card: FoalCard }) {
             setDisposition(next);
           }
         }}
+        error={issues.disposition}
       />
-      <FoalDetailsFields value={details} onChange={setDetails} />
-      <Feedback message={message} error={error} />
+      <FoalDetailsFields value={details} onChange={setDetails} errors={issues} />
+      <Feedback message={message} error={error} id={errorId} />
       <Button type="submit" isPending={busy}>
         保存產駒資料
       </Button>
@@ -119,11 +134,13 @@ function ConvertForm({
 }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
+  const errorLink = useErrorLink(error);
   const headingId = useId();
   const [site, setSite] = useState<MareSite>();
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -156,7 +173,7 @@ function ConvertForm({
         emptyLabel="請選擇"
         onChange={setSite}
       />
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorLink.id} />
       <Button type="submit" isPending={busy}>
         轉入母馬群
       </Button>

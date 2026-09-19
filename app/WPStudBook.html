@@ -433,6 +433,23 @@
         font-size: 0.8125rem;
         font-weight: 600;
       }
+      /* 欄位錯誤：紅框加內框線，訊息前加警示符號，不只靠顏色（需求規格 13.5）。 */
+      [aria-invalid='true']:is(input, select, textarea) {
+        border-color: var(--silk-red);
+        box-shadow: inset 0 0 0 1px var(--silk-red);
+      }
+      .react-aria-FieldError,
+      .field-error {
+        margin: 0;
+        color: #8c1d14;
+        font-size: 0.8125rem;
+        font-weight: 600;
+      }
+      .react-aria-FieldError::before,
+      .field-error::before {
+        content: '⚠' / '';
+        margin-inline-end: 0.25rem;
+      }
       .field > label:has(input[type='checkbox']) {
         color: var(--ink);
         font-size: 0.9375rem;

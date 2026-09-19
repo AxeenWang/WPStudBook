@@ -17,7 +17,7 @@ import {
   type SettableDutyStatus,
   type SuccessorOption,
 } from '../../services/stallions.ts';
-import { Feedback, useAction, type ActionState } from '../actions.tsx';
+import { Feedback, useAction, useErrorLink, type ActionState } from '../actions.tsx';
 import { OptionalIntegerField, SelectField, type SelectOption } from '../fields.tsx';
 import { SEX_LABELS } from '../foals/labels.ts';
 import { PedigreeView } from '../pedigree/PedigreeView.tsx';
@@ -57,6 +57,7 @@ function ReplaceForm({
 }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
+  const errorLink = useErrorLink(error);
   const headingId = useId();
   const choices = line.successorOptions
     .filter((option) => option.generation === item.generation && option.id !== item.horseId)
@@ -68,6 +69,7 @@ function ReplaceForm({
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -101,7 +103,7 @@ function ReplaceForm({
       />
       <OptionalIntegerField label="生效年" value={effectiveYear} onChange={setEffectiveYear} />
       <StallionNoField value={stallionNo} onChange={setStallionNo} />
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorLink.id} />
       <Button type="submit" isPending={busy}>
         確認更換
       </Button>
@@ -118,6 +120,7 @@ function StatusForm({
 }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
+  const errorLink = useErrorLink(error);
   const headingId = useId();
   const choices: SelectOption<SettableDutyStatus>[] = (
     ['onDuty', 'outOfService', 'retired'] as const
@@ -129,6 +132,7 @@ function StatusForm({
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -149,7 +153,7 @@ function StatusForm({
         onChange={setStatus}
       />
       {status !== 'onDuty' && <OptionalIntegerField label="年份" value={year} onChange={setYear} />}
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorLink.id} />
       <Button type="submit" isPending={busy}>
         保存狀態
       </Button>
@@ -233,9 +237,11 @@ interface LineFormProps {
   readonly line: LineStallions;
   /** 由系卡片持有：送出後這個表單可能消失（例如沒有可選的公駒），訊息仍要留在畫面上。 */
   readonly action: ActionState;
+  /** 系卡片共用的結果訊息與表單的關聯（需求規格 13.5）。 */
+  readonly errorLink: ReturnType<typeof useErrorLink>;
 }
 
-function AssignForm({ line, action }: LineFormProps) {
+function AssignForm({ line, action, errorLink }: LineFormProps) {
   const { context } = useServices();
   const { busy, run } = action;
   const headingId = useId();
@@ -248,6 +254,7 @@ function AssignForm({ line, action }: LineFormProps) {
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -361,7 +368,7 @@ function PlannedBlock({
   );
 }
 
-function PlannedForm({ line, action }: LineFormProps) {
+function PlannedForm({ line, action, errorLink }: LineFormProps) {
   const { context } = useServices();
   const { busy, run } = action;
   const headingId = useId();
@@ -382,6 +389,7 @@ function PlannedForm({ line, action }: LineFormProps) {
   return (
     <Form
       aria-labelledby={headingId}
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -432,11 +440,12 @@ function LineStallionsCard({
 }) {
   const title = `第 ${String(line.position)} 系種牡馬`;
   const action = useAction();
+  const errorLink = useErrorLink(action.error);
   return (
     <article aria-label={title} className="stallion-card">
       <h3>{title}</h3>
       <div data-testid="line-stallion-feedback">
-        <Feedback message={action.message} error={action.error} />
+        <Feedback message={action.message} error={action.error} id={errorLink.id} />
       </div>
       {line.reminders.length > 0 && (
         <ul aria-label="提醒" className="reminders">
@@ -457,7 +466,9 @@ function LineStallionsCard({
           ))}
         </ul>
       )}
-      {assignableOptions(line).length > 0 && <AssignForm line={line} action={action} />}
+      {assignableOptions(line).length > 0 && (
+        <AssignForm line={line} action={action} errorLink={errorLink} />
+      )}
       <h4>預定後繼</h4>
       {line.planned === undefined ? (
         <p>尚未指定。</p>
@@ -465,7 +476,7 @@ function LineStallionsCard({
         <PlannedBlock planned={line.planned} position={line.position} action={action} />
       )}
       {(line.successorOptions.length > 0 || line.breedingOptions.length > 0) && (
-        <PlannedForm line={line} action={action} />
+        <PlannedForm line={line} action={action} errorLink={errorLink} />
       )}
     </article>
   );

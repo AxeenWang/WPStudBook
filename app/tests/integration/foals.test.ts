@@ -207,6 +207,7 @@ describe('產駒（需求規格 9.3、9.4）', () => {
     const check = await checkRegisterFoal(context, foalInput(value.mareId));
     expect(check).toEqual({
       issues: [],
+      fields: {},
       warnings: [],
       preview: {
         breedingYear: 1968,
@@ -271,6 +272,10 @@ describe('產駒（需求規格 9.3、9.4）', () => {
 
     const check = await checkRegisterFoal(context, foalInput(value.mareId, { sex: 'male' }));
     expect(check.issues).toContain(
+      '1969 年出生的產駒已有「オオトリモナーコス1969」，同一母馬同一出生年只能有一匹',
+    );
+    // 問題記在出生年欄位，介面據此把錯誤與欄位建立關聯（UI-05）。
+    expect(check.fields.birthYear).toBe(
       '1969 年出生的產駒已有「オオトリモナーコス1969」，同一母馬同一出生年只能有一匹',
     );
     await expect(registerFoal(context, foalInput(value.mareId, { sex: 'male' }))).rejects.toThrow(

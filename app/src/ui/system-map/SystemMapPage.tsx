@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Button, Form, Input, Label, TextField } from 'react-aria-components';
+import { useId, useRef, useState } from 'react';
+import { Button, Form } from 'react-aria-components';
 import type { Game } from '../../domain/game.ts';
 import type { SystemMapEntry } from '../../domain/system-map.ts';
 import {
@@ -9,7 +9,10 @@ import {
   saveSystemMapEntry,
   type SystemMapChange,
 } from '../../services/system-map.ts';
+import { fieldIssuesOf, type FieldIssues } from '../../services/errors.ts';
+import { describedByError } from '../actions.tsx';
 import { ConfirmDialog } from '../dialogs.tsx';
+import { TextInputField, useFocusFirstInvalid } from '../fields.tsx';
 import { errorMessage, formatDateTime } from '../format.ts';
 import { NoGameNotice } from '../NoGameNotice.tsx';
 import { useServiceQuery, useServices } from '../ServicesContext.tsx';
@@ -36,16 +39,22 @@ function SystemMapView() {
   const [pendingDelete, setPendingDelete] = useState<SystemMapEntry>();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const [fields, setFields] = useState<FieldIssues>({});
   const [busy, setBusy] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorId = useId();
+  useFocusFirstInvalid(formRef, fields);
 
   const run = async (action: () => Promise<string>) => {
     setBusy(true);
     try {
       setMessage(await action());
       setError(undefined);
+      setFields({});
     } catch (caught) {
       setMessage(undefined);
       setError(errorMessage(caught));
+      setFields(fieldIssuesOf(caught));
     } finally {
       setBusy(false);
       notifyChanged();
@@ -75,27 +84,37 @@ function SystemMapView() {
         記錄子系統所屬的親系統。子系統升格時，輸入同一個子系統與新的親系統即可更新，變更保存在歷程。
       </p>
       <Form
+        ref={formRef}
         aria-labelledby="system-map-form-heading"
+        {...describedByError(errorId, error)}
         onSubmit={(event) => {
           event.preventDefault();
           void save();
         }}
       >
         <h3 id="system-map-form-heading">新增或更新對照</h3>
-        <TextField value={subsystem} onChange={setSubsystem}>
-          <Label>子系統</Label>
-          <Input />
-        </TextField>
-        <TextField value={parentSystem} onChange={setParentSystem}>
-          <Label>親系統</Label>
-          <Input />
-        </TextField>
+        <TextInputField
+          label="子系統"
+          value={subsystem}
+          onChange={setSubsystem}
+          error={fields.subsystem}
+        />
+        <TextInputField
+          label="親系統"
+          value={parentSystem}
+          onChange={setParentSystem}
+          error={fields.parentSystem}
+        />
         <Button type="submit" isDisabled={busy}>
           保存對照
         </Button>
       </Form>
       {message !== undefined && <p role="status">{message}</p>}
-      {shownError !== undefined && <p role="alert">{shownError}</p>}
+      {shownError !== undefined && (
+        <p role="alert" id={errorId}>
+          {shownError}
+        </p>
+      )}
       {entries?.length === 0 && <p>尚無對照。</p>}
       {entries !== undefined && entries.length > 0 && (
         <div className="table-scroll">

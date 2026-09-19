@@ -19,7 +19,7 @@ import {
 } from '../../services/mares.ts';
 import { ServiceError } from '../../services/errors.ts';
 import { CheckboxField, OptionalIntegerField, SelectField } from '../fields.tsx';
-import { Feedback, useAction } from '../actions.tsx';
+import { Feedback, useAction, useErrorLink } from '../actions.tsx';
 import { formatGeneration } from '../format.ts';
 import { useServices } from '../ServicesContext.tsx';
 import { SisterComparison } from './SisterComparison.tsx';
@@ -47,10 +47,12 @@ const POSITION_CHOICES = MARE_POSITION_OPTIONS.map((position) => ({
 function YearPlanForm({ detail }: { readonly detail: MareDetail }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
+  const errorLink = useErrorLink(error);
   const [plan, setPlan] = useState<YearPlan>(detail.card.yearPlan);
   return (
     <Form
       aria-labelledby="mare-plan-heading"
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -70,7 +72,7 @@ function YearPlanForm({ detail }: { readonly detail: MareDetail }) {
           }
         }}
       />
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorLink.id} />
       <Button type="submit" isPending={busy}>
         保存計畫
       </Button>
@@ -81,12 +83,14 @@ function YearPlanForm({ detail }: { readonly detail: MareDetail }) {
 function TransferForm({ detail }: { readonly detail: MareDetail }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
+  const errorLink = useErrorLink(error);
   const [site, setSite] = useState<MareSite>();
   const [month, setMonth] = useState<number>();
   const [week, setWeek] = useState<number>();
   return (
     <Form
       aria-labelledby="mare-transfer-heading"
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -112,7 +116,7 @@ function TransferForm({ detail }: { readonly detail: MareDetail }) {
       />
       <OptionalIntegerField label="月" value={month} onChange={setMonth} />
       <OptionalIntegerField label="週" value={week} onChange={setWeek} />
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorLink.id} />
       <Button type="submit" isPending={busy}>
         執行轉場
       </Button>
@@ -164,6 +168,7 @@ function AssignGroupSection({ detail }: { readonly detail: MareDetail }) {
   // 指定成功後表單會因為不再是待指定用途而卸載，所以訊息由這個不會卸載的外層持有
   // （見 ui/actions.tsx 的 ActionState 說明）。
   const { busy, message, error, run } = useAction();
+  const errorLink = useErrorLink(error);
   const [position, setPosition] = useState<number>();
   const [generation, setGeneration] = useState<number>();
   const [pending, setPending] = useState<readonly AddMareWarning[]>([]);
@@ -173,6 +178,7 @@ function AssignGroupSection({ detail }: { readonly detail: MareDetail }) {
   return (
     <Form
       aria-labelledby="mare-assign-heading"
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -217,7 +223,7 @@ function AssignGroupSection({ detail }: { readonly detail: MareDetail }) {
         value={generation}
         onChange={setGeneration}
       />
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorLink.id} />
       <Button type="submit" isPending={busy}>
         {pending.length > 0 ? '確認並指定用途' : '指定用途'}
       </Button>
@@ -228,6 +234,7 @@ function AssignGroupSection({ detail }: { readonly detail: MareDetail }) {
 function YearlyForm({ detail }: { readonly detail: MareDetail }) {
   const { context } = useServices();
   const { busy, message, error, run } = useAction();
+  const errorLink = useErrorLink(error);
   const record = detail.currentYearly;
   const [may, setMay] = useState(vitalityInputOf(record?.vitalityMay));
   const [july, setJuly] = useState(vitalityInputOf(record?.vitalityJuly));
@@ -237,6 +244,7 @@ function YearlyForm({ detail }: { readonly detail: MareDetail }) {
   return (
     <Form
       aria-labelledby="mare-yearly-heading"
+      {...errorLink.formProps}
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -259,7 +267,7 @@ function YearlyForm({ detail }: { readonly detail: MareDetail }) {
       <OptionalIntegerField label="仔出（0～15）" value={kodashi} onChange={setKodashi} />
       <OptionalIntegerField label="繁殖年數" value={breedingYears} onChange={setBreedingYears} />
       <OptionalIntegerField label="繁殖頭數" value={breedingCount} onChange={setBreedingCount} />
-      <Feedback message={message} error={error} />
+      <Feedback message={message} error={error} id={errorLink.id} />
       <Button type="submit" isPending={busy}>
         保存年度資料
       </Button>

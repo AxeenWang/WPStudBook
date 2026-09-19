@@ -65,7 +65,12 @@ export async function saveSystemMapEntry(
   const subsystem = normalizeSystemInput(input.subsystem);
   const parentSystem = normalizeSystemInput(input.parentSystem);
   if (subsystem === '' || parentSystem === '') {
-    throw new ServiceError('invalidInput', '請輸入子系統與親系統');
+    throw new ServiceError('invalidInput', '請輸入子系統與親系統', {
+      fields: {
+        ...(subsystem === '' ? { subsystem: '請輸入子系統' } : {}),
+        ...(parentSystem === '' ? { parentSystem: '請輸入親系統' } : {}),
+      },
+    });
   }
   const existing = await findSystemMapEntry(context.database, game.id, subsystem);
   if (existing?.parentSystem === parentSystem) {

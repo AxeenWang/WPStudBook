@@ -25,7 +25,7 @@ import {
 } from '../storage/games.ts';
 import { readRecords, type StoredRecord } from '../storage/records.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
-import { ServiceError } from './errors.ts';
+import { InputIssues, ServiceError } from './errors.ts';
 
 const INPUT_MESSAGES: Readonly<Record<GameInputIssue, string>> = {
   nameBlank: '請輸入遊戲局名稱',
@@ -40,10 +40,22 @@ export interface NewGameInput {
   readonly copySettingsFromGameId?: string | undefined;
 }
 
+/** 建立遊戲局的輸入問題，依欄位（name、startYear）記錄。 */
+export function inspectNewGameInput(input: Pick<NewGameInput, 'name' | 'startYear'>): InputIssues {
+  const issues = new InputIssues();
+  const nameIssue = checkGameName(input.name);
+  if (nameIssue !== undefined) {
+    issues.add('name', INPUT_MESSAGES[nameIssue]);
+  }
+  const yearIssue = checkGameYears(input.startYear, input.startYear);
+  if (yearIssue !== undefined) {
+    issues.add('startYear', INPUT_MESSAGES[yearIssue]);
+  }
+  return issues;
+}
+
 export function checkNewGameInput(input: Pick<NewGameInput, 'name' | 'startYear'>): string[] {
-  return [checkGameName(input.name), checkGameYears(input.startYear, input.startYear)]
-    .filter((issue) => issue !== undefined)
-    .map((issue) => INPUT_MESSAGES[issue]);
+  return [...inspectNewGameInput(input).messages];
 }
 
 export async function listAllGames(context: ServiceContext): Promise<Game[]> {
@@ -81,10 +93,7 @@ async function requireGame(context: ServiceContext, gameId: string): Promise<Gam
 }
 
 export async function createGame(context: ServiceContext, input: NewGameInput): Promise<Game> {
-  const issues = checkNewGameInput(input);
-  if (issues.length > 0) {
-    throw new ServiceError('invalidInput', issues.join('；'));
-  }
+  inspectNewGameInput(input).throwIfAny();
   let settings: GameSettings = DEFAULT_GAME_SETTINGS;
   let systemMap: StoredRecord[] = [];
   if (input.copySettingsFromGameId !== undefined) {
@@ -121,13 +130,14 @@ export interface YearChangePreview {
 }
 
 function checkYearChange(game: Game, toYear: number): void {
+  const issues = new InputIssues();
   const issue = checkGameYears(game.startYear, toYear);
   if (issue !== undefined) {
-    throw new ServiceError('invalidInput', INPUT_MESSAGES[issue]);
+    issues.add('toYear', INPUT_MESSAGES[issue]);
+  } else if (toYear === game.currentYear) {
+    issues.add('toYear', `目前遊戲年已經是 ${String(toYear)} 年`);
   }
-  if (toYear === game.currentYear) {
-    throw new ServiceError('invalidInput', `目前遊戲年已經是 ${String(toYear)} 年`);
-  }
+  issues.throwIfAny();
 }
 
 export async function previewYearChange(
