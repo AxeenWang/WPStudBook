@@ -23,7 +23,7 @@ test.describe('file:// 環境條件（設計決策 7.5 節）', () => {
     });
 
     await openApp(page);
-    await expect(page.getByRole('heading', { name: 'WPStudBook' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '主要頁面' })).toBeVisible();
     for (const key of CHECK_KEYS) {
       await expect(page.getByTestId(`env-${key}-reason`), `環境檢查 ${key} 的失敗原因`).toHaveText(
         '',

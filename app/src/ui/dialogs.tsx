@@ -51,6 +51,47 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   );
 }
 
+/** 表單對話框：標頭含標題與關閉鈕，內容由呼叫端提供；點外面或 Esc 關閉。 */
+export function FormDialog({
+  title,
+  description,
+  onClose,
+  children,
+}: {
+  readonly title: string;
+  readonly description?: string | undefined;
+  readonly onClose: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <ModalOverlay
+      isOpen
+      isDismissable
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      className="modal-overlay"
+    >
+      <Modal className="modal">
+        <Dialog className="dialog">
+          <div className="dialog-head">
+            <div>
+              <Heading slot="title">{title}</Heading>
+              {description !== undefined && <p>{description}</p>}
+            </div>
+            <Button className="dialog-close" aria-label="關閉" onPress={onClose}>
+              <span aria-hidden="true">×</span>
+            </Button>
+          </div>
+          {children}
+        </Dialog>
+      </Modal>
+    </ModalOverlay>
+  );
+}
+
 interface TypedNameDialogProps {
   readonly title: string;
   readonly description: ReactNode;

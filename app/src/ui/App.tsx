@@ -13,59 +13,59 @@ import { errorMessage } from './format.ts';
 import { LinesPage } from './lines/LinesPage.tsx';
 import { MaresPage } from './mares/MaresPage.tsx';
 import { OverviewPage } from './overview/OverviewPage.tsx';
+import { pageLabel, type PageKey } from './pages.ts';
 import { ServicesProvider, useServiceQuery } from './ServicesContext.tsx';
-import { StatusBar } from './StatusBar.tsx';
+import { Sidebar } from './Sidebar.tsx';
 import { SystemMapPage } from './system-map/SystemMapPage.tsx';
+import { TopBar } from './TopBar.tsx';
 
 type Boot =
   | { readonly state: 'opening' }
   | { readonly state: 'ready'; readonly context: ServiceContext }
   | { readonly state: 'failed'; readonly message: string };
 
-type PageKey = 'overview' | 'lines' | 'mares' | 'foals' | 'imports' | 'systemMap' | 'data';
-
-const PAGES = [
-  ['overview', '總覽'],
-  ['lines', '八系'],
-  ['mares', '母馬群'],
-  ['foals', '產駒'],
-  ['imports', '年度匯入'],
-  ['systemMap', '系統對照表'],
-  ['data', '資料管理'],
-] as const satisfies ReadonlyArray<readonly [PageKey, string]>;
-
 function AppShell() {
   const { data: status, error } = useServiceQuery(loadAppStatus);
-  // 開啟時預設顯示資料管理：建立遊戲局、備份與檢查點都在這裡，沒有遊戲局時總覽只會顯示提示。
-  const [page, setPage] = useState<PageKey>('data');
+  const [page, setPage] = useState<PageKey>();
+  const [focusBackup, setFocusBackup] = useState(false);
+  // 第一次讀到狀態時決定起始頁：還沒有遊戲局就到資料管理建立，已有遊戲局就從總覽開始。
+  // 之後建立或切換遊戲局都不再自動換頁。
+  if (page === undefined && status !== undefined) {
+    setPage(status.currentGame === undefined ? 'data' : 'overview');
+  }
+  useEffect(() => {
+    if (focusBackup && page === 'data') {
+      const heading = document.getElementById('backup-heading');
+      heading?.scrollIntoView({ block: 'start' });
+      heading?.focus({ preventScroll: true });
+      setFocusBackup(false);
+    }
+  }, [focusBackup, page]);
   const currentGame = status?.currentGame;
   return (
-    <>
-      <StatusBar status={status} error={error} />
-      <nav aria-label="主要頁面" className="main-nav">
-        {PAGES.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            aria-current={page === key ? 'page' : undefined}
-            onClick={() => {
-              setPage(key);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-      <main>
-        {page === 'overview' && <OverviewPage currentGame={currentGame} />}
-        {page === 'lines' && <LinesPage currentGame={currentGame} />}
-        {page === 'mares' && <MaresPage currentGame={currentGame} />}
-        {page === 'foals' && <FoalsPage currentGame={currentGame} />}
-        {page === 'imports' && <ImportsPage currentGame={currentGame} />}
-        {page === 'systemMap' && <SystemMapPage currentGame={currentGame} />}
-        {page === 'data' && <DataManagementPage status={status} />}
-      </main>
-    </>
+    <div className="app-shell">
+      <Sidebar status={status} page={page} onNavigate={setPage} />
+      <div className="workspace">
+        <TopBar
+          status={status}
+          error={error}
+          eyebrow={page === undefined ? '八系繁殖管理' : pageLabel(page)}
+          onOpenBackup={() => {
+            setPage('data');
+            setFocusBackup(true);
+          }}
+        />
+        <main>
+          {page === 'overview' && <OverviewPage currentGame={currentGame} />}
+          {page === 'lines' && <LinesPage currentGame={currentGame} />}
+          {page === 'mares' && <MaresPage currentGame={currentGame} />}
+          {page === 'foals' && <FoalsPage currentGame={currentGame} />}
+          {page === 'imports' && <ImportsPage currentGame={currentGame} />}
+          {page === 'systemMap' && <SystemMapPage currentGame={currentGame} />}
+          {page === 'data' && <DataManagementPage status={status} />}
+        </main>
+      </div>
+    </div>
   );
 }
 

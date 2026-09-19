@@ -179,7 +179,9 @@ export function BackupSection({ currentGame }: { readonly currentGame: Game | un
 
   return (
     <section aria-labelledby="backup-heading">
-      <h2 id="backup-heading">備份與還原</h2>
+      <h2 id="backup-heading" tabIndex={-1}>
+        備份與還原
+      </h2>
       <p>備份檔為 JSON.GZ 或 JSON。還原一律建立新遊戲局，不會覆蓋現有資料。</p>
       <div className="actions">
         {currentGame !== undefined && (

@@ -94,7 +94,18 @@ function GameList({
   );
 }
 
-function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
+interface EmbeddableFormProps {
+  /** 放在對話框裡時標題只給輔助技術讀，對話框本身已顯示標題。 */
+  readonly inDialog?: boolean | undefined;
+  /** 完成後呼叫（對話框用來關閉）。 */
+  readonly onDone?: (() => void) | undefined;
+}
+
+export function YearChangeForm({
+  currentGame,
+  inDialog,
+  onDone,
+}: { readonly currentGame: Game } & EmbeddableFormProps) {
   const { context, notifyChanged } = useServices();
   const [year, setYear] = useState(currentGame.currentYear + 1);
   const [preview, setPreview] = useState<YearChangePreview>();
@@ -102,6 +113,7 @@ function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
   const [fields, setFields] = useState<FieldIssues>({});
   const formRef = useRef<HTMLFormElement>(null);
   const errorId = useId();
+  const headingId = useId();
   useFocusFirstInvalid(formRef, fields);
 
   const requestPreview = async () => {
@@ -120,6 +132,7 @@ function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
     try {
       await changeCurrentYear(context, year);
       setError(undefined);
+      onDone?.();
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -131,14 +144,16 @@ function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
     <>
       <Form
         ref={formRef}
-        aria-labelledby="year-heading"
+        aria-labelledby={headingId}
         {...describedByError(errorId, error)}
         onSubmit={(event) => {
           event.preventDefault();
           void requestPreview();
         }}
       >
-        <h3 id="year-heading">目前遊戲年</h3>
+        <h3 id={headingId} className={inDialog === true ? 'visually-hidden' : undefined}>
+          目前遊戲年
+        </h3>
         <p>
           「{currentGame.name}」目前是 {currentGame.currentYear}{' '}
           年。遊戲年只由你更新，不會依電腦日期改變。
@@ -189,7 +204,11 @@ function YearChangeForm({ currentGame }: { readonly currentGame: Game }) {
   );
 }
 
-function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefined }) {
+export function CreateGameForm({
+  currentGame,
+  inDialog,
+  onDone,
+}: { readonly currentGame: Game | undefined } & EmbeddableFormProps) {
   const { context, notifyChanged } = useServices();
   const [name, setName] = useState('');
   const [startYear, setStartYear] = useState(1968);
@@ -199,6 +218,7 @@ function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefine
   const [busy, setBusy] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const errorId = useId();
+  const headingId = useId();
   useFocusFirstInvalid(formRef, fields);
 
   const submit = async () => {
@@ -219,6 +239,7 @@ function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefine
       setCopyMode('blank');
       setError(undefined);
       setFields({});
+      onDone?.();
     } catch (caught) {
       setError(errorMessage(caught));
       setFields(fieldIssuesOf(caught));
@@ -231,14 +252,16 @@ function CreateGameForm({ currentGame }: { readonly currentGame: Game | undefine
   return (
     <Form
       ref={formRef}
-      aria-labelledby="create-game-heading"
+      aria-labelledby={headingId}
       {...describedByError(errorId, error)}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
     >
-      <h3 id="create-game-heading">建立遊戲局</h3>
+      <h3 id={headingId} className={inDialog === true ? 'visually-hidden' : undefined}>
+        建立遊戲局
+      </h3>
       <TextInputField label="遊戲局名稱" value={name} onChange={setName} error={fields.name} />
       <NumberField
         value={startYear}

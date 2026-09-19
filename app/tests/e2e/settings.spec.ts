@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures.ts';
-import { createGameViaUi, openApp } from './helpers.ts';
+import { createGameViaUi, gotoPage, openApp } from './helpers.ts';
 
 test.describe('遊戲局設定', () => {
   test('[LINE-26] 保存高齡提醒年齡、種牡馬提醒年齡與活力建議門檻，重新整理後仍在；空白門檻表示不使用；錯誤時顯示原因', async ({
@@ -25,6 +25,7 @@ test.describe('遊戲局設定', () => {
     await expect(form.getByRole('status')).toHaveText('已保存設定');
 
     await page.reload();
+    await gotoPage(page, '資料管理');
     const reloaded = page.getByRole('form', { name: '遊戲局設定' });
     await expect(reloaded.getByLabel('高齡提醒年齡')).toHaveValue('20');
     await expect(reloaded.getByLabel('活力建議門檻（留空＝不使用）')).toHaveValue('60');
