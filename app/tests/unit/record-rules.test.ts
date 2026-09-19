@@ -200,6 +200,27 @@ describe('資料表欄位規則', () => {
     ]);
   });
 
+  it('[OCT-02] horses：在其他牧場成為繁殖牝馬的去向有所在牧場與不早於首次出現的最後確認年', () => {
+    const elsewhere = {
+      ...HORSE,
+      fate: { kind: 'mareElsewhere', gameYear: 1972, farmNo: 0, lastSeenYear: 1974 },
+    };
+    expectProblems('horses', elsewhere, [
+      [
+        { ...elsewhere, fate: { kind: 'mareElsewhere', gameYear: 1972, lastSeenYear: 1972 } },
+        'fate',
+      ],
+      [
+        {
+          ...elsewhere,
+          fate: { kind: 'mareElsewhere', gameYear: 1972, farmNo: 150, lastSeenYear: 1971 },
+        },
+        'fate',
+      ],
+      [{ ...elsewhere, fate: { kind: 'becameStallion', gameYear: 1972, farmNo: 150 } }, 'fate'],
+    ]);
+  });
+
   it('[BRD-18] matingRatings：總合評價只有 S、A、B、C、D，爆發力為整數，兩者至少一項', () => {
     const rating = {
       id: 'r1',

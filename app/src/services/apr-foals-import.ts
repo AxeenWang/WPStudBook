@@ -209,6 +209,14 @@ function foalInputFrom(values: AprFoalValues, birthYear: number, sireName: strin
   };
 }
 
+/**
+ * 套用時的遊戲局：檔案年份晚於目前遊戲年時，套用會先推進年份再寫入（需求規格 11.1、IMP-14），
+ * 所以預覽與逐匹確認都要以推進後的年份規劃產駒，否則「出生年不可晚於目前遊戲年」會把每一匹都擋掉。
+ */
+function atImportYear(game: Game, gameYear: number): Game {
+  return gameYear > game.currentYear ? { ...game, currentYear: gameYear } : game;
+}
+
 export interface PreviewAprFoalsInput {
   readonly gameId: string;
   readonly file: ParsedFile;
@@ -220,7 +228,7 @@ export async function previewAprFoals(
   input: PreviewAprFoalsInput,
 ): Promise<AprFoalRow[]> {
   const { gameId, file, choice } = input;
-  const game = await requireCurrentGame(context);
+  const game = atImportYear(await requireCurrentGame(context), choice.gameYear);
   const values = file.rows.map(readAprFoalRow);
   checkRange(values);
   // 出生年＝匯出年（需求規格 11.4）。
@@ -417,7 +425,7 @@ export function withReviewConfirmed(
     ) {
       return row;
     }
-    const plan = planFoal(game, row.state, {
+    const plan = planFoal(atImportYear(game, row.birthYear), row.state, {
       ...foalInputFrom(row.values, row.birthYear, row.values.sireName ?? ''),
       damId: row.damId,
     });

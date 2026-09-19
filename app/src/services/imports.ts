@@ -30,6 +30,7 @@ import { createCheckpoint } from './checkpoints.ts';
 import { trackWrite, type ServiceContext } from './context.ts';
 import { ServiceError } from './errors.ts';
 import { gameTouch, requireCurrentGame } from './games.ts';
+import type { ImportProgressReporter } from './import-progress.ts';
 
 export interface ImportSource {
   readonly fileName: string;
@@ -66,12 +67,16 @@ export interface ImportBuildOutput {
 export interface ImportHandler<TRow extends PreviewRow> {
   readonly type: ImportType;
   readonly collections: readonly RecordCollection[];
-  /** 預覽：讀出需要的既有資料並逐列分類。所有讀取都在這裡完成。 */
+  /**
+   * 預覽：讀出需要的既有資料並逐列分類。所有讀取都在這裡完成。數千筆的總表分批處理並經
+   * `progress` 回報進度（需求規格 12.5）；筆數少的類型可以不理它。
+   */
   readonly preview: (
     context: ServiceContext,
     game: Game,
     file: ParsedFile,
     choice: ImportChoice,
+    progress: ImportProgressReporter,
   ) => Promise<readonly TRow[]>;
   /** 套用：在寫入交易內呼叫，只能做同步運算。 */
   readonly build: (input: ImportBuildInput<TRow>) => ImportBuildOutput;
@@ -93,6 +98,11 @@ export interface PreparedImport<TRow extends PreviewRow> {
   readonly createsCheckpoint: boolean;
 }
 
+export interface PrepareImportOptions {
+  /** 預覽的處理進度（需求規格 12.5）。 */
+  readonly onProgress?: ImportProgressReporter;
+}
+
 function halted(problems: readonly string[]): ServiceError {
   return new ServiceError('importHalted', `匯入停止，資料不變：${problems.join('；')}`);
 }
@@ -106,6 +116,7 @@ export async function prepareImport<TRow extends PreviewRow>(
   handler: ImportHandler<TRow>,
   source: ImportSource,
   choice: ImportChoice,
+  options: PrepareImportOptions = {},
 ): Promise<PreparedImport<TRow>> {
   if (handler.type !== choice.type) {
     throw new ServiceError('invalidInput', '匯入類型與處理器不一致');
@@ -118,7 +129,13 @@ export async function prepareImport<TRow extends PreviewRow>(
   // 雜湊算在解碼後的文字上，而不是原始位元組：同一份內容轉存成 UTF-8 應該算重複匯入，
   // 而不是內容不同的「資料更正」（需求規格 11.1）。
   const sha256 = await sha256Hex(parsed.file.text);
-  const rows = await handler.preview(context, game, parsed.file, choice);
+  const rows = await handler.preview(
+    context,
+    game,
+    parsed.file,
+    choice,
+    options.onProgress ?? (() => undefined),
+  );
   const [sameSlot, allImports] = await Promise.all([
     listImportsInSlot(context.database, game.id, handler.type, choice.gameYear, choice.timing),
     listImports(context.database, game.id),

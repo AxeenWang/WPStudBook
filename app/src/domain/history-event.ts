@@ -51,6 +51,13 @@ export type HistoryEventType =
   | 'recoveryChanged'
   /** 自家產駒成為種牡馬（需求規格 9.7），含種牡馬馬番号；subjectId 為馬匹 id。 */
   | 'becameStallion'
+  /**
+   * 自家產駒第一次出現在十月全世界繁殖牝馬總表的其他牧場（需求規格 9.7、11.10），
+   * 含所在牧場與繁殖牝馬馬番号；subjectId 為馬匹 id。
+   */
+  | 'becameMareElsewhere'
+  /** 在其他牧場的自家產駒所在牧場變更，保存前後牧場（11.10、OCT-05）；subjectId 為馬匹 id。 */
+  | 'mareElsewhereMoved'
   /** 現任任期狀態變更或被更換，保存前後值；subjectId 為馬匹 id。 */
   | 'stallionDutyChanged'
   /**

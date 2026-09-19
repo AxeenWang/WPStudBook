@@ -4,7 +4,6 @@ import type { HistoryEvent } from '../domain/history-event.ts';
 import {
   formatAbilityNo,
   horseDisplayName,
-  isStallionHorse,
   nameForTracking,
   toBaseName,
   withStageNumber,
@@ -27,7 +26,9 @@ import { ServiceError } from './errors.ts';
 import { userEvent } from './events.ts';
 import { officialNameValue } from './foals.ts';
 import { importedStageNumber } from './import-identity.ts';
+import { mapInBatches, type ImportProgressReporter } from './import-progress.ts';
 import type { ImportChoice, ImportHandler } from './imports.ts';
+import { horseNameKeys, matchesName, nameKeys } from './name-keys.ts';
 import { matchStallionNames } from './stallion-names.ts';
 
 /** 一月總表的一列對到的自家產駒。 */
@@ -38,7 +39,7 @@ export interface JanFoal {
   readonly label: string;
   readonly damLabel: string | undefined;
   readonly sireLabel: string | undefined;
-  /** 已轉入母馬群或成為種牡馬：馬名唯讀（需求規格 6.4）。 */
+  /** 已轉入母馬群、成為種牡馬或在其他牧場成為繁殖牝馬：馬名唯讀（需求規格 6.4）。 */
   readonly readOnlyName: boolean;
 }
 
@@ -173,40 +174,6 @@ function checkFile(rows: readonly Jan2yoValues[]): void {
   }
 }
 
-/**
- * 名稱比對的鍵：去除前後空白（需求規格 11.3），也比對去除 `(外)`、`[地]` 前綴後的基本馬名，
- * 因為同一匹馬在不同檔案或手動輸入時可能一邊有前綴、一邊沒有。
- */
-function nameKeys(names: readonly (string | undefined)[]): Set<string> {
-  const keys = new Set<string>();
-  for (const name of names) {
-    if (name === undefined) {
-      continue;
-    }
-    for (const key of [name.trim(), toBaseName(name).trim()]) {
-      if (key !== '') {
-        keys.add(key);
-      }
-    }
-  }
-  return keys;
-}
-
-function horseNameKeys(horse: Horse | undefined): Set<string> {
-  return horse === undefined
-    ? new Set()
-    : nameKeys([
-        horse.fullName,
-        horse.baseName,
-        horse.officialName,
-        ...horse.aliases.map((alias) => alias.name),
-      ]);
-}
-
-function matchesName(name: string | undefined, keys: ReadonlySet<string>): boolean {
-  return name !== undefined && [...nameKeys([name])].some((key) => keys.has(key));
-}
-
 interface FoalKeys {
   readonly entry: JanFoal;
   readonly damKeys: ReadonlySet<string>;
@@ -332,6 +299,7 @@ export interface PreviewJan2yoInput {
   readonly gameId: string;
   readonly file: ParsedFile;
   readonly choice: ImportChoice;
+  readonly progress?: ImportProgressReporter | undefined;
 }
 
 /** 前一年有配種、尚未連到產駒的母馬：她的二歲馬可能還沒登記產駒。 */
@@ -400,7 +368,7 @@ export async function previewJan2yo(
       damLabel: dam === undefined ? undefined : horseDisplayName(dam, undefined),
       sireLabel:
         (sire === undefined ? undefined : horseDisplayName(sire, undefined)) ?? horse.sireName,
-      readOnlyName: mareIds.has(horse.id) || isStallionHorse(horse),
+      readOnlyName: mareIds.has(horse.id) || horse.fate !== undefined,
     };
     return [
       {
@@ -436,16 +404,21 @@ export async function previewJan2yo(
     stallionIds: await matchStallionNames(context.database, gameId, relevantSires),
   };
 
-  const passes: FirstPass[] = values.map((item) => {
-    const exact = item.abilityNo === undefined ? undefined : byAbilityNo.get(item.abilityNo);
-    if (exact !== undefined) {
-      return { values: item, exact, candidates: [] };
-    }
-    const candidates = unregistered.filter(
-      (keys) => damMatches(item, keys) && sireMatches(item, keys, matcher),
-    );
-    return { values: item, exact: undefined, candidates };
-  });
+  // 總表有一千多列，分批處理並回報進度（需求規格 12.5）。
+  const passes: FirstPass[] = await mapInBatches(
+    values,
+    (item): FirstPass => {
+      const exact = item.abilityNo === undefined ? undefined : byAbilityNo.get(item.abilityNo);
+      if (exact !== undefined) {
+        return { values: item, exact, candidates: [] };
+      }
+      const candidates = unregistered.filter(
+        (keys) => damMatches(item, keys) && sireMatches(item, keys, matcher),
+      );
+      return { values: item, exact: undefined, candidates };
+    },
+    input.progress ?? (() => undefined),
+  );
 
   const claims = new Map<string, number>();
   for (const pass of passes) {
@@ -662,8 +635,8 @@ export function jan2yoImportHandler(): ImportHandler<Jan2yoRow> {
   return {
     type: 'jan2yo',
     collections: [...JAN2YO_COLLECTIONS],
-    preview: (context, game, file, choice) =>
-      previewJan2yo(context, { gameId: game.id, file, choice }),
+    preview: (context, game, file, choice, progress) =>
+      previewJan2yo(context, { gameId: game.id, file, choice, progress }),
     build: ({ rows, choice, newId, occurredAt }) =>
       buildJan2yo(rows, { gameYear: choice.gameYear, timing: choice.timing, newId, occurredAt }),
   };

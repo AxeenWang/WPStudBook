@@ -25,13 +25,20 @@ export interface HorseAlias {
 }
 
 /**
- * 自家產駒的去向（需求規格 9.7）：成為種牡馬。只作紀錄，不影響八系任務、代數或後繼；
- * 在其他牧場成為繁殖牝馬（11.10）於階段 4 加入。
+ * 自家產駒的去向（需求規格 9.7）：成為種牡馬，或在其他牧場成為繁殖牝馬（11.10）。
+ * 只作紀錄，不影響八系任務、代數或後繼。
  */
-export interface HorseFate {
-  readonly kind: 'becameStallion';
-  readonly gameYear: number;
-}
+export type HorseFate =
+  | { readonly kind: 'becameStallion'; readonly gameYear: number }
+  | {
+      readonly kind: 'mareElsewhere';
+      /** 第一次出現在十月全世界繁殖牝馬總表的年份。 */
+      readonly gameYear: number;
+      /** 目前所在的繋養牧場番号；`0` 是有效值（11.10）。 */
+      readonly farmNo: number;
+      /** 最後一次出現在十月總表的年份；缺席時不推定原因（OCT-06）。 */
+      readonly lastSeenYear: number;
+    };
 
 /**
  * 五月種牡馬總表的在表紀錄（需求規格 11.8）。年度資料與前一份相同時不重複保存（STL-11），
@@ -86,6 +93,11 @@ export function withStageNumber(horse: Horse, stageNumber: StageNumber): Horse {
 /** 繁殖牝馬與種牡馬馬名唯讀（需求規格 6.4）；此處判斷已成為種牡馬的馬。 */
 export function isStallionHorse(horse: Horse): boolean {
   return horse.fate?.kind === 'becameStallion';
+}
+
+/** 在其他牧場成為繁殖牝馬的自家產駒（需求規格 9.7、11.10）；馬名同樣唯讀（6.4）。 */
+export function isMareElsewhere(horse: Horse): boolean {
+  return horse.fate?.kind === 'mareElsewhere';
 }
 
 export const ABILITY_NO_MAX = 0xffff;

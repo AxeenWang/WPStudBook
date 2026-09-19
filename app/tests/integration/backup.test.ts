@@ -15,7 +15,8 @@ import {
 import { gunzip, isGzip } from '../../src/storage/backup/gzip.ts';
 import type { BackupMigration } from '../../src/storage/backup/migrations.ts';
 import { countGameRecords, readGameSettings } from '../../src/storage/games.ts';
-import { readRecords, type StoredRecord } from '../../src/storage/records.ts';
+import { horseNameKeys } from '../../src/storage/horses.ts';
+import { putRecords, readRecords, type StoredRecord } from '../../src/storage/records.ts';
 import { RECORD_COLLECTIONS } from '../../src/storage/schema.ts';
 import { updateLastBackup } from '../../src/storage/snapshot.ts';
 import {
@@ -150,6 +151,81 @@ describe('備份匯出與還原', () => {
       `${restored.id}\u001fテストシュボバ`,
     ]);
     expect(await readRecords(context.database, game.id, 'horses')).toHaveLength(3);
+  });
+
+  it('[ID-11] 因番号回收而共用能力番号的不同馬 → 備份還原後各自保有識別與關聯', async () => {
+    const context = await openContext();
+    const game = await createGame(context, { name: '番号回收局', startYear: 1968 });
+    // 同一個能力番号先後給了兩匹出生年不同的馬（需求規格 6.2）；各自有自己的女兒。
+    const horses = [
+      {
+        id: 'old',
+        sex: 'female',
+        abilityNo: 0x2345,
+        birthYear: 1950,
+        fullName: 'テストフルイ',
+        stageNumbers: [],
+        aliases: [],
+      },
+      {
+        id: 'new',
+        sex: 'female',
+        abilityNo: 0x2345,
+        birthYear: 1966,
+        fullName: 'テストアタラシイ',
+        stageNumbers: [],
+        aliases: [],
+      },
+      {
+        id: 'old-daughter',
+        sex: 'female',
+        birthYear: 1960,
+        damId: 'old',
+        stageNumbers: [],
+        aliases: [],
+      },
+      {
+        id: 'new-daughter',
+        sex: 'female',
+        birthYear: 1970,
+        damId: 'new',
+        stageNumbers: [],
+        aliases: [],
+      },
+    ];
+    await putRecords(
+      context.database,
+      game.id,
+      'horses',
+      horses.map((item) => ({ ...item, nameKeys: horseNameKeys(game.id, item) })),
+    );
+    await putRecords(context.database, game.id, 'foals', [
+      { id: 'old-daughter', damId: 'old', birthYear: 1960, freeBred: true, disposition: 'sold' },
+      { id: 'new-daughter', damId: 'new', birthYear: 1970, freeBred: true, disposition: 'sold' },
+    ]);
+
+    const file = await exportBackup(context);
+    const restored = await restoreBackupAsNewGame(context, { bytes: file.bytes });
+    const byId = new Map(
+      (await readRecords(context.database, restored.id, 'horses')).map((item) => [item.id, item]),
+    );
+    expect(byId.get('old')).toMatchObject({
+      abilityNo: 0x2345,
+      birthYear: 1950,
+      fullName: 'テストフルイ',
+    });
+    expect(byId.get('new')).toMatchObject({
+      abilityNo: 0x2345,
+      birthYear: 1966,
+      fullName: 'テストアタラシイ',
+    });
+    expect(byId.get('old-daughter')?.damId).toBe('old');
+    expect(byId.get('new-daughter')?.damId).toBe('new');
+    const foals = await readRecords(context.database, restored.id, 'foals');
+    expect(foals.map((foal) => [foal.id, foal.damId]).sort()).toEqual([
+      ['new-daughter', 'new'],
+      ['old-daughter', 'old'],
+    ]);
   });
 
   it('[DATA-06] 不支援原生壓縮時匯出 JSON，並可還原', async () => {

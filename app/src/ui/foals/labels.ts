@@ -49,6 +49,14 @@ export function conceptionText(conception: Conception | undefined): string {
   return conception ?? '未登記';
 }
 
+/** 自家產駒的去向：在其他牧場成為繁殖牝馬（需求規格 9.7、11.10）。 */
+export function mareElsewhereText(fate: {
+  readonly farmNo: number;
+  readonly lastSeenYear: number;
+}): string {
+  return `在其他牧場成為繁殖牝馬（牧場 ${String(fate.farmNo)}・${String(fate.lastSeenYear)} 年確認）`;
+}
+
 export function lineageText(lineage: Lineage): string {
   return `第 ${String(lineage.position)} 系 ${String(lineage.generation)} 代`;
 }

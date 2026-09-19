@@ -85,7 +85,7 @@ const REPLACE_REASON_VALUES = enumSet<ReplaceReason>({
   historicalRetirement: true,
   other: true,
 });
-const HORSE_FATE_KINDS = enumSet<HorseFate['kind']>({ becameStallion: true });
+const HORSE_FATE_KINDS = enumSet<HorseFate['kind']>({ becameStallion: true, mareElsewhere: true });
 const OVERALL_GRADE_VALUES = enumSet<OverallGrade>({ S: true, A: true, B: true, C: true, D: true });
 const EVENT_TYPES = enumSet<HistoryEventType>({
   gameYearChanged: true,
@@ -112,6 +112,8 @@ const EVENT_TYPES = enumSet<HistoryEventType>({
   lineGenerationEstablished: true,
   recoveryChanged: true,
   becameStallion: true,
+  becameMareElsewhere: true,
+  mareElsewhereMoved: true,
   stallionDutyChanged: true,
   stallionListingChanged: true,
   plannedSuccessorChanged: true,
@@ -262,8 +264,22 @@ function isAlias(value: unknown): boolean {
   );
 }
 
+/**
+ * 去向：成為種牡馬只有年份；在其他牧場成為繁殖牝馬另有所在牧場（`0` 有效）與最後確認年，
+ * 最後確認年不早於第一次出現的年份。
+ */
 function isHorseFate(value: unknown): boolean {
-  return isPlainRecord(value) && isOneOf(HORSE_FATE_KINDS, value.kind) && isYear(value.gameYear);
+  if (!isPlainRecord(value) || !isOneOf(HORSE_FATE_KINDS, value.kind) || !isYear(value.gameYear)) {
+    return false;
+  }
+  if (value.kind === 'becameStallion') {
+    return !('farmNo' in value) && !('lastSeenYear' in value);
+  }
+  return (
+    isIntegerIn(value.farmNo, 0, 0xffff) &&
+    isYear(value.lastSeenYear) &&
+    (value.lastSeenYear as number) >= (value.gameYear as number)
+  );
 }
 
 /**
@@ -314,7 +330,10 @@ function checkHorse(record: StoredRecord): string | undefined {
     [record.sireId !== record.id && record.damId !== record.id, '父母不可是自己'],
     [isArrayOf(record.stageNumbers, isStageNumber), 'stageNumbers 必須是階段馬番号陣列'],
     [isArrayOf(record.aliases, isAlias), 'aliases 必須是名稱別名陣列'],
-    [optional(record, 'fate', isHorseFate), 'fate 必須含有效的 kind 與 gameYear'],
+    [
+      optional(record, 'fate', isHorseFate),
+      'fate 必須含有效的 kind 與 gameYear；在其他牧場成為繁殖牝馬另需 farmNo 與不早於 gameYear 的 lastSeenYear',
+    ],
     [
       optional(record, 'stallionListing', isStallionListing),
       'stallionListing 必須含 lastSeenYear，inactiveSince 不可早於 lastSeenYear',

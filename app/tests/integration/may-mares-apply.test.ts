@@ -279,6 +279,25 @@ describe('五月繁殖牝馬總表的套用（需求規格 11.5）', () => {
     ).toBe(false);
   });
 
+  it('[ID-08] 繁殖牝馬馬名唯讀：匯入時同一身分但馬名不同 → 衝突並略過，馬名與年度資料都不動', async () => {
+    const context = await openContext();
+    const gameId = await setUp(context);
+    await seedHorses(context, gameId, [
+      horse({ id: 'h-1', abilityNo: 0x1001, birthYear: 1962, fullName: 'テストメス001' }),
+    ]);
+    await seedMares(context, gameId, [producing('h-1', 32)]);
+
+    const renamed = withRow(SAMPLE, 0, { name: 'テストベツメイ', baseName: 'テストベツメイ' });
+    const { prepared } = await runImport(context, renamed);
+    const row = prepared.rows.find((item) => item.label === 'テストベツメイ');
+    expect(row).toMatchObject({ disposition: 'conflict', outcome: 'review' });
+    expect(row?.issues.map((issue) => issue.code)).toContain('identityConflict');
+    expect((await getHorse(context.database, gameId, 'h-1'))?.fullName).toBe('テストメス001');
+    expect(
+      (await listMareYearly(context.database, gameId)).some((item) => item.horseId === 'h-1'),
+    ).toBe(false);
+  });
+
   it('[IMP-12][CKPT-01] 五月是年度總表，套用後自動建立含時點的檢查點', async () => {
     const context = await openContext();
     await setUp(context);

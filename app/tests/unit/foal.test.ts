@@ -194,6 +194,7 @@ function foalCard(id: string, overrides: Partial<FoalCard> = {}): FoalCard {
     note: undefined,
     isMare: false,
     isStallion: false,
+    mareElsewhere: undefined,
     naming: 'done',
     ...overrides,
   };

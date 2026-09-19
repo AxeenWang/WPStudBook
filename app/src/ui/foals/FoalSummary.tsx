@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from 'react-aria-components';
 import type { FoalCard } from '../../services/foals.ts';
 import { FoalPanel } from './FoalPanel.tsx';
-import { DISPOSITION_LABELS, SURFACE_LABELS, lineageText } from './labels.ts';
+import { DISPOSITION_LABELS, SURFACE_LABELS, lineageText, mareElsewhereText } from './labels.ts';
 import { SexMarker } from './SexMarker.tsx';
 
 function abilityText(card: FoalCard): string {
@@ -33,6 +33,11 @@ export function FoalSummary({ card }: { readonly card: FoalCard }) {
         {card.freeBred && <span className="badge">自由配種</span>}
         {card.isMare && <span className="badge">已轉入母馬群</span>}
         {card.isStallion && <span className="badge">已成為種牡馬</span>}
+        {card.mareElsewhere !== undefined && (
+          <span className="badge" data-testid="foal-mare-elsewhere">
+            {mareElsewhereText(card.mareElsewhere)}
+          </span>
+        )}
       </h4>
       <p>
         {card.birthYear} 年生・{card.age} 歲・父 {card.sireName ?? '未取得'}・

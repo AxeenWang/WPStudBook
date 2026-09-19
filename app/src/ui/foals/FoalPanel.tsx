@@ -178,6 +178,8 @@ export function FoalPanel({ card }: { readonly card: FoalCard }) {
         <p className="notice">已轉入母馬群，繁殖牝馬馬名唯讀。</p>
       ) : card.isStallion ? (
         <p className="notice">已成為種牡馬，種牡馬馬名唯讀。</p>
+      ) : card.mareElsewhere !== undefined ? (
+        <p className="notice">已在其他牧場成為繁殖牝馬，繁殖牝馬馬名唯讀。</p>
       ) : (
         <NameForm card={card} />
       )}
