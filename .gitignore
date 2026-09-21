@@ -2,6 +2,9 @@
 .codex-tmp/
 .claude-tmp/
 
+# Local reference materials (user spreadsheets, game export samples)
+.references/
+
 # Personal agent settings
 CLAUDE.local.md
 .claude/settings.local.json
