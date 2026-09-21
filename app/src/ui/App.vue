@@ -1,7 +1,7 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import DiagnosticsPage from './diagnostics/DiagnosticsPage.vue'
+</script>
 
 <template>
-  <main>
-    <h1>WPStudBook</h1>
-  </main>
+  <DiagnosticsPage />
 </template>
