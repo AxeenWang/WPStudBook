@@ -1,1 +1,2 @@
-tests/fixtures/*.txt -text
+* text=auto eol=lf
+tests/fixtures/** -text
