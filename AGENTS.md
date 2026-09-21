@@ -38,6 +38,7 @@ Requirements: `docs/specs/需求規格.md`. Technical design and rationale: `doc
 
 ```
 docs/specs/        requirements, technical design, reference pages
+docs/plans/        implementation plans
 app/               npm project root
   src/core/        domain model and rules (pure functions)
   src/ce-import/   CE export decoding, parsing, and import flow

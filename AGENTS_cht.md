@@ -38,6 +38,7 @@ CodeLab-Governance: optional
 
 ```
 docs/specs/        需求規格、技術設計、參考頁面
+docs/plans/        實作計畫
 app/               npm 專案根
   src/core/        領域模型與規則（純函式）
   src/ce-import/   CE 匯出檔解碼、解析與匯入流程
