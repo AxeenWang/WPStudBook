@@ -1,0 +1,7 @@
+# Agent temp areas
+.codex-tmp/
+.claude-tmp/
+
+# Personal agent settings
+CLAUDE.local.md
+.claude/settings.local.json
