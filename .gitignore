@@ -8,3 +8,10 @@
 # Personal agent settings
 CLAUDE.local.md
 .claude/settings.local.json
+
+# App build and test output
+app/node_modules/
+app/dist/
+app/test-results/
+app/playwright-report/
+app/coverage/
