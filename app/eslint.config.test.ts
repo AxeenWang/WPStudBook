@@ -1,6 +1,6 @@
 import { ESLint } from 'eslint'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 const eslint = new ESLint({ cwd: fileURLToPath(new URL('.', import.meta.url)) })
 
@@ -8,6 +8,13 @@ async function ruleIds(code: string, filePath: string): Promise<string[]> {
   const [result] = await eslint.lintText(code, { filePath })
   return (result?.messages ?? []).map((message) => message.ruleId ?? '')
 }
+
+// 預熱共用的 ESLint 執行個體：首次載入 flat config／TypeScript project service
+// 在較慢的機器上可能超過 Vitest 預設的 5000ms 測試逾時，故在此以較寬鬆的
+// 逾時先跑過一次，讓下面每個測試案例都在暖機後的執行個體上運行。
+beforeAll(async () => {
+  await ruleIds('export const warmup = 1\n', 'src/core/warmup.ts')
+}, 30000)
 
 describe('模組邊界', () => {
   it('core 不得引用 Vue', async () => {
