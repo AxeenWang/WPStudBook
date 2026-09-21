@@ -17,6 +17,7 @@
     "fixtures": "node scripts/make-fixtures.mjs"
   },
   "dependencies": {
+    "dexie": "^4.4.6",
     "vue": "^3.5.43"
   },
   "devDependencies": {
@@ -27,6 +28,7 @@
     "@vue/tsconfig": "^0.9.1",
     "eslint": "^10.11.0",
     "eslint-plugin-vue": "^10.11.0",
+    "fake-indexeddb": "^6.2.5",
     "iconv-lite": "^0.7.3",
     "prettier": "^3.9.8",
     "typescript": "^6.0.3",
