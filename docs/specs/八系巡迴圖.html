@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>八系巡迴圖</title>
+<meta name="description" content="WPStudBook 八系繁殖計畫：依使用者示意圖，從第 1 系 0 代畫到產出 10 代的建系與兩兩互換循環，並推算活血與 4 代內重複。">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --text: #1b2330;
+  --muted: #5a6574;
+  --border: #d6dce4;
+  --stallion: #0f75ad;
+  --stallion-edge: #094b70;
+  --mare: #c4561a;
+  --mare-edge: #7a3309;
+  --on-box: #ffffff;
+  --line-s: #0f75ad;
+  --line-m: #c4561a;
+  --ok: #1d6f43;
+  --ok-bg: #dff2e7;
+  --na: #4f5a68;
+  --na-bg: #e6e9ee;
+  --dup: #a8231b;
+  --dup-bg: #fbe1de;
+  --part: #8a5800;
+  --part-bg: #fcefd2;
+  --build: #3d4f8a;
+  --build-bg: #e3e8f7;
+  --focus: #6a4fd6;
+  --shadow: 0 1px 2px rgba(20, 30, 45, .06), 0 2px 8px rgba(20, 30, 45, .05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #11151b;
+    --surface: #19202a;
+    --surface-2: #212a36;
+    --text: #e5eaf1;
+    --muted: #9ba7b6;
+    --border: #2f3a48;
+    --stallion: #1479b1;
+    --stallion-edge: #8fcdf0;
+    --mare: #c85b1f;
+    --mare-edge: #f3b08a;
+    --line-s: #4aa8de;
+    --line-m: #e98a52;
+    --ok: #7ad9a2;
+    --ok-bg: #16301f;
+    --na: #b3bdc9;
+    --na-bg: #27303b;
+    --dup: #ff9a90;
+    --dup-bg: #3b1b19;
+    --part: #f2c66b;
+    --part-bg: #382c10;
+    --build: #aebcf2;
+    --build-bg: #232b45;
+    --focus: #a995ff;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #11151b;
+  --surface: #19202a;
+  --surface-2: #212a36;
+  --text: #e5eaf1;
+  --muted: #9ba7b6;
+  --border: #2f3a48;
+  --stallion: #1479b1;
+  --stallion-edge: #8fcdf0;
+  --mare: #c85b1f;
+  --mare-edge: #f3b08a;
+  --line-s: #4aa8de;
+  --line-m: #e98a52;
+  --ok: #7ad9a2;
+  --ok-bg: #16301f;
+  --na: #b3bdc9;
+  --na-bg: #27303b;
+  --dup: #ff9a90;
+  --dup-bg: #3b1b19;
+  --part: #f2c66b;
+  --part-bg: #382c10;
+  --build: #aebcf2;
+  --build-bg: #232b45;
+  --focus: #a995ff;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Microsoft JhengHei", "Noto Sans TC", "PingFang TC", "Heiti TC", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+header.wrap { padding-top: 28px; padding-bottom: 8px; }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 6px; letter-spacing: .02em; }
+h2 { font-size: 17px; margin: 0 0 10px; }
+.lead { margin: 0; color: var(--muted); max-width: 70ch; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin: 14px 0;
+}
+.muted { color: var(--muted); }
+
+/* 控制列 */
+.controls { display: grid; gap: 14px; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+legend, .ctl-label { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; padding: 0; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg label {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 6px 12px; cursor: pointer; background: var(--surface-2);
+  font-size: 14px;
+}
+.seg input { accent-color: var(--focus); margin: 0; }
+.seg label:has(input:checked) { border-color: var(--focus); background: var(--surface); font-weight: 700; }
+.scheme-note { font-size: 14px; color: var(--muted); margin: 8px 0 0; }
+.scheme-note b { color: var(--text); font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button {
+  font: inherit; font-size: 14px; min-width: 52px; min-height: 36px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-2); color: var(--text); cursor: pointer; padding: 4px 12px;
+}
+.chips button[aria-pressed="true"] { border-color: var(--focus); background: var(--focus); color: #fff; font-weight: 700; }
+button:focus-visible, .seg label:has(input:focus-visible) { outline: 2.5px solid var(--focus); outline-offset: 2px; }
+
+/* 圖例 */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); margin: 12px 0 0; padding: 0; list-style: none; }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 22px; height: 14px; border-radius: 3px; display: inline-block; }
+.sw.s { background: var(--stallion); }
+.sw.m { background: var(--mare); }
+.sw.ext { background: var(--stallion); outline: 1px dashed #fff; outline-offset: -3px; }
+.ln { width: 26px; height: 0; border-top: 2.5px solid; display: inline-block; }
+.ln.s { border-color: var(--line-s); }
+.ln.m { border-color: var(--line-m); }
+.pill { font-size: 11.5px; padding: 0 8px; border-radius: 999px; font-weight: 700; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.na { background: var(--na-bg); color: var(--na); }
+.pill.dup { background: var(--dup-bg); color: var(--dup); }
+.pill.part, .pill.fail { background: var(--part-bg); color: var(--part); }
+.pill.build { background: var(--build-bg); color: var(--build); }
+.pill.min { background: var(--na-bg); color: var(--ok); }
+
+/* 主圖 */
+.chart-card { padding: 10px 0; }
+.chart-scroll { overflow-x: auto; overflow-y: hidden; }
+#chart { display: block; }
+.hdr-t { font-size: 13.5px; font-weight: 700; fill: var(--text); }
+.hdr-s { font-size: 11.5px; fill: var(--muted); }
+.box-s { fill: var(--stallion); stroke: var(--stallion-edge); stroke-width: 1.5; }
+.box-m { fill: var(--mare); stroke: var(--mare-edge); stroke-width: 1.5; }
+.box-t { fill: var(--on-box); font-size: 13px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.ext { fill: none; stroke: rgba(255, 255, 255, .85); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.cap { font-size: 11.5px; fill: var(--muted); pointer-events: none; }
+.badge-r { pointer-events: none; }
+.badge-t { font-size: 10.5px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.badge-r.ok { fill: var(--ok-bg); } .badge-t.ok { fill: var(--ok); }
+.badge-r.na { fill: var(--na-bg); } .badge-t.na { fill: var(--na); }
+.badge-r.dup { fill: var(--dup-bg); } .badge-t.dup { fill: var(--dup); }
+.badge-r.part, .badge-r.fail { fill: var(--part-bg); } .badge-t.part, .badge-t.fail { fill: var(--part); }
+.badge-r.build { fill: var(--build-bg); } .badge-t.build { fill: var(--build); }
+.badge-r.min { fill: var(--na-bg); } .badge-t.min { fill: var(--ok); }
+.link { fill: none; stroke-width: 1.8; opacity: .72; }
+.link.s { stroke: var(--line-s); }
+.link.m { stroke: var(--line-m); }
+.dot { fill: var(--muted); }
+.hit { fill: transparent; }
+.pair { cursor: pointer; }
+.pair:focus { outline: none; }
+.ring { fill: none; stroke: var(--focus); stroke-width: 2.5; display: none; }
+.pair.sel .ring, .pair:focus-visible .ring { display: inline; }
+.dim { opacity: .2; }
+@media (prefers-reduced-motion: no-preference) {
+  .link, .box-s, .box-m, .cap, .badge-r, .badge-t, .box-t, .ext { transition: opacity .15s; }
+}
+
+/* 詳情與巡迴 */
+.panels { display: grid; gap: 14px; grid-template-columns: 1fr; }
+.panels .card { margin: 0; }
+@media (min-width: 920px) { .panels { grid-template-columns: 1fr 1fr; } }
+.pairline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
+.tag { display: inline-block; color: #fff; font-weight: 700; font-size: 13px; border-radius: 4px; padding: 1px 8px; }
+.tag.s { background: var(--stallion); }
+.tag.m { background: var(--mare); }
+dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0; font-size: 14px; }
+dl.stats dt { color: var(--muted); }
+dl.stats dd { margin: 0; }
+table.anc, table.walk { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.anc th, table.anc td, table.walk th, table.walk td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.anc th, table.walk th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+tr.rep td { background: var(--dup-bg); }
+td .note { color: var(--muted); font-size: 12px; }
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
+
+/* 巡迴表 */
+.table-scroll { overflow-x: auto; }
+table.matrix { border-collapse: separate; border-spacing: 4px; min-width: 640px; width: 100%; }
+.matrix thead th { font-size: 12.5px; color: var(--muted); font-weight: 700; text-align: center; padding: 2px 4px; }
+.matrix th.row { text-align: left; white-space: nowrap; font-size: 13px; color: var(--text); padding-right: 8px; }
+.matrix th.row small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; }
+.matrix td { padding: 0; }
+.cell {
+  width: 100%; min-height: 54px; border: 1px solid transparent; border-radius: 8px;
+  background: var(--surface-2); color: var(--text); font: inherit; padding: 5px 3px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; cursor: pointer;
+}
+.cell .m { font-size: 13.5px; font-weight: 700; line-height: 1.3; }
+.cell .z { font-size: 11px; color: var(--muted); line-height: 1.2; }
+.cell .st { font-size: 10.5px; font-weight: 700; line-height: 1.3; }
+.cell.ok { background: var(--ok-bg); } .cell.ok .st { color: var(--ok); }
+.cell.na { background: var(--na-bg); } .cell.na .st { color: var(--na); }
+.cell.dup { background: var(--dup-bg); } .cell.dup .st { color: var(--dup); }
+.cell.part, .cell.fail { background: var(--part-bg); } .cell.part .st, .cell.fail .st { color: var(--part); }
+.cell.build { background: var(--build-bg); } .cell.build .st { color: var(--build); }
+.cell.min { background: var(--na-bg); } .cell.min .st { color: var(--ok); }
+.cell.sel { outline: 2.5px solid var(--focus); outline-offset: 1px; }
+.cell:focus-visible { outline: 2.5px solid var(--focus); outline-offset: 1px; }
+.matrix td.empty { text-align: center; color: var(--muted); font-size: 13px; }
+.matrix .dimcol { opacity: .3; }
+
+/* 檢查結果 */
+ul.findings { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+ul.findings li { border-left: 4px solid var(--border); padding: 4px 0 4px 10px; font-size: 14.5px; }
+ul.findings li.ok { border-color: var(--ok); }
+ul.findings li.na { border-color: var(--na); }
+ul.findings li.dup { border-color: var(--dup); }
+ul.findings li.build { border-color: var(--build); }
+ul.findings li.min { border-color: var(--ok); border-left-style: dashed; }
+.assume { font-size: 13px; color: var(--muted); margin: 12px 0 0; padding-left: 18px; }
+footer.wrap { color: var(--muted); font-size: 12.5px; padding-bottom: 28px; }
+.cmp-warn { display: none; background: var(--dup-bg); color: var(--dup); border-radius: 8px; padding: 6px 10px; font-size: 13.5px; font-weight: 700; margin: 0 0 10px; }
+.chart-card .cmp-warn { margin: 0 16px 10px; }
+body.comparing .cmp-warn { display: block; }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <h1>八系巡迴圖</h1>
+  <p class="lead">由左往右看：每格上方藍色是種牡馬、下方橘色是繁殖牝馬，配出的牡駒與牝駒沿連線進入下一欄。產出 1～4 代依分支建立八系，產出 5 代起八系兩兩互換循環，配對距離 1、2、4 輪替。</p>
+</header>
+
+<main class="wrap">
+  <section class="card controls" aria-label="顯示設定">
+    <fieldset>
+      <legend>方案</legend>
+      <div class="seg" id="schemes"></div>
+      <p class="scheme-note" id="scheme-note"></p>
+    </fieldset>
+    <div>
+      <div class="ctl-label" id="chips-label">看單一系的巡迴</div>
+      <div class="chips" id="chips" role="group" aria-labelledby="chips-label"></div>
+    </div>
+    <ul class="legend">
+      <li><span class="sw s"></span>種牡馬（牡）</li>
+      <li><span class="sw m"></span>繁殖牝馬（牝）</li>
+      <li><span class="sw ext"></span>虛線框：市場馬或零代種牡馬（沒有上游）</li>
+      <li><span class="ln s"></span>牡駒留在本系，下一代當種牡馬</li>
+      <li><span class="ln m"></span>牝駒到配對系，下一代當母馬</li>
+      <li><span class="pill ok">8 種</span><span class="pill min">至少 6 種</span><span class="pill na">資料不足</span><span class="pill dup">近親</span><span class="pill build">建系</span></li>
+    </ul>
+  </section>
+
+  <section class="card chart-card" aria-label="八系巡迴圖">
+    <p class="cmp-warn" role="status">目前顯示的是比較用方案，不是規格採用的排列。</p>
+    <div class="chart-scroll">
+      <svg id="chart" role="group" aria-label="從第 1 系 0 代到產出 10 代的配對圖"></svg>
+    </div>
+  </section>
+
+  <div class="panels">
+    <section class="card" id="detail" aria-live="polite"></section>
+    <section class="card" id="walk"></section>
+  </div>
+
+  <section class="card">
+    <h2>巡迴表</h2>
+    <p class="cmp-warn">目前顯示的是比較用方案，不是規格採用的排列。</p>
+    <p class="muted" style="margin:0 0 8px;font-size:13.5px">每格是該系那一代的配對：父馬固定是本系上一代，格內顯示母馬來自哪一系。點格子可看詳情。</p>
+    <div class="table-scroll"><table class="matrix" id="matrix"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>檢查結果</h2>
+    <p class="cmp-warn">目前顯示的是比較用方案，不是規格採用的排列。</p>
+    <ul class="findings" id="findings"></ul>
+    <ul class="assume">
+      <li>活血以系位置計算，假設八系的親系統互不相同。</li>
+      <li>市場替代母馬的親系統，假設與她替代的系相同（最理想的情況）；實際上只要不與其他 7 系重複，結果一樣是 8 種（規格 8.3）。</li>
+      <li>建系期市場馬的父親沒有紀錄，依該馬的父系推定父親的系（標示「推定」）；母親的系就是母父系統，匯入檔目前沒有，視為未知（規格 10.2、Q-09）。</li>
+      <li>同一配對產出的牡駒與牝駒視為全兄妹。實際若來自同群不同母馬，父馬仍然相同，重複檢查的結論不變。</li>
+      <li>4 代內重複：父母、祖父母、曾祖父母、高祖父母（共 30 個位置）出現同一匹馬；只在第 5 代重複不算（規格 10.2）。</li>
+      <li>零代種牡馬假設不是自己系統的始祖；若是始祖，他父親的系要看該系統的分出來源（規格 10.2）。</li>
+    </ul>
+  </section>
+</main>
+
+<footer class="wrap">依據：需求規格 4.3、7.3、7.4、10.1、10.2；建系分支依使用者示意圖。</footer>
+
+<script id="core">
+// 配對與血統推算（不依賴畫面，可單獨測試）
+const MAX_GEN = 10;
+const FOUND_IMAGE = { 2: { 1: 2 }, 3: { 1: 3, 2: 4 }, 4: { 1: 5, 3: 6, 2: 7, 4: 8 } };
+const FOUND_SPEC = { 2: { 1: 2 }, 3: { 1: 3, 2: 4 }, 4: { 1: 5, 2: 6, 3: 7, 4: 8 } };
+const SCHEMES = {
+  aligned: {
+    key: 'aligned', name: '採用：示意圖編號＋配合建系的循環表', found: FOUND_IMAGE, cycle: 'aligned',
+    desc: '目前規格（4.3、7.3）。建系照使用者示意圖：第 6 系用第 3 系、第 7 系用第 2 系 3 代母馬建立；循環配對跟建系分支一致，每一層分支出來的兩系，在循環中也互為配對。'
+  },
+  image: {
+    key: 'image', name: '比較：示意圖編號＋試算表循環表', found: FOUND_IMAGE, cycle: 'table',
+    desc: '比較用，不採用。建系照示意圖，循環沿用試算表 8系 頁籤的排列（產出 5 代 5↔6、7↔8）；產出 5 代第 5～8 系會在 4 代內重複祖先。'
+  },
+  spec: {
+    key: 'spec', name: '比較：舊版 7.3 編號＋試算表循環表', found: FOUND_SPEC, cycle: 'table',
+    desc: '比較用，不採用。舊版規格：第 6 系用第 2 系、第 7 系用第 3 系 3 代母馬建立，循環沿用試算表 8系 頁籤；結果與採用方案相同，只是系的編號不同。'
+  }
+};
+
+// 產出第 g 代的配對距離（建系 2、3、4 代為 1、2、4；循環 5 代起 1、2、4 輪替）
+function distanceFor(g) {
+  if (g <= 1) return null;
+  if (g <= 4) return 1 << (g - 2);
+  return [1, 2, 4][(g - 5) % 3];
+}
+
+function buildPlan(schemeKey) {
+  const scheme = SCHEMES[schemeKey];
+  const horses = new Map();
+  const add = (h) => { horses.set(h.id, h); return h; };
+  const zero = (s) => horses.get('Z' + s) ||
+    add({ id: 'Z' + s, name: s + '系0代', sex: 'm', line: s, gen: 0, kind: 'zero', sire: null, dam: null });
+  const own = (s, g, sex) => horses.get('H' + s + '-' + g + '-' + sex);
+  const cols = [];
+  const makePair = (g, sys, sire, dam, kind, extra) => {
+    const pair = Object.assign({ id: 'P' + g + '-' + sys, g, sys, sire, dam, kind, d: distanceFor(g) }, extra);
+    pair.colt = add({ id: 'H' + sys + '-' + g + '-m', name: sys + '系' + g + '代', sex: 'm', line: sys, gen: g, kind: 'own', sire, dam, pair });
+    pair.filly = add({ id: 'H' + sys + '-' + g + '-f', name: sys + '系' + g + '代', sex: 'f', line: sys, gen: g, kind: 'own', sire, dam, pair });
+    cols[g].push(pair);
+    return pair;
+  };
+
+  // 起點：1 系 0 代 × 市場母馬
+  cols[1] = [];
+  const startMare = add({ id: 'M1-1', name: '市場選', sex: 'f', line: null, gen: 0, kind: 'market', role: 'start', sire: null, dam: null });
+  makePair(1, 1, zero(1), startMare, 'start');
+
+  // 建系：每個已有 g-1 代的系分成推進原系與建立新系
+  let order = [1];
+  const idx = { 1: 0 };
+  for (let g = 2; g <= 4; g++) {
+    cols[g] = [];
+    const next = [];
+    const bit = 1 << (g - 2);
+    for (const p of order) {
+      const c = scheme.found[g][p];
+      idx[c] = idx[p] | bit;
+      const sub = add({ id: 'M' + g + '-' + p, name: '市場選', sex: 'f', line: c, gen: 0, kind: 'market', role: 'sub', subFor: c, sire: null, dam: null });
+      makePair(g, p, own(p, g - 1, 'm'), sub, 'advance', { partner: c });
+      makePair(g, c, zero(c), own(p, g - 1, 'f'), 'found', { partner: p });
+      next.push(p, c);
+    }
+    order = next;
+  }
+
+  // 循環：第 p 系 g-1 代種牡馬 × 配對系 g-1 代母馬 → 第 p 系 g 代
+  const bySlot = [];
+  for (const s of Object.keys(idx)) bySlot[idx[s]] = Number(s);
+  const partnerOf = (p, d) => scheme.cycle === 'table' ? ((p - 1) ^ d) + 1 : bySlot[idx[p] ^ d];
+  for (let g = 5; g <= MAX_GEN; g++) {
+    cols[g] = [];
+    const d = distanceFor(g);
+    for (const p of order) {
+      const q = partnerOf(p, d);
+      makePair(g, p, own(p, g - 1, 'm'), own(q, g - 1, 'f'), 'cycle', { partner: q });
+    }
+  }
+
+  const cyclePairs = (g) => {
+    const d = distanceFor(g);
+    const seen = new Set();
+    const out = [];
+    for (let p = 1; p <= 8; p++) {
+      const q = partnerOf(p, d);
+      const a = Math.min(p, q), b = Math.max(p, q);
+      if (!seen.has(a + '-' + b)) { seen.add(a + '-' + b); out.push([a, b]); }
+    }
+    return out;
+  };
+  return { scheme, horses, cols, order, partnerOf, cyclePairs };
+}
+
+// 祖先：levels[k] 為第 k 代祖先（1 = 父母），null 表示未知
+function ancestors(pair) {
+  const levels = [null];
+  let cur = [pair.sire, pair.dam];
+  for (let k = 1; k <= 4; k++) {
+    levels.push(cur);
+    cur = cur.flatMap((h) => (h ? [h.sire, h.dam] : [null, null]));
+  }
+  return levels;
+}
+
+// 3 代前 8 個位置：沒有紀錄的父親，依子女的父系推定系（系統跟著父親走）；沒有紀錄的母親為未知
+function gen3Slots(levels) {
+  return levels[3].map((h, i) => {
+    if (h) return { h, line: h.line, inferred: false };
+    const child = levels[2][i >> 1] || null;
+    const role = i % 2 === 0 ? 'sire' : 'dam';
+    if (role === 'sire' && child && child.line != null) return { h: null, child, role, line: child.line, inferred: true };
+    return { h: null, child, role, line: null, inferred: false };
+  });
+}
+
+function analyze(pair) {
+  const levels = ancestors(pair);
+  const slots = gen3Slots(levels);
+  const lines = slots.map((s) => s.line);
+  const known = lines.filter((x) => x != null);
+  const distinct = new Set(known).size;
+  const unknown3 = lines.length - known.length;
+  const missing = [1, 2, 3, 4, 5, 6, 7, 8].filter((s) => !known.includes(s));
+  const seen = new Map();
+  let unknown4 = 0;
+  for (let k = 1; k <= 4; k++) {
+    for (const h of levels[k]) {
+      if (!h) { unknown4++; continue; }
+      if (!seen.has(h.id)) seen.set(h.id, { h, gens: [] });
+      seen.get(h.id).gens.push(k);
+    }
+  }
+  const dups = [...seen.values()].filter((x) => x.gens.length > 1);
+  const lineRepeat = known.length !== distinct;
+  let status;
+  if (dups.length) status = 'dup';
+  else if (unknown3) status = distinct >= 6 ? 'min' : 'na';
+  else if (distinct === 8) status = 'ok';
+  else status = distinct >= 6 ? 'part' : 'fail';
+  return { levels, slots, lines, distinct, unknown3, unknown4, dups, lineRepeat, missing, status };
+}
+</script>
+
+<script>
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  const G = { boxW: 132, boxH: 30, slot: 100, top: 90, left: 12, gap: 88, right: 16, bottom: 14 };
+  const STATUS_TEXT = { ok: '8 種', na: '資料不足', dup: '近親', build: '建系' };
+  const ADOPTED = 'aligned';
+
+  // 每次打開都顯示規格採用的方案，不記住比較用方案
+  let schemeKey = ADOPTED;
+
+  let plan = null;
+  const analyses = new Map();
+  let selectedId = null;
+  let focusSys = null;
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const joinSys = (list) => {
+    const s = [...list].sort((a, b) => a - b);
+    const run = s.length >= 3 && s.every((v, i) => i === 0 || v === s[i - 1] + 1);
+    return run ? s[0] + '～' + s[s.length - 1] : s.join('、');
+  };
+
+  function el(tag, attrs, parent, text) {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function textW(t, cjk, asc) {
+    let w = 0;
+    for (const ch of t) w += ch.charCodeAt(0) < 256 ? asc : cjk;
+    return w;
+  }
+  const sexText = (h) => (h.sex === 'm' ? '牡' : '牝');
+  function boxLabel(h) { return h.name + ' (' + sexText(h) + ')'; }
+  function horseName(h) {
+    if (!h) return '未知';
+    if (h.kind === 'market') return h.role === 'start' ? '市場選（牝，第 1 系起點用）' : '市場選（牝，替代第 ' + h.subFor + ' 系）';
+    return h.name + '（' + sexText(h) + '）';
+  }
+  function lineText(h) {
+    if (!h) return '未知';
+    if (h.line == null) return '未知';
+    return h.kind === 'market' ? h.line + ' 系（假設）' : h.line + ' 系';
+  }
+  function statusOf(pair) { return pair.g <= 4 ? 'build' : analyses.get(pair.id).status; }
+  function statusText(pair) {
+    const st = statusOf(pair);
+    if (STATUS_TEXT[st]) return STATUS_TEXT[st];
+    const a = analyses.get(pair.id);
+    return (st === 'min' ? '至少 ' : '') + a.distinct + ' 種';
+  }
+  // 祖先位置名稱：沒有紀錄時寫成「某馬的父親／母親」
+  function slotLabel(levels, k, i) {
+    const h = levels[k][i];
+    if (h) return horseName(h);
+    const child = k > 1 ? levels[k - 1][i >> 1] : null;
+    if (!child) return '未知';
+    return horseName(child) + '的' + (i % 2 === 0 ? '父親' : '母親');
+  }
+  function phaseText(pair) {
+    if (pair.kind === 'start') return '建系起點';
+    if (pair.kind === 'advance') return '建系・推進原系（距離 ' + pair.d + '）：市場母馬替代第 ' + pair.partner + ' 系';
+    if (pair.kind === 'found') return '建系・建立新系（距離 ' + pair.d + '）：第 ' + pair.sys + ' 系成立';
+    return '循環期・距離 ' + pair.d + '：' + pair.sys + '↔' + pair.partner;
+  }
+  function allPairs() { return plan.cols.slice(1).flat(); }
+  function findPair(id) { return allPairs().find((p) => p.id === id) || null; }
+
+  // ---- 方案選擇 ----
+  function renderSchemes() {
+    const box = $('schemes');
+    box.innerHTML = Object.values(SCHEMES).map((s) =>
+      '<label><input type="radio" name="scheme" value="' + s.key + '"' + (s.key === schemeKey ? ' checked' : '') + '> ' + esc(s.name) + '</label>'
+    ).join('');
+    box.addEventListener('change', (e) => {
+      if (e.target.name !== 'scheme') return;
+      schemeKey = e.target.value;
+      selectedId = null;
+      update();
+    });
+  }
+  function renderSchemeNote() {
+    const s = plan.scheme;
+    const fmt = (g) => plan.cyclePairs(g).map((p) => p[0] + '↔' + p[1]).join('、');
+    const last = Object.entries(s.found[4]).map(([p, c]) => p + '↔' + c).join('、');
+    const same = plan.cyclePairs(7).every(([a, b]) => s.found[4][a] === b || s.found[4][b] === a);
+    $('scheme-note').innerHTML = esc(s.desc) + '<br><b>建系最後一層</b>（產出 4 代）：' + last +
+      '　<b>循環</b>：產出 5 代 ' + fmt(5) + '；6 代 ' + fmt(6) + '；7 代 ' + fmt(7) + '（之後重複）。' +
+      '建系最後一層與循環 7 代的配對' + (same ? '<b>相同</b>。' : '<b>不同</b>。');
+  }
+
+  // ---- 系別篩選 ----
+  function renderChips() {
+    const box = $('chips');
+    const items = [{ v: '', t: '全部' }].concat([1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ v: String(n), t: n + ' 系' })));
+    box.innerHTML = items.map((i) => '<button type="button" data-sys="' + i.v + '" aria-pressed="false">' + i.t + '</button>').join('');
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      focusSys = b.dataset.sys ? Number(b.dataset.sys) : null;
+      applyFocus();
+      renderWalk();
+    });
+  }
+
+  // ---- 主圖 ----
+  function renderChart() {
+    const svg = $('chart');
+    svg.replaceChildren();
+    const pitch = G.boxW + G.gap;
+    const W = G.left + MAX_GEN * pitch - G.gap + G.right;
+    const H = G.top + 8 * G.slot + G.bottom;
+    svg.setAttribute('width', W);
+    svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    const colX = (g) => G.left + (g - 1) * pitch;
+
+    // 欄標題
+    for (let g = 1; g <= MAX_GEN; g++) {
+      const x = colX(g);
+      el('text', { x, y: 20, class: 'hdr-t' }, svg, '產出 ' + g + ' 代');
+      let sub = '起點';
+      if (g >= 2 && g <= 4) sub = '建系・距離 ' + distanceFor(g);
+      if (g >= 5) sub = '循環・距離 ' + distanceFor(g);
+      el('text', { x, y: 38, class: 'hdr-s' }, svg, sub);
+      if (g >= 5) {
+        const ps = plan.cyclePairs(g).map((p) => p[0] + '↔' + p[1]);
+        el('text', { x, y: 55, class: 'hdr-s' }, svg, ps.slice(0, 2).join('・'));
+        el('text', { x, y: 71, class: 'hdr-s' }, svg, ps.slice(2).join('・'));
+      }
+    }
+
+    // 位置：建系欄依分支置中，循環欄固定列
+    for (let g = 1; g <= MAX_GEN; g++) {
+      plan.cols[g].forEach((pair, k) => {
+        const span = g >= 4 ? 1 : Math.pow(2, 4 - g);
+        pair.pos = { x: colX(g), yc: G.top + (k * span + span / 2) * G.slot };
+      });
+    }
+
+    // 連線
+    const links = el('g', { class: 'links' }, svg);
+    for (let g = 1; g < MAX_GEN; g++) {
+      for (const pair of plan.cols[g]) {
+        const next = plan.cols[g + 1];
+        const toS = next.find((p) => p.sire === pair.colt);
+        const toM = next.find((p) => p.dam === pair.filly);
+        const x1 = pair.pos.x + G.boxW;
+        const y1 = pair.pos.yc;
+        const draw = (t, kind) => {
+          if (!t) return;
+          const x2 = t.pos.x;
+          const y2 = kind === 's' ? t.pos.yc - G.boxH / 2 : t.pos.yc + G.boxH / 2;
+          const c = G.gap * 0.55;
+          el('path', {
+            d: 'M' + x1 + ',' + y1 + ' C' + (x1 + c) + ',' + y1 + ' ' + (x2 - c) + ',' + y2 + ' ' + x2 + ',' + y2,
+            class: 'link ' + kind, 'data-from': pair.sys
+          }, links);
+        };
+        draw(toS, 's');
+        draw(toM, 'm');
+      }
+    }
+
+    // 配對卡
+    const layer = el('g', {}, svg);
+    for (const pair of allPairs()) {
+      const { x, yc } = pair.pos;
+      const st = statusOf(pair);
+      const label = '產出 ' + pair.sys + '系' + pair.g + '代：' + horseName(pair.sire) + ' × ' + horseName(pair.dam) + '，' + statusText(pair);
+      const grp = el('g', { class: 'pair', tabindex: 0, role: 'button', 'aria-label': label, 'data-id': pair.id, 'data-sys': pair.sys }, layer);
+      el('rect', { class: 'hit', x: x - 4, y: yc - G.boxH - 22, width: G.boxW + 8, height: 2 * G.boxH + 26 }, grp);
+      el('rect', { class: 'ring', x: x - 5, y: yc - G.boxH - 23, width: G.boxW + 10, height: 2 * G.boxH + 28, rx: 7 }, grp);
+      el('text', { class: 'cap', x, y: yc - G.boxH - 7 }, grp, '→ ' + pair.sys + '系' + pair.g + '代');
+      const bt = statusText(pair);
+      const bw = textW(bt, 11, 6.2) + 12;
+      el('rect', { class: 'badge-r ' + st, x: x + G.boxW - bw, y: yc - G.boxH - 19, width: bw, height: 15, rx: 7.5 }, grp);
+      el('text', { class: 'badge-t ' + st, x: x + G.boxW - bw / 2, y: yc - G.boxH - 11.5 }, grp, bt);
+      drawBox(grp, pair.sire, x, yc - G.boxH, 's');
+      drawBox(grp, pair.dam, x, yc, 'm');
+      grp.addEventListener('click', () => select(pair.id));
+      grp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(pair.id); }
+      });
+    }
+  }
+  function drawBox(grp, h, x, y, kind) {
+    const ext = h.kind !== 'own';
+    el('rect', { class: 'box-' + kind, x, y, width: G.boxW, height: G.boxH, rx: 3, 'data-line': h.kind === 'own' ? h.line : '' }, grp);
+    if (ext) el('rect', { class: 'ext', x: x + 3, y: y + 3, width: G.boxW - 6, height: G.boxH - 6, rx: 2 }, grp);
+    el('text', { class: 'box-t', x: x + G.boxW / 2, y: y + G.boxH / 2 }, grp, boxLabel(h));
+  }
+
+  // ---- 單一系聚焦 ----
+  function applyFocus() {
+    document.querySelectorAll('#chips button').forEach((b) => {
+      const v = b.dataset.sys ? Number(b.dataset.sys) : null;
+      b.setAttribute('aria-pressed', String(v === focusSys));
+    });
+    const svg = $('chart');
+    svg.querySelectorAll('.pair').forEach((grp) => {
+      const on = focusSys == null || Number(grp.dataset.sys) === focusSys;
+      grp.querySelectorAll('.cap, .badge-r, .badge-t, .box-s, .box-s + .ext, .box-s ~ .box-t').forEach((n) => n.classList.toggle('dim', !on));
+      const mareRect = grp.querySelector('.box-m');
+      const mareOn = on || Number(mareRect.dataset.line) === focusSys;
+      [...grp.querySelectorAll('.box-m, .box-m + .ext')].forEach((n) => n.classList.toggle('dim', !mareOn));
+      const texts = grp.querySelectorAll('.box-t');
+      texts[0].classList.toggle('dim', !on);
+      texts[1].classList.toggle('dim', !mareOn);
+    });
+    svg.querySelectorAll('.link').forEach((p) => {
+      p.classList.toggle('dim', focusSys != null && Number(p.dataset.from) !== focusSys);
+    });
+    document.querySelectorAll('#matrix [data-col]').forEach((c) => {
+      c.classList.toggle('dimcol', focusSys != null && Number(c.dataset.col) !== focusSys);
+    });
+  }
+
+  // ---- 選取 ----
+  function select(id) {
+    selectedId = id;
+    document.querySelectorAll('#chart .pair').forEach((g) => g.classList.toggle('sel', g.dataset.id === id));
+    document.querySelectorAll('#matrix .cell').forEach((c) => {
+      const on = c.dataset.id === id;
+      c.classList.toggle('sel', on);
+      c.setAttribute('aria-pressed', String(on));
+    });
+    renderDetail();
+  }
+
+  function renderDetail() {
+    const box = $('detail');
+    const pair = selectedId ? findPair(selectedId) : null;
+    if (!pair) {
+      box.innerHTML = '<h2>配對詳情</h2><p class="muted">點選圖上的配對或巡迴表的格子，查看 3 代前祖先、活血與 4 代內重複。</p>';
+      return;
+    }
+    const a = analyses.get(pair.id);
+    let act;
+    const unknownNames = a.slots.map((s, i) => (s.line == null ? slotLabel(a.levels, 3, i) : null)).filter(Boolean);
+    if (a.unknown3 && a.distinct >= 6) {
+      act = '至少 ' + a.distinct + ' 種（成立）；還缺第 ' + joinSys(a.missing) + ' 系，要看' + unknownNames.join('、') + '的系（也就是這些市場馬的母父）';
+    } else if (a.unknown3) {
+      act = '資料不足：已知 ' + a.distinct + ' 種，' + a.unknown3 + ' 個位置未知（' + unknownNames.join('、') + '）';
+    } else {
+      act = a.distinct + ' 種' + (a.distinct === 8 ? '（最大）' : a.distinct >= 6 ? '（成立）' : '（不成立）');
+    }
+    if (a.lineRepeat) act += '；已知的系有重複';
+    if (pair.g <= 4) act = '建系期規格不計算（10.1），推算僅供參考：' + act;
+    let dup;
+    if (a.dups.length) dup = '<span class="pill dup">近親</span> ' + a.dups.map((d) => esc(horseName(d.h)) + ' ' + d.gens.join('×')).join('、');
+    else dup = '無' + (a.unknown4 ? '（另有 ' + a.unknown4 + ' 個祖先位置沒有紀錄，都在建系期市場馬的上游）' : '');
+    const dupIds = new Set(a.dups.map((d) => d.h.id));
+    const pos = (k, i) => {
+      let s = '';
+      for (let b = k - 1; b >= 0; b--) s += (i >> b) & 1 ? '母' : '父';
+      return s;
+    };
+    const lineCount = {};
+    a.lines.forEach((l) => { if (l != null) lineCount[l] = (lineCount[l] || 0) + 1; });
+    const rows3 = a.slots.map((s, i) => {
+      const rep = (s.h && dupIds.has(s.h.id)) || (s.line != null && lineCount[s.line] > 1);
+      const line = s.h ? lineText(s.h) : s.inferred ? s.line + ' 系（推定）' : '未知';
+      return '<tr' + (rep ? ' class="rep"' : '') + '><td>' + pos(3, i) + '</td><td>' + esc(slotLabel(a.levels, 3, i)) + '</td><td>' + esc(line) + '</td></tr>';
+    }).join('');
+    const rows4 = a.levels[4].map((h, i) => {
+      const rep = h && dupIds.has(h.id);
+      return '<tr' + (rep ? ' class="rep"' : '') + '><td>' + pos(4, i) + '</td><td>' + esc(slotLabel(a.levels, 4, i)) + '</td></tr>';
+    }).join('');
+    box.innerHTML =
+      '<h2>產出 ' + pair.sys + '系' + pair.g + '代</h2>' +
+      '<p class="pairline"><span class="tag s">' + esc(boxLabel(pair.sire)) + '</span>×<span class="tag m">' + esc(boxLabel(pair.dam)) + '</span></p>' +
+      '<dl class="stats"><dt>階段</dt><dd>' + esc(phaseText(pair)) + '</dd>' +
+      '<dt>活血</dt><dd>' + esc(act) + '</dd>' +
+      '<dt>4 代內重複</dt><dd>' + dup + '</dd></dl>' +
+      '<table class="anc"><thead><tr><th>3 代前</th><th>祖先</th><th>系</th></tr></thead><tbody>' + rows3 + '</tbody></table>' +
+      '<details' + (a.dups.length ? ' open' : '') + '><summary>4 代前 16 匹祖先</summary>' +
+      '<table class="anc"><thead><tr><th>位置</th><th>祖先</th></tr></thead><tbody>' + rows4 + '</tbody></table></details>';
+  }
+
+  // ---- 單一系巡迴 ----
+  function renderWalk() {
+    const box = $('walk');
+    if (focusSys == null) {
+      box.innerHTML = '<h2>各系巡迴</h2><p class="muted">點選上方的系號，看該系的種牡馬每一代配哪一系的母馬，以及該系牝駒每一代嫁到哪一系。</p>';
+      return;
+    }
+    const s = focusSys;
+    const pairs = allPairs();
+    const est = pairs.filter((p) => p.sys === s).sort((a, b) => a.g - b.g)[0];
+    const rows = [];
+    for (let g = est.g; g <= MAX_GEN; g++) {
+      const own = plan.cols[g].find((p) => p.sys === s);
+      const out = plan.cols[g].find((p) => p.dam.kind === 'own' && p.dam.line === s);
+      const left = own ? esc(boxLabel(own.sire)) + ' × ' + esc(boxLabel(own.dam)) : '—';
+      const right = out ? esc(boxLabel(out.dam)) + ' → 配 ' + esc(boxLabel(out.sire)) + '，產出 ' + out.sys + '系' + g + '代' : '—';
+      rows.push('<tr><td>' + g + ' 代</td><td>' + left + '</td><td>' + right + '</td></tr>');
+    }
+    box.innerHTML =
+      '<h2>第 ' + s + ' 系的巡迴</h2>' +
+      '<p style="margin:0 0 8px">產出 ' + est.g + ' 代時成立：' + esc(boxLabel(est.sire)) + ' × ' + esc(boxLabel(est.dam)) + '。</p>' +
+      '<table class="walk"><thead><tr><th>產出</th><th>本系種牡馬的配對</th><th>本系牝駒的去向</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+  }
+
+  // ---- 巡迴表 ----
+  function renderMatrix() {
+    const t = $('matrix');
+    let html = '<thead><tr><th class="row">產出</th>';
+    for (let s = 1; s <= 8; s++) html += '<th data-col="' + s + '">' + s + ' 系</th>';
+    html += '</tr></thead><tbody>';
+    for (let g = 1; g <= MAX_GEN; g++) {
+      const phase = g === 1 ? '起點' : g <= 4 ? '建系・距離 ' + distanceFor(g) : '循環・距離 ' + distanceFor(g);
+      html += '<tr><th class="row" scope="row">' + g + ' 代<small>' + phase + '</small></th>';
+      for (let s = 1; s <= 8; s++) {
+        const pair = plan.cols[g].find((p) => p.sys === s);
+        if (!pair) { html += '<td class="empty" data-col="' + s + '">—</td>'; continue; }
+        const st = statusOf(pair);
+        const mare = pair.dam.kind === 'own' ? '母 ' + pair.dam.line + '系' : '母 市場';
+        const z = pair.sire.kind === 'zero' ? '<span class="z">父 0代</span>' : '';
+        html += '<td data-col="' + s + '"><button type="button" class="cell ' + st + '" data-id="' + pair.id + '" aria-pressed="false" aria-label="產出 ' + s + '系' + g + '代，' + esc(mare) + '，' + esc(statusText(pair)) + '">' +
+          '<span class="m">' + mare + '</span>' + z + '<span class="st">' + esc(statusText(pair)) + '</span></button></td>';
+      }
+      html += '</tr>';
+    }
+    t.innerHTML = html + '</tbody>';
+  }
+
+  // ---- 檢查結果 ----
+  function renderFindings() {
+    const items = [{ cls: 'build', text: '產出 1～4 代為建系期，規格 10.1 不計算活血。' }];
+    let okRun = null;
+    const flush = () => {
+      if (!okRun) return;
+      const range = okRun[0] === okRun[1] ? okRun[0] + ' 代' : okRun[0] + '～' + okRun[1] + ' 代';
+      items.push({ cls: 'ok', text: '產出 ' + range + '：每系 8 種，4 代內無重複。' });
+      okRun = null;
+    };
+    for (let g = 5; g <= MAX_GEN; g++) {
+      const list = plan.cols[g].map((p) => ({ p, a: analyses.get(p.id) }));
+      if (list.every((x) => x.a.status === 'ok')) {
+        okRun = okRun ? [okRun[0], g] : [g, g];
+        continue;
+      }
+      flush();
+      const parts = [];
+      const bySt = (st) => list.filter((x) => x.a.status === st).map((x) => x.p.sys).sort((a, b) => a - b);
+      const minGroups = new Map();
+      list.filter((x) => x.a.status === 'min').forEach((x) => {
+        const key = '至少 ' + x.a.distinct + ' 種（成立），還缺第 ' + joinSys(x.a.missing) + ' 系';
+        if (!minGroups.has(key)) minGroups.set(key, []);
+        minGroups.get(key).push(x.p.sys);
+      });
+      minGroups.forEach((sys, key) => parts.push('第 ' + joinSys(sys) + ' 系' + key));
+      if (minGroups.size) parts.push('缺的系要看建系最後一層市場馬的母父');
+      const na = bySt('na');
+      if (na.length) parts.push('第 ' + joinSys(na) + ' 系資料不足（3 代前已知不到 6 種）');
+      const dupGroups = new Map();
+      list.filter((x) => x.a.status === 'dup').forEach((x) => {
+        const key = x.a.dups.map((d) => horseName(d.h) + ' ' + d.gens.join('×')).join('、') + (x.a.lineRepeat ? '；3 代前已知的系也有重複' : '');
+        if (!dupGroups.has(key)) dupGroups.set(key, []);
+        dupGroups.get(key).push(x.p.sys);
+      });
+      dupGroups.forEach((sys, key) => parts.push('第 ' + joinSys(sys.sort((a, b) => a - b)) + ' 系 4 代內重複：' + key));
+      const other = list.filter((x) => x.a.status === 'part' || x.a.status === 'fail');
+      other.forEach((x) => parts.push('第 ' + x.p.sys + ' 系只有 ' + x.a.distinct + ' 種'));
+      const ok = bySt('ok');
+      if (ok.length) parts.push('第 ' + joinSys(ok) + ' 系 8 種');
+      items.push({ cls: dupGroups.size ? 'dup' : na.length ? 'na' : 'min', text: '產出 ' + g + ' 代：' + parts.join('；') + '。' });
+    }
+    flush();
+    $('findings').innerHTML = items.map((i) => '<li class="' + i.cls + '">' + esc(i.text) + '</li>').join('');
+  }
+
+  function update() {
+    document.body.classList.toggle('comparing', schemeKey !== ADOPTED);
+    plan = buildPlan(schemeKey);
+    analyses.clear();
+    for (const p of allPairs()) analyses.set(p.id, analyze(p));
+    renderSchemeNote();
+    renderChart();
+    renderMatrix();
+    renderFindings();
+    document.querySelectorAll('#matrix .cell').forEach((c) => c.addEventListener('click', () => select(c.dataset.id)));
+    if (!selectedId) {
+      const firstDup = allPairs().find((p) => p.g >= 5 && analyses.get(p.id).status === 'dup');
+      selectedId = (firstDup || findPair('P6-1')).id;
+    }
+    select(selectedId);
+    applyFocus();
+    renderWalk();
+  }
+
+  renderSchemes();
+  renderChips();
+  update();
+})();
+</script>
+</body>
+</html>
