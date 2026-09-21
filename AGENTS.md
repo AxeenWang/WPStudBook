@@ -32,6 +32,7 @@ Requirements: `docs/specs/需求規格.md`. Technical design and rationale: `doc
 - Vite with `vite-plugin-singlefile`. IndexedDB through Dexie.
 - Tests: Vitest, `fake-indexeddb`, Vue Test Utils, Playwright (Edge and Chromium).
 - Node 24 and npm. Commit `package-lock.json`.
+- Keep TypeScript on 6.x: TypeScript 7 breaks `vue-tsc` 3 builds. Upgrade only after `vue-tsc` supports TypeScript 7.
 - Use built-in browser APIs for CP932 decoding, gzip, and SHA-256. Add a dependency only when the technical design allows it.
 
 ### Repository Layout

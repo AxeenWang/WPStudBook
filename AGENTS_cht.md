@@ -32,6 +32,7 @@ CodeLab-Governance: optional
 - Vite 搭配 `vite-plugin-singlefile`。IndexedDB 透過 Dexie 存取。
 - 測試：Vitest、`fake-indexeddb`、Vue Test Utils、Playwright（Edge 與 Chromium）。
 - Node 24 與 npm。`package-lock.json` 納入版控。
+- TypeScript 維持 6.x：TypeScript 7 會讓 `vue-tsc` 3 建置失敗。等 `vue-tsc` 支援 TypeScript 7 後才升級。
 - CP932 解碼、gzip、SHA-256 使用瀏覽器內建 API。只有技術設計允許時才加入相依套件。
 
 ### Repo 版面
