@@ -38,6 +38,40 @@ describe('模組邊界', () => {
     expect(ids).toContain('no-restricted-globals')
   })
 
+  it('core 不得引用 @vue 內部套件', async () => {
+    const ids = await ruleIds(
+      "import { ref } from '@vue/reactivity'\nexport const a = ref(1)\n",
+      'src/core/sample.ts',
+    )
+    expect(ids).toContain('no-restricted-imports')
+  })
+
+  it('core 的 .mts 檔也套用邊界規則', async () => {
+    const ids = await ruleIds(
+      "import { ref } from 'vue'\nexport const a = ref(1)\n",
+      'src/core/sample.mts',
+    )
+    expect(ids).toContain('no-restricted-imports')
+  })
+
+  it('core 不得引用 ce-import 與 ui', async () => {
+    for (const source of ['@/ce-import/parse', '../ui/App.vue']) {
+      const ids = await ruleIds(
+        `import { x } from '${source}'\nexport const a = x\n`,
+        'src/core/sample.ts',
+      )
+      expect(ids).toContain('no-restricted-imports')
+    }
+  })
+
+  it('storage 不得引用 @vue 內部套件', async () => {
+    const ids = await ruleIds(
+      "import { ref } from '@vue/runtime-core'\nexport const a = ref(1)\n",
+      'src/storage/sample.ts',
+    )
+    expect(ids).toContain('no-restricted-imports')
+  })
+
   it('ce-import 可以引用 core，但不得引用 storage', async () => {
     const allowed = await ruleIds(
       "import { x } from '@/core/model'\nexport const a = x\n",
