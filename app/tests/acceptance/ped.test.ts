@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { checkDesignatedBreeding } from '../../src/core/check'
 import { pairingOf } from '../support/eight-line'
-import { duplicateAncestors } from '../../src/core/pedigree'
+import { ancestorSlots, duplicateAncestors } from '../../src/core/pedigree'
 import { horseNode } from '../support/pedigree'
+import { systemTableOf } from '../support/systems'
 
 // 需求規格第 15 章「血統檢查（PED）」中由 core 負責的部分；活血與 4 代內重複由後續的血統推算計畫補上
 
@@ -62,5 +63,25 @@ describe('血統檢查（PED）', () => {
     expect(duplicateAncestors(within4)).toEqual([
       { horse: { id: 'S' }, generations: [2, 3], count: 2 },
     ])
+  })
+
+  it('PED-14 零代種牡馬是自己系統的始祖 → 父親依分出來源推定；沒記錄分出來源 → 未知', () => {
+    const founder = horseNode('Z', {
+      name: 'ノーザンダンサー',
+      sireSystem: 'ノーザンダンサー',
+      buildPhaseMarket: true,
+    })
+    const mating = { sire: horseNode('F', { sire: founder }), dam: null }
+    const withOrigin = systemTableOf([['ノーザンダンサー', 'ノーザンダンサー', 'ネアルコ']])
+    expect(ancestorSlots(mating, withOrigin)[0]).toMatchObject({
+      subsystem: 'ネアルコ',
+      inferred: true,
+      fromBuildPhaseMarket: true,
+    })
+    const withoutOrigin = systemTableOf([['ノーザンダンサー', 'ノーザンダンサー']])
+    expect(ancestorSlots(mating, withoutOrigin)[0]).toMatchObject({
+      subsystem: null,
+      inferred: false,
+    })
   })
 })

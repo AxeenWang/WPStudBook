@@ -1,3 +1,5 @@
+import { originOf, type SystemTable } from './systems'
+
 /** 血統中的一匹馬（規則輸入；由儲存層依馬匹紀錄彙整） */
 export interface PedigreeHorse {
   /** 內部識別；4 代內是否重複以此判斷（需求規格 6.1） */
@@ -66,4 +68,58 @@ export function duplicateAncestors(mating: Mating): DuplicateAncestor[] {
     }
   }
   return [...seen.values()].filter((entry) => entry.count > 1)
+}
+
+/** 3 代前祖先的位置數（需求規格 4.3：3 代前 8 匹祖先） */
+export const ANCESTOR_SLOTS = 8
+
+/** 3 代前 8 個位置之一的系統判斷（需求規格 10.2） */
+export interface AncestorSlot {
+  /** 位置 0～7；0 是父父父，7 是母母母 */
+  index: number
+  /** 這個位置的馬；沒有內部紀錄時為 null */
+  horse: PedigreeHorse | null
+  /** 這個位置的子系統；判斷不出來時為 null */
+  subsystem: string | null
+  /** 子系統是由子女的父系推定的，畫面標示「推定」（需求規格 10.2） */
+  inferred: boolean
+  /** 沒有內部紀錄，而且他的子女是建系期市場馬（需求規格 10.2 的例外） */
+  fromBuildPhaseMarket: boolean
+}
+
+/**
+ * 3 代前 8 匹祖先的子系統（需求規格 10.2）：
+ * 有內部紀錄的馬，系統就是他自己的父系；沒有紀錄的父親，用子女的父系推定；
+ * 沒有紀錄的母親一律未知（匯入檔沒有母父系統）。
+ */
+export function ancestorSlots(mating: Mating, table: SystemTable): AncestorSlot[] {
+  const children = ancestorsAt(mating, 2)
+  return ancestorsAt(mating, 3).map((node, index) => {
+    if (node) {
+      return {
+        index,
+        horse: node.horse,
+        subsystem: node.horse.sireSystem ?? null,
+        inferred: false,
+        fromBuildPhaseMarket: false,
+      }
+    }
+    const child = children[index >> 1] ?? null
+    const fromBuildPhaseMarket = child?.horse.buildPhaseMarket === true
+    const isSirePosition = index % 2 === 0
+    const subsystem = isSirePosition && child ? inferSireSubsystem(child.horse, table) : null
+    return { index, horse: null, subsystem, inferred: subsystem !== null, fromBuildPhaseMarket }
+  })
+}
+
+/**
+ * 沒有內部紀錄的父親：系統跟著父親走，所以用子女的父系推定。
+ * 子女的父系與子女自己同名時，子女是該系統的始祖，父親屬於分出來源（需求規格 7.2、10.2）；
+ * 沒有登錄分出來源時為未知，不以子女自己的系統推定。
+ */
+function inferSireSubsystem(child: PedigreeHorse, table: SystemTable): string | null {
+  const childSystem = child.sireSystem ?? null
+  if (childSystem === null) return null
+  if (child.name === childSystem) return originOf(table, childSystem)
+  return childSystem
 }
