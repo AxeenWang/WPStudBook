@@ -5,6 +5,8 @@ import { ancestorSlots, duplicateAncestors } from '../../src/core/pedigree'
 import { horseNode, matingWithGrandparents, type GrandparentSpec } from '../support/pedigree'
 import { systemTableOf, eightLineSystems, subsystemOfLine } from '../support/systems'
 import { checkPedigree, estimateVitality } from '../../src/core/vitality'
+import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
+import { buildEightLinePlan } from '../support/eight-line-plan'
 
 // 需求規格第 15 章「血統檢查（PED）」中由 core 負責的部分；活血與 4 代內重複由後續的血統推算計畫補上
 
@@ -169,5 +171,65 @@ describe('血統檢查（PED）', () => {
       unknownSlots: [3],
       missingLines: [6],
     })
+  })
+
+  it('PED-02 依 7.3 建系並兩兩互換循環 → 產出 6 代起每系 8 種、無 4 代內重複，不警告', () => {
+    const plan = buildEightLinePlan()
+    for (const line of LINE_POSITIONS) {
+      for (const generation of [6, 7, 8]) {
+        const check = checkPedigree(
+          generation,
+          plan.matingOf(line, generation),
+          plan.table,
+          plan.lines,
+        )
+        expect(check.estimate).toMatchObject({
+          count: 8,
+          status: 'exact',
+          established: true,
+          missingLines: [],
+          unknownSlots: [],
+        })
+        expect(check.duplicates).toEqual([])
+        expect(check.warnings).toEqual([])
+      }
+    }
+  })
+
+  it('PED-12 依 7.3 建系後產出 5 代 → 各系至少 6 種（成立），只剩 2 匹建系期市場馬的母父未知，4 代內沒有重複', () => {
+    const plan = buildEightLinePlan()
+    const missingByLine: Record<LinePosition, LinePosition[]> = {
+      1: [6, 8],
+      2: [6, 8],
+      5: [6, 8],
+      7: [6, 8],
+      3: [5, 7],
+      4: [5, 7],
+      6: [5, 7],
+      8: [5, 7],
+    }
+    for (const line of LINE_POSITIONS) {
+      const check = checkPedigree(5, plan.matingOf(line, 5), plan.table, plan.lines)
+      expect(check.estimate).toMatchObject({
+        count: 6,
+        status: 'at-least',
+        established: true,
+        missingLines: missingByLine[line],
+      })
+      expect(check.estimate?.unknownSlots).toHaveLength(2)
+      expect(check.duplicates).toEqual([])
+      expect(check.warnings).toEqual([{ kind: 'vitality-below-max', hintOnly: true }])
+    }
+  })
+
+  it('PED-03 循環期補入親系統與其他系重複的市場母馬 → 預估低於 8 種，警告並確認', () => {
+    // 替代第 6 系 3 代的市場母馬，自身父系屬於第 5 系
+    const plan = buildEightLinePlan({
+      substituteSubsystem: (line, generation) =>
+        line === 6 && generation === 3 ? subsystemOfLine(5) : undefined,
+    })
+    const check = checkPedigree(6, plan.matingOf(1, 6), plan.table, plan.lines)
+    expect(check.estimate).toMatchObject({ count: 7, status: 'exact', missingLines: [6] })
+    expect(check.warnings).toEqual([{ kind: 'vitality-below-max', hintOnly: false }])
   })
 })
