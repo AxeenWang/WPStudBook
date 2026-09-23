@@ -18,11 +18,11 @@ export function describePairing(pairing: DesignatedPairing): string {
   return `第 ${pairing.sire.line} 系 ${pairing.sire.generation} 代 × ${mares} → 第 ${pairing.output.line} 系 ${pairing.output.generation} 代`
 }
 
-/** 測試用的精簡寫法：代數 → 種牡馬狀態；代數 → [母馬群已成立, 列入任務的匹數] */
+/** 測試用的精簡寫法：代數 → 種牡馬狀態；代數 → [母馬群已成立, 列入任務的匹數, 其中自家母馬數（省略為 0）] */
 export interface LineSpec {
   opened?: boolean
   stallions?: Record<number, StallionState>
-  mares?: Record<number, readonly [established: boolean, activeMares: number]>
+  mares?: Record<number, readonly [established: boolean, activeMares: number, ownMares?: number]>
 }
 
 /** 建立規則輸入快照；沒寫到的系為未開啟、沒有馬 */
@@ -38,10 +38,11 @@ export function snapshotOf(specs: Partial<Record<LinePosition, LineSpec>>): Eigh
           state,
         })),
         mareGroups: Object.entries(spec.mares ?? {}).map(
-          ([generation, [established, activeMares]]) => ({
+          ([generation, [established, activeMares, ownMares = 0]]) => ({
             generation: Number(generation),
             established,
             activeMares,
+            ownMares,
           }),
         ),
       }

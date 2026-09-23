@@ -148,6 +148,7 @@ describe('八系管理（LINE）', () => {
         pairing: pairingOf(1, 6),
         sireStatus: 'ready',
         activeMares: 0,
+        ownMares: 0,
         needsMares: true,
         paused: false,
       },
@@ -166,6 +167,7 @@ describe('八系管理（LINE）', () => {
         pairing: pairingOf(1, 6),
         sireStatus: 'missing',
         activeMares: 3,
+        ownMares: 0,
         needsMares: false,
         paused: true,
       },
@@ -239,6 +241,23 @@ describe('八系管理（LINE）', () => {
   })
 
   it('LINE-35 建立新系的零代種牡馬例外配市場母馬 → 警告並確認，產駒仍是任務的產出代數；建系起點不需確認', () => {
+    // 第 1 系 2 代母馬群只有 1 匹替代母馬、沒有自家母馬：看板列出自家母馬數 0，由使用者判斷不足
+    const board = listBoard(
+      snapshotOf({
+        1: {
+          opened: true,
+          stallions: { 0: 'active', 1: 'active', 2: 'active' },
+          mares: { 2: [true, 1, 0] },
+        },
+        3: { opened: true, stallions: { 0: 'active' } },
+      }),
+    )
+    expect(board.tasks.find((task) => task.pairing.kind === 'found')).toMatchObject({
+      pairing: pairingOf(3, 3),
+      activeMares: 1,
+      ownMares: 0,
+    })
+
     const substitute = { kind: 'substitute', forLine: 1, forGeneration: 2 } as const
     expect(
       checkDesignatedBreeding(pairingOf(3, 3), { line: 3, generation: 0 }, substitute),
