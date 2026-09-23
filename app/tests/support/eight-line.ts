@@ -1,11 +1,22 @@
-import type { EightLineSnapshot, StallionState } from '../../src/core/board'
-import { designatedPairing, type DesignatedPairing } from '../../src/core/designated'
+import type { EightLineSnapshot, RestorationSlot, StallionState } from '../../src/core/board'
+import {
+  designatedPairing,
+  restorationPairing,
+  type DesignatedPairing,
+} from '../../src/core/designated'
 import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
 
 /** 取得規則指定的配對；該系在這一代還沒成立時丟出錯誤 */
 export function pairingOf(line: LinePosition, outputGeneration: number): DesignatedPairing {
   const pairing = designatedPairing(line, outputGeneration)
   if (!pairing) throw new Error(`第 ${line} 系在 ${outputGeneration} 代還沒成立`)
+  return pairing
+}
+
+/** 取得補公系配對；該系在斷血的那一代還沒成立時丟出錯誤 */
+export function restorationOf(line: LinePosition, brokenGeneration: number): DesignatedPairing {
+  const pairing = restorationPairing(line, brokenGeneration)
+  if (!pairing) throw new Error(`第 ${line} 系在 ${brokenGeneration} 代還沒成立`)
   return pairing
 }
 
@@ -18,11 +29,15 @@ export function describePairing(pairing: DesignatedPairing): string {
   return `第 ${pairing.sire.line} 系 ${pairing.sire.generation} 代 × ${mares} → 第 ${pairing.output.line} 系 ${pairing.output.generation} 代`
 }
 
-/** 測試用的精簡寫法：代數 → 種牡馬狀態；代數 → [母馬群已成立, 列入任務的匹數, 其中自家母馬數（省略為 0）] */
+/**
+ * 測試用的精簡寫法：代數 → 種牡馬狀態；代數 → [母馬群已成立, 列入任務的匹數, 其中自家母馬數（省略為 0）]；
+ * 已宣告的補系照快照原樣寫
+ */
 export interface LineSpec {
   opened?: boolean
   stallions?: Record<number, StallionState>
   mares?: Record<number, readonly [established: boolean, activeMares: number, ownMares?: number]>
+  restorations?: RestorationSlot[]
 }
 
 /** 建立規則輸入快照；沒寫到的系為未開啟、沒有馬 */
@@ -45,6 +60,7 @@ export function snapshotOf(specs: Partial<Record<LinePosition, LineSpec>>): Eigh
             ownMares,
           }),
         ),
+        restorations: spec.restorations ?? [],
       }
     }),
   }

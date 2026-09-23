@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { describePairing, pairingOf, snapshotOf } from '../../tests/support/eight-line'
+import {
+  describePairing,
+  pairingOf,
+  restorationOf,
+  snapshotOf,
+} from '../../tests/support/eight-line'
 import { listBoard, type Board } from './board'
 import { branchOf } from './lines'
 
-const described = (board: Board): string[] =>
-  board.tasks.map((task) => describePairing(task.pairing))
+const described = (board: Board, generation?: number): string[] =>
+  board.tasks
+    .filter((task) => generation === undefined || task.pairing.output.generation === generation)
+    .map((task) => describePairing(task.pairing))
 
 describe('listBoard', () => {
   it('新遊戲局只有建系起點可開啟，沒有任務', () => {
@@ -130,6 +137,157 @@ describe('listBoard', () => {
   it('母馬群的自家母馬數多於列入任務的母馬數時丟出錯誤', () => {
     expect(() =>
       listBoard(snapshotOf({ 1: { opened: true, mares: { 1: [true, 1, 2] } } })),
+    ).toThrow(RangeError)
+  })
+})
+
+describe('listBoard：斷血補系', () => {
+  it('宣告補公系後，產出的那一代改列補公系任務，種牡馬狀態看補入的零代市場種牡馬', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: { opened: true, stallions: { 12: 'active' }, mares: { 12: [true, 3, 3] } },
+        5: {
+          opened: true,
+          stallions: { 11: 'ended' },
+          mares: { 12: [true, 2, 2] },
+          restorations: [{ side: 'sire', generation: 12, stallion: 'active' }],
+        },
+      }),
+    )
+    expect(described(board, 13)).toEqual([
+      '第 1 系 12 代 × 第 5 系 12 代母馬群 → 第 1 系 13 代',
+      '第 5 系 0 代 × 第 1 系 12 代母馬群 → 第 5 系 13 代',
+    ])
+    expect(board.tasks.find((task) => task.pairing.kind === 'restore')).toEqual({
+      pairing: restorationOf(5, 12),
+      sireStatus: 'ready',
+      activeMares: 3,
+      ownMares: 3,
+      needsMares: false,
+      paused: false,
+    })
+  })
+
+  it('補公系還沒選定零代種牡馬時為未指定；補入的種牡馬離場時任務暫停', () => {
+    const taskOf = (stallion?: 'ended') =>
+      listBoard(
+        snapshotOf({
+          5: {
+            opened: true,
+            restorations: [
+              stallion
+                ? { side: 'sire', generation: 12, stallion }
+                : { side: 'sire', generation: 12 },
+            ],
+          },
+        }),
+      ).tasks.find((task) => task.pairing.kind === 'restore')
+    expect(taskOf()).toMatchObject({ sireStatus: 'unassigned', paused: false })
+    expect(taskOf('ended')).toMatchObject({ sireStatus: 'missing', paused: true })
+  })
+
+  it('補公系任務也照世代交接結束：下一代任務出現後，補入的種牡馬離場就結束', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: { opened: true, mares: { 12: [true, 2] } },
+        5: {
+          opened: true,
+          stallions: { 13: 'active' },
+          restorations: [{ side: 'sire', generation: 12, stallion: 'ended' }],
+        },
+        7: { opened: true, mares: { 13: [true, 2] } },
+      }),
+    )
+    expect(described(board, 13)).toEqual([])
+    expect(described(board, 14)).toEqual(['第 5 系 13 代 × 第 7 系 13 代母馬群 → 第 5 系 14 代'])
+  })
+
+  it('補母系：母馬群從未成立，宣告後配它的任務照常出現', () => {
+    const specs = {
+      1: { opened: true, stallions: { 12: 'active' as const } },
+      5: { opened: true, mares: { 12: [false, 0] as const } },
+    }
+    expect(described(listBoard(snapshotOf(specs)), 13)).toEqual([])
+    const board = listBoard(
+      snapshotOf({ ...specs, 5: { ...specs[5], restorations: [{ side: 'dam', generation: 12 }] } }),
+    )
+    expect(described(board, 13)).toEqual(['第 1 系 12 代 × 第 5 系 12 代母馬群 → 第 1 系 13 代'])
+    expect(board.tasks.find((task) => task.pairing.output.generation === 13)).toMatchObject({
+      activeMares: 0,
+      needsMares: false,
+      paused: false,
+    })
+  })
+
+  it('列出補系的狀態：補系任務與是否進行中', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: { opened: true, stallions: { 12: 'active' }, mares: { 13: [true, 1] } },
+        5: {
+          opened: true,
+          restorations: [
+            { side: 'dam', generation: 12 },
+            { side: 'sire', generation: 12 },
+          ],
+        },
+      }),
+    )
+    expect(board.restorations).toEqual([
+      {
+        line: 5,
+        generation: 12,
+        side: 'sire',
+        pairing: restorationOf(5, 12),
+        inProgress: true,
+      },
+      {
+        line: 5,
+        generation: 12,
+        side: 'dam',
+        pairing: pairingOf(1, 13),
+        inProgress: false,
+      },
+    ])
+  })
+
+  it('補公系結束後解除暫停，分支的推進原系配對仍是補公系配對', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: {
+          opened: true,
+          stallions: { 0: 'active', 1: 'active', 2: 'ended', 3: 'waiting' },
+          restorations: [{ side: 'sire', generation: 2, stallion: 'active' }],
+        },
+        2: { opened: true, stallions: { 0: 'active' } },
+      }),
+    )
+    expect(board.openableBranches).toContainEqual({
+      branch: branchOf(3),
+      pairings: [restorationOf(1, 2), pairingOf(3, 3)],
+    })
+  })
+
+  it('補系的代數早於該系成立的代數、該系還沒開啟，或同一代同一方重複時丟出錯誤', () => {
+    expect(() =>
+      listBoard(
+        snapshotOf({ 6: { opened: true, restorations: [{ side: 'sire', generation: 3 }] } }),
+      ),
+    ).toThrow(RangeError)
+    expect(() =>
+      listBoard(snapshotOf({ 5: { restorations: [{ side: 'dam', generation: 12 }] } })),
+    ).toThrow(RangeError)
+    expect(() =>
+      listBoard(
+        snapshotOf({
+          5: {
+            opened: true,
+            restorations: [
+              { side: 'dam', generation: 12 },
+              { side: 'dam', generation: 12 },
+            ],
+          },
+        }),
+      ),
     ).toThrow(RangeError)
   })
 })

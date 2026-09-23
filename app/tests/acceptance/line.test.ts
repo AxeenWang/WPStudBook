@@ -19,7 +19,13 @@ import {
 } from '../../src/core/stallions'
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
-import { describePairing, pairingOf, snapshotOf, type LineSpec } from '../support/eight-line'
+import {
+  describePairing,
+  pairingOf,
+  restorationOf,
+  snapshotOf,
+  type LineSpec,
+} from '../support/eight-line'
 import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
 // 需求規格第 15 章「八系管理（LINE）」中由 core 負責的部分；畫面、匯入與儲存的部分由後續計畫補上
@@ -292,6 +298,126 @@ describe('八系管理（LINE）', () => {
       checkDesignatedBreeding(pairingOf(1, 1), { line: 1, generation: 0 }, { kind: 'start' })
         .warnings,
     ).toEqual([])
+  })
+
+  it('LINE-20 第 5 系 12 代斷血並市場補系 → 補入親馬為零代，後代記為第 5 系 13 代，其餘七系不變', () => {
+    expect(describePairing(restorationOf(5, 12))).toBe(
+      '第 5 系 0 代 × 第 1 系 12 代母馬群 → 第 5 系 13 代',
+    )
+    const zero = { line: 5, generation: 0 } as const
+    const lineFiveThirteen = { line: 5, generation: 13 }
+    expect(foalPlacement(zero, { kind: 'own', line: 1, generation: 12 })).toEqual(lineFiveThirteen)
+    expect(foalPlacement(zero, { kind: 'substitute', forLine: 1, forGeneration: 12 })).toEqual(
+      lineFiveThirteen,
+    )
+
+    // 八系都到 12 代，第 5 系 12 代種牡馬離場、沒有後任
+    const broken: Partial<Record<LinePosition, LineSpec>> = {}
+    for (const line of LINE_POSITIONS) {
+      broken[line] = {
+        opened: true,
+        stallions: { 12: line === 5 ? 'ended' : 'active' },
+        mares: { 12: [true, 3, 3] },
+      }
+    }
+    const before = listBoard(snapshotOf(broken))
+    const after = listBoard(
+      snapshotOf({
+        ...broken,
+        5: { ...broken[5], restorations: [{ side: 'sire', generation: 12, stallion: 'active' }] },
+      }),
+    )
+    const lineFive = (board: Board) =>
+      board.tasks.find(
+        (task) => task.pairing.output.line === 5 && task.pairing.output.generation === 13,
+      )
+    expect(lineFive(before)).toMatchObject({ sireStatus: 'missing', paused: true })
+    expect(lineFive(after)).toMatchObject({
+      pairing: restorationOf(5, 12),
+      sireStatus: 'ready',
+      paused: false,
+    })
+    const otherLines = (board: Board) =>
+      board.tasks.filter((task) => task.pairing.output.line !== 5)
+    expect(otherLines(after)).toEqual(otherLines(before))
+  })
+
+  it('LINE-21 補公系進行中 → 斷血的那一系不開新分支，產出的那一代只列補公系任務；其餘七系照常', () => {
+    // 建系期：第 1 系 2 代種牡馬離場並宣告補公系；第 2 系已到 2 代
+    const board = listBoard(
+      snapshotOf({
+        1: {
+          opened: true,
+          stallions: { 0: 'active', 1: 'active', 2: 'ended' },
+          mares: { 0: [false, 1], 1: [true, 1], 2: [true, 2] },
+          restorations: [{ side: 'sire', generation: 2, stallion: 'active' }],
+        },
+        2: { opened: true, stallions: { 0: 'active' }, mares: { 1: [false, 1], 2: [true, 2] } },
+      }),
+    )
+    // 第 1 系分出第 3 系的分支不能開啟；第 2 系分出第 4 系的分支照常
+    expect(board.openableBranches.map((openable) => openable.branch.newLine)).toEqual([4])
+    expect(described(board, 3)).toEqual([
+      '第 1 系 0 代 × 第 3 系 2 代母馬群 → 第 1 系 3 代',
+      '第 2 系 2 代 × 第 4 系 2 代母馬群 → 第 2 系 3 代',
+    ])
+
+    // 循環期：重試後來得到第 5 系 12 代種牡馬，13 代仍只列補公系任務
+    const cycling = listBoard(
+      snapshotOf({
+        1: { opened: true, mares: { 12: [true, 2] } },
+        5: {
+          opened: true,
+          stallions: { 12: 'waiting' },
+          restorations: [{ side: 'sire', generation: 12, stallion: 'active' }],
+        },
+      }),
+    )
+    expect(described(cycling, 13)).toEqual(['第 5 系 0 代 × 第 1 系 12 代母馬群 → 第 5 系 13 代'])
+  })
+
+  it('LINE-40 補系產駒接上後繼 → 補系結束並解除暫停；補公系看產出那一代的種牡馬紀錄，補母系看補系任務產出那一代的母馬群', () => {
+    const building: Partial<Record<LinePosition, LineSpec>> = {
+      1: {
+        opened: true,
+        stallions: { 0: 'active', 1: 'active', 2: 'ended' },
+        mares: { 0: [false, 1], 1: [true, 1], 2: [true, 2] },
+        restorations: [{ side: 'sire', generation: 2, stallion: 'active' }],
+      },
+      2: { opened: true, stallions: { 0: 'active' }, mares: { 1: [false, 1] } },
+    }
+    const restoring = listBoard(snapshotOf(building))
+    expect(restoring.restorations).toMatchObject([
+      { line: 1, generation: 2, side: 'sire', inProgress: true },
+    ])
+    expect(restoring.openableBranches).toEqual([])
+    // 補公系產駒指定為第 1 系 3 代的預定後繼 → 補系結束，第 1 系的分支可以開啟
+    const done = listBoard(
+      snapshotOf({
+        ...building,
+        1: { ...building[1], stallions: { 0: 'active', 1: 'active', 2: 'ended', 3: 'waiting' } },
+      }),
+    )
+    expect(done.restorations).toMatchObject([{ inProgress: false }])
+    expect(done.openableBranches.map((openable) => openable.branch.newLine)).toEqual([3, 5])
+
+    // 補母系：第 5 系 12 代母馬群從未成立，補系任務是第 1 系 12 代 × 第 5 系 12 代母馬群
+    const damSide: Partial<Record<LinePosition, LineSpec>> = {
+      1: { opened: true, stallions: { 12: 'active' } },
+      5: {
+        opened: true,
+        mares: { 12: [false, 2] },
+        restorations: [{ side: 'dam', generation: 12 }],
+      },
+    }
+    expect(listBoard(snapshotOf(damSide)).restorations).toMatchObject([
+      { line: 5, generation: 12, side: 'dam', pairing: pairingOf(1, 13), inProgress: true },
+    ])
+    const filly: Partial<Record<LinePosition, LineSpec>> = {
+      ...damSide,
+      1: { ...damSide[1], mares: { 13: [true, 1] } },
+    }
+    expect(listBoard(snapshotOf(filly)).restorations).toMatchObject([{ inProgress: false }])
   })
 
   it('LINE-03 新系親系統與既有系重複 → 警告並確認，確認後可建立', () => {
