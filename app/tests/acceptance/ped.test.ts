@@ -7,8 +7,13 @@ import { systemTableOf, eightLineSystems, subsystemOfLine } from '../support/sys
 import { checkPedigree, estimateVitality } from '../../src/core/vitality'
 import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
 import { buildEightLinePlan } from '../support/eight-line-plan'
+import {
+  verifySuccessor,
+  type DesignatedOrigin,
+  type SuccessorCandidate,
+} from '../../src/core/successor'
 
-// 需求規格第 15 章「血統檢查（PED）」中由 core 負責的部分；血緣表（10.4，PED-09、10）與後繼核對（9.6，PED-08）由後續計畫補上
+// 需求規格第 15 章「血統檢查（PED）」中由 core 負責的部分；血緣表（10.4，PED-09、10）由後續計畫補上
 
 describe('血統檢查（PED）', () => {
   // 第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代
@@ -46,6 +51,41 @@ describe('血統檢查（PED）', () => {
         { kind: 'own', line: 3, generation: 4 },
       ).blocks,
     ).toEqual([{ side: 'dam', expected: { line: 3, generation: 5 }, mismatches: ['generation'] }])
+  })
+
+  it('PED-08 產駒選為正式後繼前 → 再次核對父母、系與代數，不符時阻止', () => {
+    // 第 1 系 5 代現任 S5 × 第 3 系 5 代母馬 D35 所生的第 1 系 6 代
+    const origin: DesignatedOrigin = {
+      kind: 'designated',
+      breedingSireId: 'S5',
+      breedingDamId: 'D35',
+      sire: { line: 1, generation: 5 },
+      dam: { kind: 'own', line: 3, generation: 5 },
+      recorded: { line: 1, generation: 6 },
+    }
+    const foal: SuccessorCandidate = { sireId: 'S5', damId: 'D35', origin }
+    const lineOneSix = { line: 1, generation: 6 } as const
+    expect(verifySuccessor(foal, lineOneSix)).toEqual([])
+    // 父母與配種紀錄不符
+    expect(verifySuccessor({ ...foal, damId: 'D36' }, lineOneSix)).toEqual([
+      { mismatch: 'parents' },
+    ])
+    // 母馬不是規則指定的系：第 1 系 6 代應配第 3 系 5 代母馬，配到的是第 4 系 5 代母馬
+    const wrongLine: SuccessorCandidate = {
+      sireId: 'S5',
+      damId: 'D45',
+      origin: { ...origin, breedingDamId: 'D45', dam: { kind: 'own', line: 4, generation: 5 } },
+    }
+    expect(verifySuccessor(wrongLine, lineOneSix)).toEqual([
+      {
+        mismatch: 'pairing',
+        blocks: [{ side: 'dam', expected: { line: 3, generation: 5 }, mismatches: ['line'] }],
+      },
+    ])
+    // 要接任的代數與出生紀錄不符
+    expect(verifySuccessor(foal, { line: 1, generation: 7 })).toEqual([
+      { mismatch: 'target', expected: lineOneSix },
+    ])
   })
 
   it('PED-15 只在第 5 代重複不算 4 代內重複；出現在父母到高祖父母之間兩次以上 → 列為重複', () => {

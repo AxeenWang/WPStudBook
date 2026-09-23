@@ -15,6 +15,16 @@ export const LINE_POSITIONS: readonly LinePosition[] = [1, 2, 3, 4, 5, 6, 7, 8]
 /** 建系期的最後一代：產出 1～4 代是建系期，5 代起是循環期（需求規格第 3 章、7.3、7.4） */
 export const BUILD_PHASE_LAST_GENERATION = 4
 
+/**
+ * 檢查代數是 min 以上的整數：市場馬為零代，產出代數與自家馬從 1 代起。
+ * 不符時丟出 RangeError；代數由程式內部傳入，錯誤屬於預期外的失敗（技術設計第 5 章）。
+ */
+export function assertGeneration(generation: number, label: string, min: 0 | 1): void {
+  if (!Number.isInteger(generation) || generation < min) {
+    throw new RangeError(`${label}必須是 ${min} 以上的整數：${generation}`)
+  }
+}
+
 const DISTANCE_CYCLE: readonly PairingDistance[] = [1, 2, 4]
 
 /**
@@ -22,9 +32,7 @@ const DISTANCE_CYCLE: readonly PairingDistance[] = [1, 2, 4]
  * 1 代是建系起點，沒有距離；2、3、4 代為 1、2、4；5 代起 1、2、4 輪替。
  */
 export function pairingDistance(outputGeneration: number): PairingDistance | null {
-  if (!Number.isInteger(outputGeneration) || outputGeneration < 1) {
-    throw new RangeError(`產出代數必須是 1 以上的整數：${outputGeneration}`)
-  }
+  assertGeneration(outputGeneration, '產出代數', 1)
   if (outputGeneration === 1) return null
   return DISTANCE_CYCLE[(outputGeneration - 2) % DISTANCE_CYCLE.length]
 }

@@ -9,6 +9,14 @@ import {
   partnerLine,
   type LinePosition,
 } from '../../src/core/lines'
+import { entrySisterStatus, establishesGeneration } from '../../src/core/sisters'
+import {
+  DEFAULT_STALLION_REMINDER_AGE,
+  checkBrothers,
+  chooseIncumbent,
+  needsSuccessorReminder,
+  type StallionRecord,
+} from '../../src/core/stallions'
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
 import { describePairing, pairingOf, snapshotOf, type LineSpec } from '../support/eight-line'
@@ -136,6 +144,20 @@ describe('八系管理（LINE）', () => {
     expect([5, 6, 7, 8, 9, 10].map(pairsAt)).toEqual([g5, g6, g7, g5, g6, g7])
   })
 
+  it('LINE-17 某代第一匹自家母駒以暫定保留轉入 → 該代立即成立，不必 5 匹或種牡馬就緒', () => {
+    const status = entrySisterStatus({ id: 'F1', sireId: 'S', damId: 'D' }, [])
+    expect(status).toBe('provisional')
+    expect(establishesGeneration(status)).toBe(true)
+    // 第 3 系 5 代只有這 1 匹，也還沒有第 3 系 5 代種牡馬：母馬群已成立，配第 3 系 5 代母馬的任務照常出現
+    const board = listBoard(
+      snapshotOf({
+        1: { opened: true, stallions: { 5: 'active' } },
+        3: { opened: true, mares: { 5: [true, 1, 1] } },
+      }),
+    )
+    expect(described(board, 6)).toEqual(['第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代'])
+  })
+
   it('LINE-18 已成立世代母馬降為 0／5 → 顯示母馬群待補，任務不自動斷血', () => {
     const board = listBoard(
       snapshotOf({
@@ -148,6 +170,7 @@ describe('八系管理（LINE）', () => {
         pairing: pairingOf(1, 6),
         sireStatus: 'ready',
         activeMares: 0,
+        ownMares: 0,
         needsMares: true,
         paused: false,
       },
@@ -166,6 +189,7 @@ describe('八系管理（LINE）', () => {
         pairing: pairingOf(1, 6),
         sireStatus: 'missing',
         activeMares: 3,
+        ownMares: 0,
         needsMares: false,
         paused: true,
       },
@@ -239,6 +263,23 @@ describe('八系管理（LINE）', () => {
   })
 
   it('LINE-35 建立新系的零代種牡馬例外配市場母馬 → 警告並確認，產駒仍是任務的產出代數；建系起點不需確認', () => {
+    // 第 1 系 2 代母馬群只有 1 匹替代母馬、沒有自家母馬：看板列出自家母馬數 0，由使用者判斷不足
+    const board = listBoard(
+      snapshotOf({
+        1: {
+          opened: true,
+          stallions: { 0: 'active', 1: 'active', 2: 'active' },
+          mares: { 2: [true, 1, 0] },
+        },
+        3: { opened: true, stallions: { 0: 'active' } },
+      }),
+    )
+    expect(board.tasks.find((task) => task.pairing.kind === 'found')).toMatchObject({
+      pairing: pairingOf(3, 3),
+      activeMares: 1,
+      ownMares: 0,
+    })
+
     const substitute = { kind: 'substitute', forLine: 1, forGeneration: 2 } as const
     expect(
       checkDesignatedBreeding(pairingOf(3, 3), { line: 3, generation: 0 }, substitute),
@@ -316,5 +357,53 @@ describe('八系管理（LINE）', () => {
       { kind: 'substitute', parentSystem: '外來親', lines: [5] },
     ])
     expect(checkSubstituteMare(secondSameLine, table, lines, [first]).conflicts).toEqual([])
+  })
+
+  describe('種牡馬（7.7）', () => {
+    /** 第 1 系 3 代、父馬是第 1 系 2 代現任 S2 的種牡馬 */
+    const son = (id: string, status?: StallionRecord['status']): StallionRecord => ({
+      id,
+      placement: { line: 1, generation: 3 },
+      sireId: 'S2',
+      status,
+    })
+
+    it('LINE-22 同父異母弟弟取代哥哥擔任現任 → 允許，只有弟弟在崗，哥哥紀錄保留為已被取代', () => {
+      // 兄弟比較只看同系同代同父，不看母馬
+      const elder = son('elder', 'active')
+      const younger = son('younger')
+      expect(checkBrothers(elder, [younger])).toEqual([])
+      expect(chooseIncumbent('younger', [elder, younger])).toEqual([
+        { id: 'younger', to: 'active' },
+        { id: 'elder', from: 'active', to: 'replaced' },
+      ])
+    })
+
+    it('LINE-26 現任達提醒年齡（預設 26 歲）→ 提醒準備後繼', () => {
+      expect(needsSuccessorReminder(25, DEFAULT_STALLION_REMINDER_AGE)).toBe(false)
+      expect(needsSuccessorReminder(26, DEFAULT_STALLION_REMINDER_AGE)).toBe(true)
+    })
+
+    it('LINE-30 第 1 系 3 代兩匹同父兄弟都成為種牡馬 → 並排比較；選定者為現任，另一匹標示已被取代', () => {
+      const brothers = [son('A', 'active'), son('B')]
+      expect(checkBrothers(brothers[0], [brothers[1]])).toEqual([])
+      expect(chooseIncumbent('B', brothers)).toEqual([
+        { id: 'B', to: 'active' },
+        { id: 'A', from: 'active', to: 'replaced' },
+      ])
+    })
+
+    it('LINE-31 兄弟比較中選入不同系或不同代的種牡馬 → 阻止', () => {
+      const otherLine = { id: 'C', placement: { line: 2 as const, generation: 3 }, sireId: 'X' }
+      const otherGeneration = {
+        id: 'D',
+        placement: { line: 1 as const, generation: 4 },
+        sireId: 'A',
+      }
+      expect(checkBrothers(son('A', 'active'), [otherLine, otherGeneration])).toEqual([
+        { id: 'C', mismatches: ['line', 'sire'] },
+        { id: 'D', mismatches: ['generation', 'sire'] },
+      ])
+    })
   })
 })

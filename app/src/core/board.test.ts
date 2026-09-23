@@ -23,6 +23,7 @@ describe('listBoard', () => {
         pairing: pairingOf(1, 1),
         sireStatus: 'ready',
         activeMares: 3,
+        ownMares: 0,
         needsMares: false,
         paused: false,
       },
@@ -73,6 +74,27 @@ describe('listBoard', () => {
     expect(board.tasks[2]).toMatchObject({ sireStatus: 'ready', activeMares: 2 })
   })
 
+  it('任務列出母馬群的自家母馬數，建立新系的任務以此判斷自家母馬是否不足', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: {
+          opened: true,
+          stallions: { 0: 'active', 1: 'active' },
+          mares: { 0: [false, 2], 1: [true, 3, 1] },
+        },
+        2: { opened: true, stallions: { 0: 'active' }, mares: { 1: [false, 2] } },
+      }),
+    )
+    expect(board.tasks.find((task) => task.pairing.kind === 'found')).toMatchObject({
+      activeMares: 3,
+      ownMares: 1,
+    })
+    expect(board.tasks.find((task) => task.pairing.kind === 'advance')).toMatchObject({
+      activeMares: 2,
+      ownMares: 0,
+    })
+  })
+
   it('下一代任務出現後，起點母馬全部離圈就結束起點任務', () => {
     const board = listBoard(
       snapshotOf({
@@ -103,5 +125,11 @@ describe('listBoard', () => {
     const { lines } = snapshotOf({})
     expect(() => listBoard({ lines: lines.slice(1) })).toThrow(RangeError)
     expect(() => listBoard({ lines: [...lines, lines[0]] })).toThrow(RangeError)
+  })
+
+  it('母馬群的自家母馬數多於列入任務的母馬數時丟出錯誤', () => {
+    expect(() =>
+      listBoard(snapshotOf({ 1: { opened: true, mares: { 1: [true, 1, 2] } } })),
+    ).toThrow(RangeError)
   })
 })

@@ -1,5 +1,10 @@
 import type { LinePosition } from './lines'
-import { parentSystemOf, type LineSystemSnapshot, type SystemTable } from './systems'
+import {
+  findParentSystemConflict,
+  parentSystemOf,
+  type LineSystemSnapshot,
+  type SystemTable,
+} from './systems'
 
 /** 替代第 forLine 系第 forGeneration 代的市場母馬（需求規格 8.3） */
 export interface SubstituteMare {
@@ -41,13 +46,9 @@ export function checkSubstituteMare(
   if (parentSystem === null) return { unknown: true, conflicts: [] }
 
   const conflicts: SubstituteConflict[] = []
-  const conflictingLines = lines
-    .filter((entry) => entry.line !== mare.forLine && entry.parentSystem === parentSystem)
-    .map((entry) => entry.line)
-    .sort((a, b) => a - b)
-  if (conflictingLines.length > 0) {
-    conflicts.push({ kind: 'line', parentSystem, lines: conflictingLines })
-  }
+  // 與第 q 系以外的已成立系相同：和建立新系時的親系統檢查是同一條規則（需求規格 7.2、8.3）
+  const lineConflict = findParentSystemConflict(lines, mare.forLine, parentSystem)
+  if (lineConflict) conflicts.push({ kind: 'line', ...lineConflict })
 
   const conflictingMares = others
     .filter(

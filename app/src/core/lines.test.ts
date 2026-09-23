@@ -3,6 +3,7 @@ import {
   BRANCHES,
   LINE_POSITIONS,
   PAIRING_TABLE,
+  assertGeneration,
   branchOf,
   pairingDistance,
   partnerLine,
@@ -10,6 +11,20 @@ import {
 } from './lines'
 
 const DISTANCES: PairingDistance[] = [1, 2, 4]
+
+describe('assertGeneration', () => {
+  it('min 以上的整數通過', () => {
+    expect(() => assertGeneration(0, '種牡馬代數', 0)).not.toThrow()
+    expect(() => assertGeneration(12, '母馬代數', 1)).not.toThrow()
+  })
+
+  it('小於 min、非整數或 NaN 時丟出 RangeError，訊息帶名稱與值', () => {
+    expect(() => assertGeneration(0, '母馬代數', 1)).toThrow('母馬代數必須是 1 以上的整數：0')
+    expect(() => assertGeneration(-1, '種牡馬代數', 0)).toThrow(RangeError)
+    expect(() => assertGeneration(1.5, '種牡馬代數', 0)).toThrow(RangeError)
+    expect(() => assertGeneration(Number.NaN, '種牡馬代數', 0)).toThrow(RangeError)
+  })
+})
 
 describe('pairingDistance', () => {
   it('1 代是建系起點，沒有距離', () => {

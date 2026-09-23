@@ -26,6 +26,8 @@ export interface MareGroupSlot {
   established: boolean
   /** 列入任務的母馬數：生產中的自家母馬（暫定保留、候選、正式保留）與替代母馬 */
   activeMares: number
+  /** 其中的自家母馬數；零代市場種牡馬原則只配自家母馬，不足時才例外補入替代母馬（需求規格 7.3） */
+  ownMares: number
 }
 
 export interface LineSnapshot {
@@ -56,6 +58,8 @@ export interface BoardTask {
   sireStatus: SireStatus
   /** 指定母馬群列入任務的匹數 */
   activeMares: number
+  /** 其中的自家母馬數：建立新系的任務以此判斷自家母馬是否不足，由使用者決定是否例外補入（需求規格 7.3） */
+  ownMares: number
   /** 母馬群已成立但沒有列入任務的母馬：顯示「已成立，母馬群待補」（需求規格 7.6） */
   needsMares: boolean
   /** 缺少現任種牡馬（零代時為缺少目標種牡馬），任務暫停（需求規格 7.7） */
@@ -119,6 +123,16 @@ function createLookup(snapshot: EightLineSnapshot): Lookup {
   }
   // 八個系位置都要有
   for (const line of LINE_POSITIONS) lineOf(line)
+
+  for (const entry of snapshot.lines) {
+    for (const slot of entry.mareGroups) {
+      if (slot.ownMares > slot.activeMares) {
+        throw new RangeError(
+          `快照的第 ${entry.line} 系 ${slot.generation} 代母馬群，自家母馬數多於列入任務的母馬數`,
+        )
+      }
+    }
+  }
 
   const stallion = (line: LinePosition, generation: number) =>
     lineOf(line).stallions.find((slot) => slot.generation === generation)?.state
@@ -192,6 +206,7 @@ function toTask(pairing: DesignatedPairing, lookup: Lookup): BoardTask {
     pairing,
     sireStatus,
     activeMares,
+    ownMares: group?.ownMares ?? 0,
     needsMares: group?.established === true && activeMares === 0,
     paused: sireStatus === 'missing',
   }

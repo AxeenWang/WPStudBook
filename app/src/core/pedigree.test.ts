@@ -50,6 +50,21 @@ describe('duplicateAncestors', () => {
     expect(duplicateAncestors(mating)).toEqual([{ horse: { id: 'S' }, generations: [2], count: 2 }])
   })
 
+  it('一邊在第 4 代、另一邊在第 5 代（4×5）不算重複', () => {
+    const shared = horseNode('S')
+    const mating = {
+      // 父方：父、祖父、曾祖父，S 是高祖父（第 4 代）
+      sire: horseNode('F', { sire: horseNode('FF', { sire: horseNode('FFF', { sire: shared }) }) }),
+      // 母方：母、外祖父、再往上兩代，S 在第 5 代
+      dam: horseNode('M', {
+        sire: horseNode('MF', {
+          sire: horseNode('MFF', { sire: horseNode('MFFF', { sire: shared }) }),
+        }),
+      }),
+    }
+    expect(duplicateAncestors(mating)).toEqual([])
+  })
+
   it('沒有重複時回傳空陣列', () => {
     const mating = { sire: horseNode('F', { sire: horseNode('FF') }), dam: horseNode('M') }
     expect(duplicateAncestors(mating)).toEqual([])
