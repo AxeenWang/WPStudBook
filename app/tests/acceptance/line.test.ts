@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest'
+import { listBoard, type Board } from '../../src/core/board'
 import { checkDesignatedBreeding } from '../../src/core/check'
 import { foalPlacement } from '../../src/core/generation'
-import { BRANCHES, LINE_POSITIONS, pairingDistance, partnerLine } from '../../src/core/lines'
-import { describePairing, pairingOf } from '../support/eight-line'
+import {
+  BRANCHES,
+  LINE_POSITIONS,
+  pairingDistance,
+  partnerLine,
+  type LinePosition,
+} from '../../src/core/lines'
+import { describePairing, pairingOf, snapshotOf, type LineSpec } from '../support/eight-line'
 
 // 需求規格第 15 章「八系管理（LINE）」中由 core 負責的部分；畫面、匯入與儲存的部分由後續計畫補上
+
+const described = (board: Board, generation?: number): string[] =>
+  board.tasks
+    .filter((task) => generation === undefined || task.pairing.output.generation === generation)
+    .map((task) => describePairing(task.pairing))
 
 describe('八系管理（LINE）', () => {
   it('LINE-08 第 1 系零代 × 起點市場母馬 → 第 1 系 1 代', () => {
@@ -13,6 +25,22 @@ describe('八系管理（LINE）', () => {
       line: 1,
       generation: 1,
     })
+  })
+
+  it('LINE-09 產出 2 代時同時列出推進第 1 系與建立第 2 系兩條配對', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: { opened: true, stallions: { 0: 'active' }, mares: { 0: [false, 2], 1: [true, 1] } },
+      }),
+    )
+    expect(
+      board.openableBranches.map((openable) => openable.pairings.map(describePairing)),
+    ).toEqual([
+      [
+        '第 1 系 1 代 × 第 2 系 1 代母馬群 → 第 1 系 2 代',
+        '第 2 系 0 代 × 第 1 系 1 代母馬群 → 第 2 系 2 代',
+      ],
+    ])
   })
 
   it('LINE-10 產出 3 代第 1、2 系分出第 3、4 系；產出 4 代第 1、3、2、4 系依序分出第 5～8 系', () => {
@@ -33,6 +61,62 @@ describe('八系管理（LINE）', () => {
     ])
   })
 
+  it('LINE-11 分支受孕失敗或只產公駒而重試時，系與代數不變，不開啟下一層', () => {
+    // 第 1 系還沒有 1 代母駒，也沒有指定 1 代種牡馬
+    const board = listBoard(
+      snapshotOf({ 1: { opened: true, stallions: { 0: 'active' }, mares: { 0: [false, 3] } } }),
+    )
+    expect(board.openableBranches).toEqual([])
+    expect(described(board)).toEqual(['第 1 系 0 代 × 第 1 系起點母馬群 → 第 1 系 1 代'])
+  })
+
+  it('LINE-12 同一層分支分年開啟，晚開分支的系與代數仍正確', () => {
+    const early: Partial<Record<LinePosition, LineSpec>> = {
+      1: {
+        opened: true,
+        stallions: { 0: 'active', 1: 'active', 2: 'active' },
+        mares: { 0: [false, 1], 1: [true, 2], 2: [true, 2] },
+      },
+      2: { opened: true, stallions: { 0: 'active' }, mares: { 1: [false, 2], 2: [true, 1] } },
+      3: { opened: true, stallions: { 0: 'active' }, mares: { 2: [false, 1] } },
+    }
+    const before = listBoard(snapshotOf(early))
+    expect(
+      before.openableBranches.map((openable) => openable.pairings.map(describePairing)),
+    ).toEqual([
+      [
+        '第 2 系 2 代 × 第 4 系 2 代母馬群 → 第 2 系 3 代',
+        '第 4 系 0 代 × 第 2 系 2 代母馬群 → 第 4 系 3 代',
+      ],
+    ])
+    expect(described(before, 3)).toContain('第 3 系 0 代 × 第 1 系 2 代母馬群 → 第 3 系 3 代')
+
+    const after = listBoard(
+      snapshotOf({ ...early, 4: { opened: true, stallions: { 0: 'active' } } }),
+    )
+    expect(after.openableBranches).toEqual([])
+    expect(described(after, 3)).toEqual([
+      '第 1 系 2 代 × 第 3 系 2 代母馬群 → 第 1 系 3 代',
+      '第 2 系 2 代 × 第 4 系 2 代母馬群 → 第 2 系 3 代',
+      '第 3 系 0 代 × 第 1 系 2 代母馬群 → 第 3 系 3 代',
+      '第 4 系 0 代 × 第 2 系 2 代母馬群 → 第 4 系 3 代',
+    ])
+  })
+
+  it('LINE-13 第 1 系 4 代種牡馬與第 2 系 4 代母馬就緒、其他系未就緒 → 自動出現產出 5 代的任務', () => {
+    // 只列出相關的系；循環任務只看前一代的種牡馬與配對系母馬群
+    const board = listBoard(
+      snapshotOf({
+        1: { stallions: { 4: 'active' } },
+        2: { mares: { 4: [true, 2] } },
+      }),
+    )
+    expect(described(board, 5)).toEqual(['第 1 系 4 代 × 第 2 系 4 代母馬群 → 第 1 系 5 代'])
+    expect(board.tasks.find((task) => task.pairing.output.generation === 5)?.sireStatus).toBe(
+      'ready',
+    )
+  })
+
   it('LINE-14 循環配對：5 代 1↔2、3↔4、5↔7、6↔8；6 代 1↔3、2↔4、5↔6、7↔8；7 代 1↔5、2↔7、3↔6、4↔8；之後重複', () => {
     const pairsAt = (generation: number): string[] => {
       const distance = pairingDistance(generation)
@@ -47,6 +131,42 @@ describe('八系管理（LINE）', () => {
     const g6 = ['1↔3', '2↔4', '5↔6', '7↔8']
     const g7 = ['1↔5', '2↔7', '3↔6', '4↔8']
     expect([5, 6, 7, 8, 9, 10].map(pairsAt)).toEqual([g5, g6, g7, g5, g6, g7])
+  })
+
+  it('LINE-18 已成立世代母馬降為 0／5 → 顯示母馬群待補，任務不自動斷血', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: { stallions: { 5: 'active' } },
+        3: { mares: { 5: [true, 0] } },
+      }),
+    )
+    expect(board.tasks).toEqual([
+      {
+        pairing: pairingOf(1, 6),
+        sireStatus: 'ready',
+        activeMares: 0,
+        needsMares: true,
+        paused: false,
+      },
+    ])
+  })
+
+  it('LINE-23 現任離場且未指定後任 → 任務暫停並顯示缺少現任種牡馬，不自動選馬', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: { stallions: { 5: 'ended' } },
+        3: { mares: { 5: [true, 3] } },
+      }),
+    )
+    expect(board.tasks).toEqual([
+      {
+        pairing: pairingOf(1, 6),
+        sireStatus: 'missing',
+        activeMares: 3,
+        needsMares: false,
+        paused: true,
+      },
+    ])
   })
 
   it('LINE-27 建立產出 3 代的第 3 系時誤選第 1 系 1 代母馬 → 阻止，指出應用第 1 系 2 代母馬', () => {
@@ -69,6 +189,32 @@ describe('八系管理（LINE）', () => {
         { kind: 'substitute', forLine: 2, forGeneration: 1 },
       ),
     ).toEqual({ line: 1, generation: 2 })
+  })
+
+  it('LINE-33 第 1 系 6 代種牡馬就緒、第 5 系有 6 代母馬 → 7 代任務與 6 代任務並行；上一代母馬全部離圈或種牡馬退出後舊任務結束', () => {
+    const lineOne = (tasks: Board['tasks']) =>
+      tasks
+        .filter((task) => task.pairing.output.line === 1)
+        .map((task) => describePairing(task.pairing))
+    const handover: Partial<Record<LinePosition, LineSpec>> = {
+      1: { stallions: { 5: 'active', 6: 'active' } },
+      3: { mares: { 5: [true, 2] } },
+      5: { mares: { 6: [true, 3] } },
+    }
+    expect(lineOne(listBoard(snapshotOf(handover)).tasks)).toEqual([
+      '第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代',
+      '第 1 系 6 代 × 第 5 系 6 代母馬群 → 第 1 系 7 代',
+    ])
+
+    const maresGone = { ...handover, 3: { mares: { 5: [true, 0] as const } } }
+    expect(lineOne(listBoard(snapshotOf(maresGone)).tasks)).toEqual([
+      '第 1 系 6 代 × 第 5 系 6 代母馬群 → 第 1 系 7 代',
+    ])
+
+    const sireRetired = { ...handover, 1: { stallions: { 5: 'ended', 6: 'active' } as const } }
+    expect(lineOne(listBoard(snapshotOf(sireRetired)).tasks)).toEqual([
+      '第 1 系 6 代 × 第 5 系 6 代母馬群 → 第 1 系 7 代',
+    ])
   })
 
   it('LINE-34 母馬配自己的父親或同父兄弟 → 因系或代數不符而阻止', () => {
