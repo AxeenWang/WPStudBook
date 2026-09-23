@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_MARE_AGE_SETTINGS,
+  defaultAbsenceReason,
+  mareAgeNotices,
+  mareListedInTasks,
+  suggestSellingMother,
+} from '../../src/core/mares'
+import {
   chooseKeptSister,
   entrySisterStatus,
   sisterStatusListed,
@@ -61,5 +68,34 @@ describe('繁殖牝馬（MARE）', () => {
       { id: 'A', from: 'candidate', to: 'kept' },
       { id: 'B', from: 'kept', to: 'replaced' },
     ])
+  })
+
+  it('MARE-09 上年在圈、五月缺席 → 上次馬齡達定年預設「定年引退」，否則「售出」', () => {
+    expect(defaultAbsenceReason(25, DEFAULT_MARE_AGE_SETTINGS)).toBe('retired')
+    expect(defaultAbsenceReason(20, DEFAULT_MARE_AGE_SETTINGS)).toBe('sold')
+  })
+
+  it('MARE-10 修改定年設定 → 依新設定判斷', () => {
+    const settings = { ...DEFAULT_MARE_AGE_SETTINGS, retirementAge: 23 }
+    expect(defaultAbsenceReason(23, DEFAULT_MARE_AGE_SETTINGS)).toBe('sold')
+    expect(defaultAbsenceReason(23, settings)).toBe('retired')
+  })
+
+  it('MARE-11 定年 25 歲時 → 24 歲顯示最後配種年齡提醒，25 歲顯示已達定年且不列入任務', () => {
+    expect(mareAgeNotices(24, DEFAULT_MARE_AGE_SETTINGS)).toContain('last-breeding')
+    expect(mareListedInTasks({ inHerd: true, age: 24 }, DEFAULT_MARE_AGE_SETTINGS)).toBe(true)
+    expect(mareAgeNotices(25, DEFAULT_MARE_AGE_SETTINGS)).toEqual(['retirement-age'])
+    expect(mareListedInTasks({ inHerd: true, age: 25 }, DEFAULT_MARE_AGE_SETTINGS)).toBe(false)
+  })
+
+  it('MARE-23 女兒暫定保留轉入後，母親當年四月已生產 → 顯示可出售母親提示', () => {
+    expect(suggestSellingMother(['provisional'], true)).toBe(true)
+    expect(suggestSellingMother(['provisional'], false)).toBe(false)
+  })
+
+  it('MARE-25 母馬達高齡提醒年齡（預設 18 歲）→ 提示可考慮出售，不影響列入任務；修改設定後依新年齡判斷', () => {
+    expect(mareAgeNotices(18, DEFAULT_MARE_AGE_SETTINGS)).toEqual(['senior'])
+    expect(mareListedInTasks({ inHerd: true, age: 18 }, DEFAULT_MARE_AGE_SETTINGS)).toBe(true)
+    expect(mareAgeNotices(18, { ...DEFAULT_MARE_AGE_SETTINGS, seniorAge: 20 })).toEqual([])
   })
 })
