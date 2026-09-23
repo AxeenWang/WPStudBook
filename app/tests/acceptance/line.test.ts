@@ -107,8 +107,8 @@ describe('八系管理（LINE）', () => {
     // 只列出相關的系；循環任務只看前一代的種牡馬與配對系母馬群
     const board = listBoard(
       snapshotOf({
-        1: { stallions: { 4: 'active' } },
-        2: { mares: { 4: [true, 2] } },
+        1: { opened: true, stallions: { 4: 'active' } },
+        2: { opened: true, mares: { 4: [true, 2] } },
       }),
     )
     expect(described(board, 5)).toEqual(['第 1 系 4 代 × 第 2 系 4 代母馬群 → 第 1 系 5 代'])
@@ -136,11 +136,11 @@ describe('八系管理（LINE）', () => {
   it('LINE-18 已成立世代母馬降為 0／5 → 顯示母馬群待補，任務不自動斷血', () => {
     const board = listBoard(
       snapshotOf({
-        1: { stallions: { 5: 'active' } },
-        3: { mares: { 5: [true, 0] } },
+        1: { opened: true, stallions: { 5: 'active' } },
+        3: { opened: true, mares: { 5: [true, 0] } },
       }),
     )
-    expect(board.tasks).toEqual([
+    expect(board.tasks.filter((task) => task.pairing.output.generation === 6)).toEqual([
       {
         pairing: pairingOf(1, 6),
         sireStatus: 'ready',
@@ -154,11 +154,11 @@ describe('八系管理（LINE）', () => {
   it('LINE-23 現任離場且未指定後任 → 任務暫停並顯示缺少現任種牡馬，不自動選馬', () => {
     const board = listBoard(
       snapshotOf({
-        1: { stallions: { 5: 'ended' } },
-        3: { mares: { 5: [true, 3] } },
+        1: { opened: true, stallions: { 5: 'ended' } },
+        3: { opened: true, mares: { 5: [true, 3] } },
       }),
     )
-    expect(board.tasks).toEqual([
+    expect(board.tasks.filter((task) => task.pairing.output.generation === 6)).toEqual([
       {
         pairing: pairingOf(1, 6),
         sireStatus: 'missing',
@@ -194,24 +194,27 @@ describe('八系管理（LINE）', () => {
   it('LINE-33 第 1 系 6 代種牡馬就緒、第 5 系有 6 代母馬 → 7 代任務與 6 代任務並行；上一代母馬全部離圈或種牡馬退出後舊任務結束', () => {
     const lineOne = (tasks: Board['tasks']) =>
       tasks
-        .filter((task) => task.pairing.output.line === 1)
+        .filter((task) => task.pairing.output.line === 1 && task.pairing.output.generation >= 6)
         .map((task) => describePairing(task.pairing))
     const handover: Partial<Record<LinePosition, LineSpec>> = {
-      1: { stallions: { 5: 'active', 6: 'active' } },
-      3: { mares: { 5: [true, 2] } },
-      5: { mares: { 6: [true, 3] } },
+      1: { opened: true, stallions: { 5: 'active', 6: 'active' } },
+      3: { opened: true, mares: { 5: [true, 2] } },
+      5: { opened: true, mares: { 6: [true, 3] } },
     }
     expect(lineOne(listBoard(snapshotOf(handover)).tasks)).toEqual([
       '第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代',
       '第 1 系 6 代 × 第 5 系 6 代母馬群 → 第 1 系 7 代',
     ])
 
-    const maresGone = { ...handover, 3: { mares: { 5: [true, 0] as const } } }
+    const maresGone = { ...handover, 3: { opened: true, mares: { 5: [true, 0] as const } } }
     expect(lineOne(listBoard(snapshotOf(maresGone)).tasks)).toEqual([
       '第 1 系 6 代 × 第 5 系 6 代母馬群 → 第 1 系 7 代',
     ])
 
-    const sireRetired = { ...handover, 1: { stallions: { 5: 'ended', 6: 'active' } as const } }
+    const sireRetired = {
+      ...handover,
+      1: { opened: true, stallions: { 5: 'ended', 6: 'active' } as const },
+    }
     expect(lineOne(listBoard(snapshotOf(sireRetired)).tasks)).toEqual([
       '第 1 系 6 代 × 第 5 系 6 代母馬群 → 第 1 系 7 代',
     ])

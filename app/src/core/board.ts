@@ -78,7 +78,9 @@ export function listBoard(snapshot: EightLineSnapshot): Board {
     (branch) => ({ branch, pairings: branchPairings(branch) }),
   )
   const tasks: BoardTask[] = []
-  for (let generation = 1; generation <= lookup.maxGeneration + 1; generation++) {
+  // 建系分支最高產出 4 代；快照稀疏時也要列得出建系任務
+  const maxCandidate = Math.max(lookup.maxGeneration + 1, 4)
+  for (let generation = 1; generation <= maxCandidate; generation++) {
     for (const line of LINE_POSITIONS) {
       const pairing = designatedPairing(line, generation)
       if (pairing && isVisible(pairing, lookup) && !isEnded(pairing, lookup)) {
