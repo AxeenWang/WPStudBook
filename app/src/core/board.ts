@@ -1,5 +1,11 @@
 import { designatedPairing, type DesignatedPairing } from './designated'
-import { BRANCHES, LINE_POSITIONS, type Branch, type LinePosition } from './lines'
+import {
+  BRANCHES,
+  BUILD_PHASE_LAST_GENERATION,
+  LINE_POSITIONS,
+  type Branch,
+  type LinePosition,
+} from './lines'
 
 /**
  * 某系某代種牡馬的狀態，由儲存層依種牡馬紀錄彙整（需求規格 7.7）：
@@ -79,7 +85,7 @@ export function listBoard(snapshot: EightLineSnapshot): Board {
   )
   const tasks: BoardTask[] = []
   // 建系分支最高產出 4 代；快照稀疏時也要列得出建系任務
-  const maxCandidate = Math.max(lookup.maxGeneration + 1, 4)
+  const maxCandidate = Math.max(lookup.maxGeneration + 1, BUILD_PHASE_LAST_GENERATION)
   for (let generation = 1; generation <= maxCandidate; generation++) {
     for (const line of LINE_POSITIONS) {
       const pairing = designatedPairing(line, generation)

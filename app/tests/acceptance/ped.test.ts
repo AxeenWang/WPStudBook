@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { checkDesignatedBreeding } from '../../src/core/check'
 import { pairingOf } from '../support/eight-line'
 import { ancestorSlots, duplicateAncestors } from '../../src/core/pedigree'
-import { horseNode } from '../support/pedigree'
-import { systemTableOf } from '../support/systems'
+import { horseNode, matingWithGrandparents, type GrandparentSpec } from '../support/pedigree'
+import { systemTableOf, eightLineSystems, subsystemOfLine } from '../support/systems'
+import { checkPedigree, estimateVitality } from '../../src/core/vitality'
 
 // 需求規格第 15 章「血統檢查（PED）」中由 core 負責的部分；活血與 4 代內重複由後續的血統推算計畫補上
 
@@ -82,6 +83,91 @@ describe('血統檢查（PED）', () => {
     expect(ancestorSlots(mating, withoutOrigin)[0]).toMatchObject({
       subsystem: null,
       inferred: false,
+    })
+  })
+
+  it('PED-01 建系期配種 → 不計算活血，不因市場馬血統不完整警告', () => {
+    const { table, lines } = eightLineSystems()
+    const marketOnly = matingWithGrandparents([{}, {}, {}, {}])
+    expect(checkPedigree(4, marketOnly, table, lines)).toEqual({
+      estimate: null,
+      duplicates: [],
+      warnings: [],
+    })
+  })
+
+  it('PED-04 循環期 4 代內有重複的馬 → 警告並確認', () => {
+    const { table, lines } = eightLineSystems()
+    const shared = horseNode('S', { sireSystem: subsystemOfLine(1) })
+    const inbred = { sire: horseNode('F', { sire: shared }), dam: horseNode('M', { sire: shared }) }
+    expect(checkPedigree(6, inbred, table, lines).warnings).toContainEqual({
+      kind: 'close-inbreeding',
+      hintOnly: false,
+    })
+  })
+
+  it('PED-05 血統資料不足 → 警告並確認，不阻止', () => {
+    const { table, lines } = eightLineSystems()
+    const few = matingWithGrandparents([
+      { sire: subsystemOfLine(1), dam: subsystemOfLine(2) },
+      { sire: subsystemOfLine(3) },
+      {},
+      {},
+    ])
+    const check = checkPedigree(6, few, table, lines)
+    expect(check.estimate).toMatchObject({ status: 'insufficient' })
+    expect(check.warnings).toEqual([{ kind: 'insufficient-data', hintOnly: false }])
+  })
+
+  it('PED-11 未知位置只來自建系期市場馬 → 只提示；含其他未連結的馬 → 仍需確認', () => {
+    const { table, lines } = eightLineSystems()
+    const buildPhaseOnly: [GrandparentSpec, GrandparentSpec, GrandparentSpec, GrandparentSpec] = [
+      { sire: subsystemOfLine(1), dam: subsystemOfLine(2) },
+      { sire: subsystemOfLine(3), dam: subsystemOfLine(4) },
+      { sireSystem: subsystemOfLine(5), buildPhaseMarket: true },
+      { sireSystem: subsystemOfLine(7), buildPhaseMarket: true },
+    ]
+    expect(checkPedigree(5, matingWithGrandparents(buildPhaseOnly), table, lines).warnings).toEqual(
+      [{ kind: 'vitality-below-max', hintOnly: true }],
+    )
+
+    const withOtherUnknown: [GrandparentSpec, GrandparentSpec, GrandparentSpec, GrandparentSpec] = [
+      buildPhaseOnly[0],
+      buildPhaseOnly[1],
+      { sireSystem: subsystemOfLine(5) },
+      buildPhaseOnly[3],
+    ]
+    expect(
+      checkPedigree(5, matingWithGrandparents(withOtherUnknown), table, lines).warnings,
+    ).toEqual([{ kind: 'vitality-below-max', hintOnly: false }])
+  })
+
+  it('PED-13 沒有紀錄的父親依市場馬的父系推定並標示推定；沒有紀錄的母親為未知，並列出她決定的還缺的系', () => {
+    const { table, lines } = eightLineSystems()
+    const mating = matingWithGrandparents([
+      { sire: subsystemOfLine(1), dam: subsystemOfLine(2) },
+      { sireSystem: subsystemOfLine(5), buildPhaseMarket: true },
+      { sire: subsystemOfLine(3), dam: subsystemOfLine(4) },
+      { sire: subsystemOfLine(7), dam: subsystemOfLine(8) },
+    ])
+    const estimate = estimateVitality(mating, table, lines)
+    expect(estimate.slots[2]).toMatchObject({
+      horse: null,
+      subsystem: subsystemOfLine(5),
+      parentSystem: '系5親',
+      inferred: true,
+      fromBuildPhaseMarket: true,
+    })
+    expect(estimate.slots[3]).toMatchObject({
+      subsystem: null,
+      parentSystem: null,
+      inferred: false,
+    })
+    expect(estimate).toMatchObject({
+      count: 7,
+      status: 'at-least',
+      unknownSlots: [3],
+      missingLines: [6],
     })
   })
 })
