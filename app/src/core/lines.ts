@@ -12,6 +12,9 @@ export interface LineGeneration {
 
 export const LINE_POSITIONS: readonly LinePosition[] = [1, 2, 3, 4, 5, 6, 7, 8]
 
+/** 建系期的最後一代：產出 1～4 代是建系期，5 代起是循環期（需求規格第 3 章、7.3、7.4） */
+export const BUILD_PHASE_LAST_GENERATION = 4
+
 const DISTANCE_CYCLE: readonly PairingDistance[] = [1, 2, 4]
 
 /**

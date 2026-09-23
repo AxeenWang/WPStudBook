@@ -9,7 +9,10 @@ import {
   partnerLine,
   type LinePosition,
 } from '../../src/core/lines'
+import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
+import { checkSubstituteMare } from '../../src/core/substitute'
 import { describePairing, pairingOf, snapshotOf, type LineSpec } from '../support/eight-line'
+import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
 // 需求規格第 15 章「八系管理（LINE）」中由 core 負責的部分；畫面、匯入與儲存的部分由後續計畫補上
 
@@ -248,5 +251,70 @@ describe('八系管理（LINE）', () => {
       checkDesignatedBreeding(pairingOf(1, 1), { line: 1, generation: 0 }, { kind: 'start' })
         .warnings,
     ).toEqual([])
+  })
+
+  it('LINE-03 新系親系統與既有系重複 → 警告並確認，確認後可建立', () => {
+    const lines = lineSystemsOf({ 1: ['系1子', 'ナスルーラ'], 2: ['系2子', 'マッチェム'] })
+    expect(findParentSystemConflict(lines, 3, 'ナスルーラ')).toEqual({
+      parentSystem: 'ナスルーラ',
+      lines: [1],
+    })
+    expect(findParentSystemConflict(lines, 3, 'エクリプス')).toBeNull()
+  })
+
+  it('LINE-04 總覽顯示八系親系統種類數與重複的系；對照表更新升格後重複解除', () => {
+    const before = lineSystemsOf({
+      1: ['系1子', 'ナスルーラ'],
+      2: ['系2子', 'ナスルーラ'],
+      3: ['系3子', 'マッチェム'],
+    })
+    expect(summarizeLineSystems(before)).toEqual({
+      distinctCount: 2,
+      duplicates: [{ parentSystem: 'ナスルーラ', lines: [1, 2] }],
+    })
+    const after = lineSystemsOf({
+      1: ['系1子', 'ナスルーラ'],
+      2: ['系2子', 'ボールドルーラー'],
+      3: ['系3子', 'マッチェム'],
+    })
+    expect(summarizeLineSystems(after)).toEqual({ distinctCount: 3, duplicates: [] })
+  })
+
+  it('LINE-29 替代第 q 系的市場母馬，親系統與其他已成立系相同 → 警告並確認；與第 q 系相同或八系沒用到 → 不警告', () => {
+    const { table, lines } = eightLineSystems()
+    const at3 = (forLine: LinePosition, ownSireSystem: string) => ({
+      forLine,
+      forGeneration: 3,
+      ownSireSystem,
+    })
+    expect(checkSubstituteMare(at3(3, subsystemOfLine(5)), table, lines, []).conflicts).toEqual([
+      { kind: 'line', parentSystem: '系5親', lines: [5] },
+    ])
+    expect(checkSubstituteMare(at3(3, subsystemOfLine(3)), table, lines, []).conflicts).toEqual([])
+    const withOutside = [...table, { subsystem: '外來子', parentSystem: '外來親' }]
+    expect(checkSubstituteMare(at3(3, '外來子'), withOutside, lines, []).conflicts).toEqual([])
+  })
+
+  it('LINE-37 第 1 系升格後，替代第 1 系的市場母馬用第 1 系原本的舊親系統 → 不警告', () => {
+    const table = [
+      { subsystem: '系1子', parentSystem: '系1子' },
+      { subsystem: '舊親系統', parentSystem: '舊親系統' },
+    ]
+    // 第 1 系升格為自己的親系統，舊親系統已經沒有任何系在用
+    const lines = lineSystemsOf({ 1: ['系1子', '系1子'], 2: ['系2子', '系2親'] })
+    const mare = { forLine: 1 as const, forGeneration: 3, ownSireSystem: '舊親系統' }
+    expect(checkSubstituteMare(mare, table, lines, [])).toEqual({ unknown: false, conflicts: [] })
+  })
+
+  it('LINE-38 替代第 5 系與第 7 系的同代市場母馬用同一個八系沒用到的親系統 → 第二匹警告；都替代第 5 系 → 不警告', () => {
+    const { table: base, lines } = eightLineSystems()
+    const table = [...base, { subsystem: '外來子', parentSystem: '外來親' }]
+    const first = { forLine: 5 as const, forGeneration: 3, ownSireSystem: '外來子' }
+    const secondOtherLine = { forLine: 7 as const, forGeneration: 3, ownSireSystem: '外來子' }
+    const secondSameLine = { forLine: 5 as const, forGeneration: 3, ownSireSystem: '外來子' }
+    expect(checkSubstituteMare(secondOtherLine, table, lines, [first]).conflicts).toEqual([
+      { kind: 'substitute', parentSystem: '外來親', lines: [5] },
+    ])
+    expect(checkSubstituteMare(secondSameLine, table, lines, [first]).conflicts).toEqual([])
   })
 })
