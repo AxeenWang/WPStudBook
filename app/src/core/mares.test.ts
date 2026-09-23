@@ -40,6 +40,11 @@ describe('mareAgeNotices', () => {
     expect(mareAgeNotices(22, settings)).toEqual(['senior', 'last-breeding'])
     expect(mareAgeNotices(23, settings)).toEqual(['retirement-age'])
   })
+
+  it('馬齡不是 0 以上的整數時丟出錯誤', () => {
+    expect(() => mareAgeNotices(-1, defaults)).toThrow(RangeError)
+    expect(() => mareAgeNotices(18.5, defaults)).toThrow(RangeError)
+  })
 })
 
 describe('defaultAbsenceReason', () => {
@@ -50,6 +55,10 @@ describe('defaultAbsenceReason', () => {
 
   it('馬齡不明時為售出', () => {
     expect(defaultAbsenceReason(undefined, defaults)).toBe('sold')
+  })
+
+  it('馬齡不是 0 以上的整數時丟出錯誤', () => {
+    expect(() => defaultAbsenceReason(-1, defaults)).toThrow(RangeError)
   })
 })
 
@@ -71,6 +80,10 @@ describe('mareListedInTasks', () => {
     expect(mareListedInTasks({ inHerd: true, age: 5, sisterStatus: 'replaced' }, defaults)).toBe(
       false,
     )
+  })
+
+  it('馬齡不是 0 以上的整數時丟出錯誤', () => {
+    expect(() => mareListedInTasks({ inHerd: true, age: -1 }, defaults)).toThrow(RangeError)
   })
 })
 
