@@ -108,7 +108,7 @@ export interface RestorationStatus {
   line: LinePosition
   /** 斷血的代數 */
   generation: number
-  side: 'sire' | 'dam'
+  side: RestorationSlot['side']
   /** 補系任務：補公系為補公系配對；補母系為配這個母馬群、產出下一代的配對 */
   pairing: DesignatedPairing
   /**
@@ -156,7 +156,7 @@ export function listBoard(snapshot: EightLineSnapshot): Board {
 export interface RestorationDeclaration {
   line: LinePosition
   generation: number
-  side: 'sire' | 'dam'
+  side: RestorationSlot['side']
 }
 
 /**
@@ -275,7 +275,8 @@ function createLookup(snapshot: EightLineSnapshot): Lookup {
       stallion(line, generation) !== undefined || mareGroup(line, generation)?.established === true,
     restorations: (line) =>
       [...lineOf(line).restorations].sort(
-        (a, b) => a.generation - b.generation || (a.side === 'sire' ? -1 : 1),
+        (a, b) =>
+          a.generation - b.generation || Number(a.side === 'dam') - Number(b.side === 'dam'),
       ),
     sireRestoration: (line, generation) =>
       lineOf(line).restorations.find(
@@ -303,12 +304,15 @@ function pairingFor(
 function isOpenable(branch: Branch, lookup: Lookup): boolean {
   if (lookup.isOpened(branch.newLine)) return false
   if (branch.parent === null) return true
-  // 補公系進行中，斷血的那一系不開新分支（需求規格 7.6）
   const parent = branch.parent
-  const restoring = lookup
-    .restorations(parent)
-    .some((slot) => slot.side === 'sire' && isInProgress(parent, slot, lookup))
-  return !restoring && lookup.reached(parent, branch.outputGeneration - 1)
+  return !isRestoringSire(parent, lookup) && lookup.reached(parent, branch.outputGeneration - 1)
+}
+
+/** 該系有進行中的補公系：補公系進行中的系不開新分支（需求規格 7.6） */
+function isRestoringSire(line: LinePosition, lookup: Lookup): boolean {
+  return lookup
+    .restorations(line)
+    .some((slot) => slot.side === 'sire' && isInProgress(line, slot, lookup))
 }
 
 function branchPairings(branch: Branch, lookup: Lookup): DesignatedPairing[] {

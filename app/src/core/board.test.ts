@@ -267,6 +267,61 @@ describe('listBoard：斷血補系', () => {
     })
   })
 
+  it('補公系進行中，較早一層還沒開的分支也不能開；補系結束後照常開啟', () => {
+    const restoring = listBoard(
+      snapshotOf({
+        1: {
+          opened: true,
+          stallions: { 0: 'active', 1: 'active', 2: 'ended', 3: 'ended' },
+          restorations: [{ side: 'sire', generation: 3, stallion: 'active' }],
+        },
+      }),
+    )
+    expect(restoring.openableBranches).toEqual([])
+
+    const done = listBoard(
+      snapshotOf({
+        1: {
+          opened: true,
+          stallions: { 0: 'active', 1: 'active', 2: 'ended', 3: 'ended', 4: 'active' },
+          restorations: [{ side: 'sire', generation: 3, stallion: 'active' }],
+        },
+      }),
+    )
+    expect(done.openableBranches.map((openable) => openable.branch.newLine)).toEqual([2, 3, 5])
+  })
+
+  it('建系期補母系不影響看板，第 4 系的建立新系任務照常出現', () => {
+    const specs = { 2: { opened: true }, 4: { opened: true } }
+    const before = listBoard(snapshotOf(specs))
+    const after = listBoard(
+      snapshotOf({ ...specs, 2: { ...specs[2], restorations: [{ side: 'dam', generation: 2 }] } }),
+    )
+    expect(after.tasks).toEqual(before.tasks)
+    expect(after.restorations[0].pairing).toEqual(pairingOf(4, 3))
+  })
+
+  it('兩系同代互相補系：第 5 系補公系、第 1 系補母系，母系那一筆的配對是補公系配對', () => {
+    const board = listBoard(
+      snapshotOf({
+        1: { opened: true, restorations: [{ side: 'dam', generation: 12 }] },
+        5: { opened: true, restorations: [{ side: 'sire', generation: 12 }] },
+      }),
+    )
+    const damRestoration = board.restorations.find(
+      (status) => status.line === 1 && status.side === 'dam',
+    )
+    expect(damRestoration?.pairing).toEqual(restorationOf(5, 12))
+  })
+
+  it('補系的代數不是整數時丟出錯誤', () => {
+    expect(() =>
+      listBoard(
+        snapshotOf({ 5: { opened: true, restorations: [{ side: 'sire', generation: 12.5 }] } }),
+      ),
+    ).toThrow(RangeError)
+  })
+
   it('補系的代數早於該系成立的代數、該系還沒開啟，或同一代同一方重複時丟出錯誤', () => {
     expect(() =>
       listBoard(

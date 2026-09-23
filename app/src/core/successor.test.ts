@@ -142,6 +142,30 @@ describe('verifySuccessor', () => {
     ])
   })
 
+  it('補公系所生，母馬不是補公系配對指定的母馬群時阻止，指出母馬應在哪個母馬群', () => {
+    // 第 5 系補公系配第 1 系 12 代母馬群，這裡誤配第 3 系 12 代母馬，出生紀錄照 8.2 重算仍是第 5 系 13 代
+    const mismatchedOrigin: DesignatedOrigin = {
+      kind: 'designated',
+      breedingSireId: 'Z5',
+      breedingDamId: 'D3',
+      sire: { line: 5, generation: 0 },
+      dam: { kind: 'own', line: 3, generation: 12 },
+      recorded: { line: 5, generation: 13 },
+      restoration: true,
+    }
+    expect(
+      verifySuccessor(
+        { sireId: 'Z5', damId: 'D3', origin: mismatchedOrigin },
+        { line: 5, generation: 13 },
+      ),
+    ).toEqual([
+      {
+        mismatch: 'pairing',
+        blocks: [{ side: 'dam', expected: { line: 1, generation: 12 }, mismatches: ['line'] }],
+      },
+    ])
+  })
+
   it('補公系記號的斷血代數早於該系成立的代數時，沒有可比對的配對，阻止', () => {
     // 第 6 系在產出 4 代才成立，3 代不能補公系
     const tooEarly: DesignatedOrigin = {
