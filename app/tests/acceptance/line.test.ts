@@ -314,7 +314,7 @@ describe('八系管理（LINE）', () => {
       board.tasks.find(
         (task) => task.pairing.output.line === 5 && task.pairing.output.generation === 13,
       ),
-    ).toMatchObject({ sireStatus: 'missing', paused: true })
+    ).toMatchObject({ pairing: pairingOf(5, 13), sireStatus: 'missing', paused: true })
     // 重試：產出 12 代的任務照常；補血見 LINE-18；補系：可以宣告補公系
     expect(described(board, 12)).toContain('第 5 系 11 代 × 第 6 系 11 代母馬群 → 第 5 系 12 代')
     expect(checkRestoration(snapshot, { line: 5, generation: 12, side: 'sire' })).toEqual([])
