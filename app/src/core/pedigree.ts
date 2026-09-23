@@ -1,3 +1,4 @@
+import { assertGeneration } from './lines'
 import { originOf, type SystemTable } from './systems'
 
 /** 血統中的一匹馬（規則輸入；由儲存層依馬匹紀錄彙整） */
@@ -33,9 +34,7 @@ export const CLOSE_GENERATIONS = 4
  * 沒有內部紀錄的位置為 null，它上面的祖先也都是 null。
  */
 export function ancestorsAt(mating: Mating, generation: number): (PedigreeNode | null)[] {
-  if (!Number.isInteger(generation) || generation < 1) {
-    throw new RangeError(`祖先代數必須是 1 以上的整數：${generation}`)
-  }
+  assertGeneration(generation, '祖先代數', 1)
   let current: (PedigreeNode | null)[] = [mating.sire, mating.dam]
   for (let level = 1; level < generation; level++) {
     current = current.flatMap((node) => [node?.sire ?? null, node?.dam ?? null])

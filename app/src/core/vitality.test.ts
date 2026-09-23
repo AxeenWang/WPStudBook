@@ -97,6 +97,22 @@ describe('checkPedigree', () => {
     expect(checkPedigree(6, eightDistinct, table, lines).warnings).toEqual([])
   })
 
+  it('資料不足而且未知位置都來自建系期市場馬時，只提示', () => {
+    const marketOnly = matingWithGrandparents([
+      { sire: subsystemOfLine(1), dam: subsystemOfLine(2) },
+      { sire: subsystemOfLine(3), dam: subsystemOfLine(4) },
+      { buildPhaseMarket: true },
+      { buildPhaseMarket: true },
+    ])
+    const check = checkPedigree(5, marketOnly, table, lines)
+    expect(check.estimate).toMatchObject({ count: 4, status: 'insufficient' })
+    expect(check.warnings).toEqual([{ kind: 'insufficient-data', hintOnly: true }])
+  })
+
+  it('產出代數不是 1 以上的整數時丟出錯誤', () => {
+    expect(() => checkPedigree(0, eightDistinct, table, lines)).toThrow(RangeError)
+  })
+
   it('已知資料就少於 8 種時要確認', () => {
     const withDuplicate = matingWithGrandparents([
       { sire: subsystemOfLine(1), dam: subsystemOfLine(2) },

@@ -1,5 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { damGeneration, foalPlacement } from './generation'
+import { damGeneration, damPlacement, foalPlacement } from './generation'
+
+describe('damPlacement', () => {
+  it('自家母駒計入出生紀錄的系與代數', () => {
+    expect(damPlacement({ kind: 'own', line: 3, generation: 5 })).toEqual({
+      kind: 'group',
+      line: 3,
+      generation: 5,
+    })
+  })
+
+  it('替代母馬計入她替代的系與代數，不是她自己的系', () => {
+    expect(damPlacement({ kind: 'substitute', forLine: 2, forGeneration: 4 })).toEqual({
+      kind: 'group',
+      line: 2,
+      generation: 4,
+    })
+  })
+
+  it('起點母馬計入第 1 系起點母馬群', () => {
+    expect(damPlacement({ kind: 'start' })).toEqual({ kind: 'start' })
+  })
+
+  it('自家母駒或替代的代數不是 1 以上的整數時丟出錯誤', () => {
+    expect(() => damPlacement({ kind: 'own', line: 1, generation: 0 })).toThrow(RangeError)
+    expect(() => damPlacement({ kind: 'substitute', forLine: 1, forGeneration: 1.5 })).toThrow(
+      RangeError,
+    )
+  })
+})
 
 describe('damGeneration', () => {
   it('自家母駒用出生紀錄的代數', () => {
@@ -30,6 +59,15 @@ describe('foalPlacement', () => {
       line: 1,
       generation: 1,
     })
+  })
+
+  it('種牡馬或母馬的代數不合理時丟出錯誤', () => {
+    expect(() =>
+      foalPlacement({ line: 1, generation: -1 }, { kind: 'own', line: 2, generation: 1 }),
+    ).toThrow(RangeError)
+    expect(() =>
+      foalPlacement({ line: 1, generation: 1 }, { kind: 'own', line: 2, generation: 0 }),
+    ).toThrow(RangeError)
   })
 
   it('零代種牡馬配 12 代母馬，產駒承接 13 代', () => {

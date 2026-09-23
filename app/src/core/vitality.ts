@@ -1,4 +1,4 @@
-import { BUILD_PHASE_LAST_GENERATION, type LinePosition } from './lines'
+import { BUILD_PHASE_LAST_GENERATION, assertGeneration, type LinePosition } from './lines'
 import {
   ancestorSlots,
   duplicateAncestors,
@@ -88,7 +88,7 @@ export interface PedigreeCheck {
 /**
  * 指定配種前的血統檢查（需求規格 10.1、10.2）。
  * 建系期（產出 4 代以下）不計算活血，也不因市場馬血統不完整而警告；
- * 循環期的警告一律只警告並確認，不阻止。
+ * 循環期的警告一律只警告並確認，不阻止。產出代數不是 1 以上的整數時丟出 RangeError。
  */
 export function checkPedigree(
   outputGeneration: number,
@@ -96,6 +96,7 @@ export function checkPedigree(
   table: SystemTable,
   lines: LineSystemSnapshot,
 ): PedigreeCheck {
+  assertGeneration(outputGeneration, '產出代數', 1)
   if (outputGeneration <= BUILD_PHASE_LAST_GENERATION) {
     return { estimate: null, duplicates: [], warnings: [] }
   }

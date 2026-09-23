@@ -1,5 +1,5 @@
 import type { DesignatedPairing } from './designated'
-import type { DamRole } from './generation'
+import { damPlacement, type DamRole } from './generation'
 import type { LineGeneration } from './lines'
 
 /** 指定配種實際選的母馬：規則上的身分，或尚未指定用途（需求規格 8.4） */
@@ -43,20 +43,18 @@ export function checkDesignatedBreeding(
     blocks.push({ side: 'sire', expected: pairing.sire, mismatches: sireMismatches })
   }
 
+  // 母馬實際計入的母馬群；待指定用途的母馬不屬於任何母馬群
+  const actual = dam.kind === 'unassigned' ? null : damPlacement(dam)
   if (pairing.mares.kind === 'start') {
-    if (dam.kind !== 'start') blocks.push({ side: 'dam', expected: 'start', mismatches: ['role'] })
+    if (actual?.kind !== 'start') {
+      blocks.push({ side: 'dam', expected: 'start', mismatches: ['role'] })
+    }
     return { blocks, warnings }
   }
 
   const expected = { line: pairing.mares.line, generation: pairing.mares.generation }
-  const actual =
-    dam.kind === 'own'
-      ? { line: dam.line, generation: dam.generation }
-      : dam.kind === 'substitute'
-        ? { line: dam.forLine, generation: dam.forGeneration }
-        : null
   const damMismatches: BreedingBlock['mismatches'] =
-    actual === null ? ['role'] : compare(expected, actual)
+    actual?.kind === 'group' ? compare(expected, actual) : ['role']
   if (damMismatches.length > 0) {
     blocks.push({ side: 'dam', expected, mismatches: damMismatches })
   } else if (dam.kind === 'substitute' && pairing.sire.generation === 0) {
