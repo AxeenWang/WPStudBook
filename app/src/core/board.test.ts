@@ -5,7 +5,7 @@ import {
   restorationOf,
   snapshotOf,
 } from '../../tests/support/eight-line'
-import { listBoard, type Board } from './board'
+import { checkRestoration, listBoard, type Board } from './board'
 import { branchOf } from './lines'
 
 const described = (board: Board, generation?: number): string[] =>
@@ -288,6 +288,57 @@ describe('listBoard：斷血補系', () => {
           },
         }),
       ),
+    ).toThrow(RangeError)
+  })
+})
+
+describe('checkRestoration', () => {
+  const sire = { line: 5, generation: 12, side: 'sire' } as const
+  const dam = { line: 5, generation: 12, side: 'dam' } as const
+
+  it('那一代沒有在崗或已指定的種牡馬時可以補公系', () => {
+    expect(checkRestoration(snapshotOf({ 5: { opened: true } }), sire)).toEqual([])
+    expect(
+      checkRestoration(snapshotOf({ 5: { opened: true, stallions: { 12: 'ended' } } }), sire),
+    ).toEqual([])
+  })
+
+  it('那一代已有在崗或已指定的種牡馬時不能補公系', () => {
+    for (const state of ['active', 'waiting'] as const) {
+      expect(
+        checkRestoration(snapshotOf({ 5: { opened: true, stallions: { 12: state } } }), sire),
+      ).toEqual([{ reason: 'sire-available' }])
+    }
+  })
+
+  it('母馬群從未成立時可以補母系；已成立時要改用補血', () => {
+    expect(
+      checkRestoration(snapshotOf({ 5: { opened: true, mares: { 12: [false, 1] } } }), dam),
+    ).toEqual([])
+    expect(
+      checkRestoration(snapshotOf({ 5: { opened: true, mares: { 12: [true, 0] } } }), dam),
+    ).toEqual([{ reason: 'mares-established' }])
+  })
+
+  it('該系還沒開啟、那一代還沒成立，或同一代同一方已經宣告過時不能宣告', () => {
+    expect(checkRestoration(snapshotOf({}), sire)).toEqual([{ reason: 'not-opened' }])
+    expect(
+      checkRestoration(snapshotOf({ 6: { opened: true } }), {
+        line: 6,
+        generation: 3,
+        side: 'dam',
+      }),
+    ).toEqual([{ reason: 'not-founded', founding: 4 }])
+    const declared = snapshotOf({
+      5: { opened: true, restorations: [{ side: 'sire', generation: 12 }] },
+    })
+    expect(checkRestoration(declared, sire)).toEqual([{ reason: 'declared' }])
+    expect(checkRestoration(declared, dam)).toEqual([])
+  })
+
+  it('斷血代數不是 0 以上的整數時丟出錯誤', () => {
+    expect(() =>
+      checkRestoration(snapshotOf({ 5: { opened: true } }), { ...sire, generation: -1 }),
     ).toThrow(RangeError)
   })
 })

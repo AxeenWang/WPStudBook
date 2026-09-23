@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { listBoard, type Board } from '../../src/core/board'
+import { checkRestoration, listBoard, type Board } from '../../src/core/board'
 import { checkDesignatedBreeding } from '../../src/core/check'
 import { foalPlacement } from '../../src/core/generation'
 import {
@@ -300,6 +300,26 @@ describe('八系管理（LINE）', () => {
     ).toEqual([])
   })
 
+  it('LINE-19 斷血時 → 使用者可選重試、補血或補系，系統不代選', () => {
+    // 第 5 系 12 代種牡馬離場、沒有後任；第 5 系 11 代種牡馬與第 6 系 11 代母馬還在
+    const snapshot = snapshotOf({
+      1: { opened: true, stallions: { 12: 'active' }, mares: { 12: [true, 2] } },
+      5: { opened: true, stallions: { 11: 'active', 12: 'ended' }, mares: { 12: [true, 2] } },
+      6: { opened: true, mares: { 11: [true, 2] } },
+    })
+    const board = listBoard(snapshot)
+    // 系統不自動宣告斷血：沒有補系，產出 13 代的任務只是暫停
+    expect(board.restorations).toEqual([])
+    expect(
+      board.tasks.find(
+        (task) => task.pairing.output.line === 5 && task.pairing.output.generation === 13,
+      ),
+    ).toMatchObject({ sireStatus: 'missing', paused: true })
+    // 重試：產出 12 代的任務照常；補血見 LINE-18；補系：可以宣告補公系
+    expect(described(board, 12)).toContain('第 5 系 11 代 × 第 6 系 11 代母馬群 → 第 5 系 12 代')
+    expect(checkRestoration(snapshot, { line: 5, generation: 12, side: 'sire' })).toEqual([])
+  })
+
   it('LINE-20 第 5 系 12 代斷血並市場補系 → 補入親馬為零代，後代記為第 5 系 13 代，其餘七系不變', () => {
     expect(describePairing(restorationOf(5, 12))).toBe(
       '第 5 系 0 代 × 第 1 系 12 代母馬群 → 第 5 系 13 代',
@@ -374,6 +394,38 @@ describe('八系管理（LINE）', () => {
       }),
     )
     expect(described(cycling, 13)).toEqual(['第 5 系 0 代 × 第 1 系 12 代母馬群 → 第 5 系 13 代'])
+  })
+
+  it('LINE-39 母馬群從未成立並宣告補母系 → 配它的任務照常出現，可登記替代母馬；母馬群已成立時不能補母系，改用補血', () => {
+    const neverEstablished: Partial<Record<LinePosition, LineSpec>> = {
+      1: { opened: true, stallions: { 12: 'active' } },
+      5: { opened: true, mares: { 12: [false, 0] } },
+    }
+    const declaration = { line: 5, generation: 12, side: 'dam' } as const
+    expect(checkRestoration(snapshotOf(neverEstablished), declaration)).toEqual([])
+    expect(described(listBoard(snapshotOf(neverEstablished)), 13)).toEqual([])
+    const declared = listBoard(
+      snapshotOf({
+        ...neverEstablished,
+        5: { ...neverEstablished[5], restorations: [{ side: 'dam', generation: 12 }] },
+      }),
+    )
+    expect(described(declared, 13)).toEqual(['第 1 系 12 代 × 第 5 系 12 代母馬群 → 第 1 系 13 代'])
+    // 在這條任務底下登記替代第 5 系 12 代的市場母馬：配種檢查與代數都和補血相同
+    const substitute = { kind: 'substitute', forLine: 5, forGeneration: 12 } as const
+    expect(
+      checkDesignatedBreeding(pairingOf(1, 13), { line: 1, generation: 12 }, substitute),
+    ).toEqual({ blocks: [], warnings: [] })
+    expect(foalPlacement({ line: 1, generation: 12 }, substitute)).toEqual({
+      line: 1,
+      generation: 13,
+    })
+    // 母馬群已成立時改用補血
+    const established = snapshotOf({
+      ...neverEstablished,
+      5: { opened: true, mares: { 12: [true, 0] } },
+    })
+    expect(checkRestoration(established, declaration)).toEqual([{ reason: 'mares-established' }])
   })
 
   it('LINE-40 補系產駒接上後繼 → 補系結束並解除暫停；補公系看產出那一代的種牡馬紀錄，補母系看補系任務產出那一代的母馬群', () => {

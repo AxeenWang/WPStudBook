@@ -90,7 +90,7 @@ export function chooseIncumbent(
   return changes
 }
 
-/** 替換的零代市場種牡馬與所在系的系統差異 */
+/** 補入或替換的零代市場種牡馬與所在系的系統差異 */
 export interface MarketStallionSystemCheck {
   /** 子系統不同：警告並確認，確認後更新該系目前的子系統名稱 */
   subsystem: { current: string | null; replacement: string } | null
@@ -99,9 +99,9 @@ export interface MarketStallionSystemCheck {
 }
 
 /**
- * 市場種牡馬替換提前引退的零代種牡馬時（需求規格 7.7、11.9），
- * 比較他本身的父系與該系目前的子系統：不同時警告並確認；親系統也不同時一併提示影響活血。
- * 父系不明時無法比較，不警告。
+ * 零代市場種牡馬的系統比對：替換提前引退的零代種牡馬（需求規格 7.7、11.9），
+ * 以及補公系補入零代市場種牡馬（7.6）時，比較他本身的父系與該系目前的子系統：
+ * 不同時警告並確認；親系統也不同時一併提示影響活血。父系不明時無法比較，不警告。
  */
 export function checkMarketStallionSystem(
   line: LineSystem,

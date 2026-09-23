@@ -152,6 +152,57 @@ export function listBoard(snapshot: EightLineSnapshot): Board {
   return { openableBranches, tasks, restorations }
 }
 
+/** 宣告斷血補系（需求規格 7.6）：第 line 系第 generation 代斷了公系或母系 */
+export interface RestorationDeclaration {
+  line: LinePosition
+  generation: number
+  side: 'sire' | 'dam'
+}
+
+/**
+ * 不能宣告補系的原因：
+ * - not-opened：該系還沒開啟
+ * - not-founded：該系在第 generation 代還沒成立；founding 是該系成立的代數
+ * - declared：同一代的同一方已經宣告過
+ * - sire-available：補公系，但該代已有在崗或已指定的種牡馬（等待目標種牡馬不算斷血，7.8）
+ * - mares-established：補母系，但該代母馬群已成立，請改用市場補血
+ */
+export type RestorationBlock =
+  | { reason: 'not-opened' }
+  | { reason: 'not-founded'; founding: number }
+  | { reason: 'declared' }
+  | { reason: 'sire-available' }
+  | { reason: 'mares-established' }
+
+/**
+ * 使用者宣告斷血補系前的檢查（需求規格 7.6）：要不要補系由使用者決定，這裡只阻止與八系現況矛盾的宣告。
+ * 斷血代數不是 0 以上的整數時丟出 RangeError。
+ */
+export function checkRestoration(
+  snapshot: EightLineSnapshot,
+  declaration: RestorationDeclaration,
+): RestorationBlock[] {
+  const { line, generation, side } = declaration
+  assertGeneration(generation, '斷血代數', 0)
+  const lookup = createLookup(snapshot)
+  if (!lookup.isOpened(line)) return [{ reason: 'not-opened' }]
+  const founding = branchOf(line).outputGeneration
+  if (generation < founding) return [{ reason: 'not-founded', founding }]
+  const blocks: RestorationBlock[] = []
+  if (
+    lookup.restorations(line).some((slot) => slot.side === side && slot.generation === generation)
+  ) {
+    blocks.push({ reason: 'declared' })
+  }
+  if (side === 'sire') {
+    const state = lookup.stallion(line, generation)
+    if (state === 'active' || state === 'waiting') blocks.push({ reason: 'sire-available' })
+  } else if (lookup.mareGroup(line, generation)?.established === true) {
+    blocks.push({ reason: 'mares-established' })
+  }
+  return blocks
+}
+
 interface Lookup {
   maxGeneration: number
   isOpened(line: LinePosition): boolean
