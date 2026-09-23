@@ -9,7 +9,9 @@ import {
   partnerLine,
   type LinePosition,
 } from '../../src/core/lines'
+import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { describePairing, pairingOf, snapshotOf, type LineSpec } from '../support/eight-line'
+import { lineSystemsOf } from '../support/systems'
 
 // 需求規格第 15 章「八系管理（LINE）」中由 core 負責的部分；畫面、匯入與儲存的部分由後續計畫補上
 
@@ -248,5 +250,32 @@ describe('八系管理（LINE）', () => {
       checkDesignatedBreeding(pairingOf(1, 1), { line: 1, generation: 0 }, { kind: 'start' })
         .warnings,
     ).toEqual([])
+  })
+
+  it('LINE-03 新系親系統與既有系重複 → 警告並確認，確認後可建立', () => {
+    const lines = lineSystemsOf({ 1: ['系1子', 'ナスルーラ'], 2: ['系2子', 'マッチェム'] })
+    expect(findParentSystemConflict(lines, 3, 'ナスルーラ')).toEqual({
+      parentSystem: 'ナスルーラ',
+      lines: [1],
+    })
+    expect(findParentSystemConflict(lines, 3, 'エクリプス')).toBeNull()
+  })
+
+  it('LINE-04 總覽顯示八系親系統種類數與重複的系；對照表更新升格後重複解除', () => {
+    const before = lineSystemsOf({
+      1: ['系1子', 'ナスルーラ'],
+      2: ['系2子', 'ナスルーラ'],
+      3: ['系3子', 'マッチェム'],
+    })
+    expect(summarizeLineSystems(before)).toEqual({
+      distinctCount: 2,
+      duplicates: [{ parentSystem: 'ナスルーラ', lines: [1, 2] }],
+    })
+    const after = lineSystemsOf({
+      1: ['系1子', 'ナスルーラ'],
+      2: ['系2子', 'ボールドルーラー'],
+      3: ['系3子', 'マッチェム'],
+    })
+    expect(summarizeLineSystems(after)).toEqual({ distinctCount: 3, duplicates: [] })
   })
 })
