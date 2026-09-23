@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { designatedPairing, designatedPairings } from './designated'
+import { designatedPairing, designatedPairings, restorationPairing } from './designated'
 import { foalPlacement, type DamRole } from './generation'
 
 describe('designatedPairing', () => {
@@ -67,5 +67,52 @@ describe('designatedPairings', () => {
         expect(foalPlacement(pairing.sire, dam)).toEqual(pairing.output)
       }
     }
+  })
+})
+
+describe('restorationPairing', () => {
+  it('第 5 系 12 代補公系：第 5 系零代配第 1 系 12 代母馬群，產出第 5 系 13 代', () => {
+    expect(restorationPairing(5, 12)).toEqual({
+      kind: 'restore',
+      distance: 4,
+      sire: { line: 5, generation: 0 },
+      mares: { kind: 'group', line: 1, generation: 12 },
+      output: { line: 5, generation: 13 },
+    })
+  })
+
+  it('建系期補公系：推進原系的配對改由零代種牡馬配替代母馬的母馬群', () => {
+    expect(restorationPairing(1, 2)).toEqual({
+      kind: 'restore',
+      distance: 2,
+      sire: { line: 1, generation: 0 },
+      mares: { kind: 'group', line: 3, generation: 2 },
+      output: { line: 1, generation: 3 },
+    })
+  })
+
+  it('斷血的代數就是該系成立的代數時也可以補公系', () => {
+    expect(restorationPairing(6, 4)).toMatchObject({
+      sire: { line: 6, generation: 0 },
+      mares: { kind: 'group', line: 8, generation: 4 },
+      output: { line: 6, generation: 5 },
+    })
+  })
+
+  it('斷血代數早於該系成立的代數（包括零代）時回傳 null', () => {
+    expect(restorationPairing(6, 3)).toBeNull()
+    expect(restorationPairing(1, 0)).toBeNull()
+  })
+
+  it('斷血代數不是 0 以上的整數時丟出錯誤', () => {
+    expect(() => restorationPairing(1, -1)).toThrow(RangeError)
+    expect(() => restorationPairing(1, 1.5)).toThrow(RangeError)
+  })
+
+  it('依補公系配對配種，產駒剛好是預計產出', () => {
+    const pairing = restorationPairing(5, 12)
+    expect(
+      pairing && foalPlacement(pairing.sire, { kind: 'own', line: 1, generation: 12 }),
+    ).toEqual({ line: 5, generation: 13 })
   })
 })

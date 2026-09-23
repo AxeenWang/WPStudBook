@@ -174,6 +174,9 @@ function isVisible(pairing: DesignatedPairing, lookup: Lookup): boolean {
         lookup.stallion(line, generation - 1) !== undefined &&
         maresOf(pairing, lookup)?.established === true
       )
+    case 'restore':
+      // 補公系宣告後就出現，比照建立新系在開啟後出現（需求規格 7.6）
+      return true
   }
 }
 
