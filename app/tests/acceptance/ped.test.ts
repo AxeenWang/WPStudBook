@@ -8,7 +8,7 @@ import { checkPedigree, estimateVitality } from '../../src/core/vitality'
 import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
 import { buildEightLinePlan } from '../support/eight-line-plan'
 
-// 需求規格第 15 章「血統檢查（PED）」中由 core 負責的部分；活血與 4 代內重複由後續的血統推算計畫補上
+// 需求規格第 15 章「血統檢查（PED）」中由 core 負責的部分；血緣表（10.4，PED-09、10）與後繼核對（9.6，PED-08）由後續計畫補上
 
 describe('血統檢查（PED）', () => {
   // 第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代
