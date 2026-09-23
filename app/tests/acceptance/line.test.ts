@@ -9,6 +9,7 @@ import {
   partnerLine,
   type LinePosition,
 } from '../../src/core/lines'
+import { entrySisterStatus, establishesGeneration } from '../../src/core/sisters'
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
 import { describePairing, pairingOf, snapshotOf, type LineSpec } from '../support/eight-line'
@@ -134,6 +135,20 @@ describe('八系管理（LINE）', () => {
     const g6 = ['1↔3', '2↔4', '5↔6', '7↔8']
     const g7 = ['1↔5', '2↔7', '3↔6', '4↔8']
     expect([5, 6, 7, 8, 9, 10].map(pairsAt)).toEqual([g5, g6, g7, g5, g6, g7])
+  })
+
+  it('LINE-17 某代第一匹自家母駒以暫定保留轉入 → 該代立即成立，不必 5 匹或種牡馬就緒', () => {
+    const status = entrySisterStatus({ id: 'F1', sireId: 'S', damId: 'D' }, [])
+    expect(status).toBe('provisional')
+    expect(establishesGeneration(status)).toBe(true)
+    // 第 3 系 5 代只有這 1 匹，也還沒有第 3 系 5 代種牡馬：母馬群已成立，配第 3 系 5 代母馬的任務照常出現
+    const board = listBoard(
+      snapshotOf({
+        1: { opened: true, stallions: { 5: 'active' } },
+        3: { opened: true, mares: { 5: [true, 1, 1] } },
+      }),
+    )
+    expect(described(board, 6)).toEqual(['第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代'])
   })
 
   it('LINE-18 已成立世代母馬降為 0／5 → 顯示母馬群待補，任務不自動斷血', () => {
