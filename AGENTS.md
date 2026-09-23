@@ -78,3 +78,5 @@ Run from `app/`:
 - Do not commit build or test output: `app/dist/`, `app/node_modules/`, Playwright reports.
 - UI text is Traditional Chinese. Keep game field names, system names, and horse names in Japanese.
 - When a rule changes, update `docs/specs/需求規格.md` in the same change. If pairing or pedigree rules change, also update `docs/specs/八系巡迴圖.html`.
+- Write commit messages in Traditional Chinese, subject and body, with no English prefix such as `docs:` or `feat:`. Keep the `Co-Authored-By:` trailer the running environment asks for.
+- An implementation plan that restates a rule from `docs/specs/需求規格.md` must quote the clause it relies on, and the plan's own interpretations belong in a section of their own so a reviewer can check them against the requirements.

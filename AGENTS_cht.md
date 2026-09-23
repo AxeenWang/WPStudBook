@@ -78,3 +78,5 @@ app/               npm 專案根
 - 不得提交建置或測試產物：`app/dist/`、`app/node_modules/`、Playwright 報告。
 - 介面文字使用繁體中文；遊戲欄位、系統名與馬名保留日文。
 - 規則變更時，在同一次變更中更新 `docs/specs/需求規格.md`；配對或血統規則變更時，一併更新 `docs/specs/八系巡迴圖.html`。
+- commit 訊息用繁體中文，subject 與 body 皆是，不加 `docs:`、`feat:` 這類英文前綴；保留執行環境要求的 `Co-Authored-By:` trailer。
+- 實作計畫重述 `docs/specs/需求規格.md` 的規則時，要引用所依據的條文；計畫自己的詮釋另立一節，讓審查者能對照需求規格檢查。
