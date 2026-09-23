@@ -19,6 +19,7 @@ import {
 } from '../../src/core/stallions'
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
+import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
 import {
   describePairing,
   pairingOf,
@@ -470,6 +471,29 @@ describe('八系管理（LINE）', () => {
       1: { ...damSide[1], mares: { 13: [true, 1] } },
     }
     expect(listBoard(snapshotOf(filly)).restorations).toMatchObject([{ inProgress: false }])
+  })
+
+  it('LINE-41 補公系所生的產駒 → 正式後繼核對依補公系配對，可成為第 5 系 13 代的後繼', () => {
+    const lineFiveThirteen = { line: 5, generation: 13 } as const
+    const origin: DesignatedOrigin = {
+      kind: 'designated',
+      breedingSireId: 'Z5',
+      breedingDamId: 'D1',
+      sire: { line: 5, generation: 0 },
+      dam: { kind: 'own', line: 1, generation: 12 },
+      recorded: lineFiveThirteen,
+      restoration: true,
+    }
+    expect(verifySuccessor({ sireId: 'Z5', damId: 'D1', origin }, lineFiveThirteen)).toEqual([])
+    // 自家母馬不足、例外補入替代第 1 系 12 代的市場母馬所生也一樣
+    const fromSubstitute: DesignatedOrigin = {
+      ...origin,
+      breedingDamId: 'M1',
+      dam: { kind: 'substitute', forLine: 1, forGeneration: 12 },
+    }
+    expect(
+      verifySuccessor({ sireId: 'Z5', damId: 'M1', origin: fromSubstitute }, lineFiveThirteen),
+    ).toEqual([])
   })
 
   it('LINE-03 新系親系統與既有系重複 → 警告並確認，確認後可建立', () => {

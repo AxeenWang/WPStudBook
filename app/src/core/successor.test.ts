@@ -113,6 +113,51 @@ describe('verifySuccessor', () => {
     ])
   })
 
+  it('補公系所生，以補公系配對核對', () => {
+    // 第 5 系 12 代補公系：零代市場種牡馬 Z5 × 第 1 系 12 代自家母馬 D1，出生紀錄為第 5 系 13 代
+    const restoredOrigin: DesignatedOrigin = {
+      kind: 'designated',
+      breedingSireId: 'Z5',
+      breedingDamId: 'D1',
+      sire: { line: 5, generation: 0 },
+      dam: { kind: 'own', line: 1, generation: 12 },
+      recorded: { line: 5, generation: 13 },
+      restoration: true,
+    }
+    const lineFiveThirteen = { line: 5, generation: 13 } as const
+    expect(
+      verifySuccessor({ sireId: 'Z5', damId: 'D1', origin: restoredOrigin }, lineFiveThirteen),
+    ).toEqual([])
+    // 規則快照沒有補公系記號時，零代種牡馬不是第 5 系 13 代的指定種牡馬
+    const plainOrigin: DesignatedOrigin = { ...restoredOrigin, restoration: false }
+    expect(
+      verifySuccessor({ sireId: 'Z5', damId: 'D1', origin: plainOrigin }, lineFiveThirteen),
+    ).toEqual([
+      {
+        mismatch: 'pairing',
+        blocks: [
+          { side: 'sire', expected: { line: 5, generation: 12 }, mismatches: ['generation'] },
+        ],
+      },
+    ])
+  })
+
+  it('補公系記號的斷血代數早於該系成立的代數時，沒有可比對的配對，阻止', () => {
+    // 第 6 系在產出 4 代才成立，3 代不能補公系
+    const tooEarly: DesignatedOrigin = {
+      kind: 'designated',
+      breedingSireId: 'Z6',
+      breedingDamId: 'D33',
+      sire: { line: 6, generation: 0 },
+      dam: { kind: 'own', line: 3, generation: 3 },
+      recorded: { line: 6, generation: 4 },
+      restoration: true,
+    }
+    expect(
+      verifySuccessor({ sireId: 'Z6', damId: 'D33', origin: tooEarly }, { line: 6, generation: 4 }),
+    ).toEqual([{ mismatch: 'pairing', blocks: [] }])
+  })
+
   it('要進入的母馬群或接任的位置與出生紀錄不符時阻止', () => {
     expect(verifySuccessor(foal, { line: 1, generation: 7 })).toEqual([
       { mismatch: 'target', expected: lineOneSix },
