@@ -297,10 +297,38 @@ describe('checkRestoration', () => {
   const dam = { line: 5, generation: 12, side: 'dam' } as const
 
   it('那一代沒有在崗或已指定的種牡馬時可以補公系', () => {
-    expect(checkRestoration(snapshotOf({ 5: { opened: true } }), sire)).toEqual([])
+    expect(
+      checkRestoration(snapshotOf({ 5: { opened: true, mares: { 12: [true, 1] } } }), sire),
+    ).toEqual([])
     expect(
       checkRestoration(snapshotOf({ 5: { opened: true, stallions: { 12: 'ended' } } }), sire),
     ).toEqual([])
+  })
+
+  it('該系還沒到達那一代，或下一代已有種牡馬紀錄時不能補公系', () => {
+    expect(checkRestoration(snapshotOf({ 5: { opened: true } }), sire)).toEqual([
+      { reason: 'not-reached' },
+    ])
+    expect(
+      checkRestoration(
+        snapshotOf({ 5: { opened: true, stallions: { 12: 'ended', 13: 'waiting' } } }),
+        sire,
+      ),
+    ).toEqual([{ reason: 'succeeded' }])
+  })
+
+  it('多個阻止原因同時出現時依序列出：同一代已宣告補公系，而且種牡馬在崗', () => {
+    const declared = snapshotOf({
+      5: {
+        opened: true,
+        stallions: { 12: 'active' },
+        restorations: [{ side: 'sire', generation: 12 }],
+      },
+    })
+    expect(checkRestoration(declared, sire)).toEqual([
+      { reason: 'declared' },
+      { reason: 'sire-available' },
+    ])
   })
 
   it('那一代已有在崗或已指定的種牡馬時不能補公系', () => {
@@ -330,7 +358,11 @@ describe('checkRestoration', () => {
       }),
     ).toEqual([{ reason: 'not-founded', founding: 4 }])
     const declared = snapshotOf({
-      5: { opened: true, restorations: [{ side: 'sire', generation: 12 }] },
+      5: {
+        opened: true,
+        stallions: { 12: 'ended' },
+        restorations: [{ side: 'sire', generation: 12 }],
+      },
     })
     expect(checkRestoration(declared, sire)).toEqual([{ reason: 'declared' }])
     expect(checkRestoration(declared, dam)).toEqual([])

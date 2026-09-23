@@ -319,6 +319,14 @@ describe('八系管理（LINE）', () => {
     // 重試：產出 12 代的任務照常；補血見 LINE-18；補系：可以宣告補公系
     expect(described(board, 12)).toContain('第 5 系 11 代 × 第 6 系 11 代母馬群 → 第 5 系 12 代')
     expect(checkRestoration(snapshot, { line: 5, generation: 12, side: 'sire' })).toEqual([])
+    // 系統只阻止與現況矛盾的宣告：13 代還沒到達不能補公系，11 代種牡馬在崗且 12 代已有紀錄也不能補公系
+    expect(checkRestoration(snapshot, { line: 5, generation: 13, side: 'sire' })).toEqual([
+      { reason: 'not-reached' },
+    ])
+    expect(checkRestoration(snapshot, { line: 5, generation: 11, side: 'sire' })).toEqual([
+      { reason: 'sire-available' },
+      { reason: 'succeeded' },
+    ])
   })
 
   it('LINE-20 第 5 系 12 代斷血並市場補系 → 補入親馬為零代，後代記為第 5 系 13 代，其餘七系不變', () => {

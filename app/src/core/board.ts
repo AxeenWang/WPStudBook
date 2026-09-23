@@ -164,14 +164,19 @@ export interface RestorationDeclaration {
  * - not-opened：該系還沒開啟
  * - not-founded：該系在第 generation 代還沒成立；founding 是該系成立的代數
  * - declared：同一代的同一方已經宣告過
+ * - not-reached：補公系，但該系還沒到達第 generation 代，也就是 lookup.reached(line, generation) 為 false
+ *   （那一代沒有種牡馬紀錄，母馬群也沒成立）。這時應原地重試，或對前一代補公系。
  * - sire-available：補公系，但該代已有在崗或已指定的種牡馬（等待目標種牡馬不算斷血，7.8）
+ * - succeeded：補公系，但下一代（generation + 1）已有種牡馬紀錄（任何狀態），後繼已經接上
  * - mares-established：補母系，但該代母馬群已成立，請改用市場補血
  */
 export type RestorationBlock =
   | { reason: 'not-opened' }
   | { reason: 'not-founded'; founding: number }
   | { reason: 'declared' }
+  | { reason: 'not-reached' }
   | { reason: 'sire-available' }
+  | { reason: 'succeeded' }
   | { reason: 'mares-established' }
 
 /**
@@ -195,8 +200,10 @@ export function checkRestoration(
     blocks.push({ reason: 'declared' })
   }
   if (side === 'sire') {
+    if (!lookup.reached(line, generation)) blocks.push({ reason: 'not-reached' })
     const state = lookup.stallion(line, generation)
     if (state === 'active' || state === 'waiting') blocks.push({ reason: 'sire-available' })
+    if (lookup.stallion(line, generation + 1) !== undefined) blocks.push({ reason: 'succeeded' })
   } else if (lookup.mareGroup(line, generation)?.established === true) {
     blocks.push({ reason: 'mares-established' })
   }
