@@ -94,6 +94,25 @@ describe('verifySuccessor', () => {
     expect(verifySuccessor(exception, { line: 3, generation: 3 })).toEqual([])
   })
 
+  it('出生紀錄那一代該系還沒成立時，沒有可比對的指定配對，阻止', () => {
+    // 第 6 系在產出 4 代才成立，產出 2 代沒有指定配對
+    const tooEarly: SuccessorCandidate = {
+      sireId: 'Z6',
+      damId: 'D11',
+      origin: {
+        kind: 'designated',
+        breedingSireId: 'Z6',
+        breedingDamId: 'D11',
+        sire: { line: 6, generation: 0 },
+        dam: { kind: 'own', line: 1, generation: 1 },
+        recorded: { line: 6, generation: 2 },
+      },
+    }
+    expect(verifySuccessor(tooEarly, { line: 6, generation: 2 })).toEqual([
+      { mismatch: 'pairing', blocks: [] },
+    ])
+  })
+
   it('要進入的母馬群或接任的位置與出生紀錄不符時阻止', () => {
     expect(verifySuccessor(foal, { line: 1, generation: 7 })).toEqual([
       { mismatch: 'target', expected: lineOneSix },

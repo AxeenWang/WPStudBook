@@ -65,6 +65,11 @@ describe('chooseIncumbent', () => {
     expect(chooseIncumbent('A', [son('A', 'active'), son('B', 'replaced')])).toEqual([])
   })
 
+  it('還沒接任的種牡馬，變更紀錄沒有 from', () => {
+    const [change] = chooseIncumbent('B', [son('A', 'active'), son('B')])
+    expect(change).not.toHaveProperty('from')
+  })
+
   it('選定的不存在、已退出生產行列或已引退時丟出錯誤', () => {
     expect(() => chooseIncumbent('X', [son('A', 'active')])).toThrow(RangeError)
     expect(() => chooseIncumbent('A', [son('A', 'withdrawn')])).toThrow(RangeError)
@@ -103,6 +108,13 @@ describe('checkMarketStallionSystem', () => {
     expect(checkMarketStallionSystem(sameParent, 'フェアウェイ', table)).toEqual({
       subsystem: { current: 'ファラリス', replacement: 'フェアウェイ' },
       parentSystem: null,
+    })
+  })
+
+  it('替換者的子系統沒登錄在對照表時，仍回報親系統不同，讓畫面提示補登', () => {
+    expect(checkMarketStallionSystem(line, '未登録の系統', table)).toEqual({
+      subsystem: { current: 'マンノウォー', replacement: '未登録の系統' },
+      parentSystem: { current: 'マッチェム', replacement: null },
     })
   })
 })

@@ -50,6 +50,19 @@ describe('matchHorse', () => {
     ).toEqual({ kind: 'same', id: 'H1' })
   })
 
+  it('手動輸入、尚未經匯入確認的馬名與匯入名稱不同時不算衝突', () => {
+    const foal = {
+      id: 'F1',
+      abilityNumber: '0x2000',
+      birthYear: 1968,
+      name: 'ハイセイコ',
+      manualName: true,
+    }
+    expect(
+      matchHorse({ abilityNumber: '0x2000', birthYear: 1968, name: 'ハイセイコー' }, [foal]),
+    ).toEqual({ kind: 'same', id: 'F1' })
+  })
+
   it('既有紀錄沒有能力番号時，以唯一馬名輔助配對；出生年要相同或未填', () => {
     const incoming = { abilityNumber: '0x0100', birthYear: 1964, name: 'スターロツチ' }
     expect(matchHorse(incoming, [{ id: 'M1', name: 'スターロツチ' }])).toEqual({

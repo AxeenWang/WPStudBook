@@ -15,7 +15,7 @@ export interface StallionRecord {
   placement: LineGeneration
   /** 父馬的內部識別；市場種牡馬沒有 */
   sireId?: string
-  /** 接任後的狀態；還沒接任時留空 */
+  /** 接任後的狀態；還沒接任時留空，包括預定後繼「已引退待指定」（競走馬已引退、還沒接任） */
   status?: StallionStatus
 }
 
@@ -72,7 +72,11 @@ export function chooseIncumbent(
     throw new RangeError(`已退出生產行列或已引退的種牡馬不能接任：${chosenId}`)
   }
   const changes: StallionStatusChange[] = []
-  if (chosen.status !== 'active') changes.push({ id: chosen.id, from: chosen.status, to: 'active' })
+  if (chosen.status === undefined) {
+    changes.push({ id: chosen.id, to: 'active' })
+  } else if (chosen.status !== 'active') {
+    changes.push({ id: chosen.id, from: chosen.status, to: 'active' })
+  }
   for (const stallion of stallions) {
     if (
       stallion.id !== chosen.id &&

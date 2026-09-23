@@ -1,6 +1,6 @@
 /**
- * 未命名產駒的追蹤名：母馬名＋完整出生年（實際出生年，不是配種年），
- * 例如 `オオトリモナーコス1990`（需求規格 9.4）。
+ * 未命名產駒的追蹤名：母馬的基本馬名（不帶 `(外)`、`[地]` 前綴）＋完整出生年
+ * （實際出生年，不是配種年），例如 `オオトリモナーコス1990`（需求規格 9.4）。
  * 母馬名空白或出生年不是 0 以上的整數時丟出 RangeError。
  */
 export function trackingName(damName: string, birthYear: number): string {
@@ -13,7 +13,7 @@ export function trackingName(damName: string, birthYear: number): string {
 
 /**
  * 產駒主要顯示的名稱（需求規格 9.4）：有正式馬名時用正式馬名；
- * 沒有，或正式馬名被清空時回退追蹤名。追蹤名另外保留為搜尋別名，由儲存層處理。
+ * 沒有，或正式馬名被清空時回退追蹤名（damName 用母馬的基本馬名）。追蹤名另外保留為搜尋別名，由儲存層處理。
  */
 export function foalDisplayName(
   formalName: string | undefined,

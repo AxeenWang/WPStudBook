@@ -22,6 +22,8 @@ export interface KnownHorse {
   birthYear?: number
   /** 基本馬名；還沒有正式馬名的產駒留空 */
   name?: string
+  /** 馬名是手動輸入、尚未經匯入確認：只用來輔助配對，與匯入的馬名不同時不算明顯不符，由匯入名稱取代（需求規格 6.4、9.4） */
+  manualName?: boolean
   sireName?: string
   damName?: string
 }
@@ -59,7 +61,7 @@ export function matchHorse(incoming: IncomingHorse, known: readonly KnownHorse[]
   if (sameNumber.length > 1) return conflict(sameNumber, ['ambiguous'])
   if (sameNumber.length === 1) return confirm(sameNumber[0], incoming, 'same')
 
-  // 能力番號＋出生年配不到時，以唯一馬名輔助配對；出生年要相同或未填
+  // 能力番号＋出生年配不到時，以唯一馬名輔助配對；出生年要相同或未填
   const { name } = incoming
   if (name === undefined) return { kind: 'new' }
   const sameName = known.filter(
@@ -88,14 +90,14 @@ export function duplicateAbilityNumbers(abilityNumbers: readonly string[]): stri
   return [...duplicates]
 }
 
-/** 配到一筆後，馬名或父母明顯不符時改為衝突 */
+/** 配到一筆後，馬名或父母明顯不符時改為衝突；手動輸入、尚未經匯入確認的馬名不比 */
 function confirm(
   horse: KnownHorse,
   incoming: IncomingHorse,
   kind: 'same' | 'assisted',
 ): HorseMatch {
   const reasons: IdentityConflictReason[] = []
-  if (clearlyDiffers(horse.name, incoming.name)) reasons.push('name')
+  if (!horse.manualName && clearlyDiffers(horse.name, incoming.name)) reasons.push('name')
   if (clearlyDiffers(horse.sireName, incoming.sireName)) reasons.push('sire')
   if (clearlyDiffers(horse.damName, incoming.damName)) reasons.push('dam')
   return reasons.length === 0 ? { kind, id: horse.id } : conflict([horse], reasons)
