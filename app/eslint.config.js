@@ -9,6 +9,8 @@ const layer = (name) => ({
   message: `不得引用 ${name} 模組（見 AGENTS.md 模組邊界）`,
 })
 const packages = (names, message) => ({ regex: `^(${names.join('|')})($|/)`, message })
+// 邊界規則涵蓋的檔案，副檔名與 app/files-to-lint 一致
+const sources = (dir) => [`src/${dir}/**/*.{ts,mts,tsx,vue}`]
 
 export default defineConfigWithVueTs(
   { name: 'app/files-to-lint', files: ['**/*.{ts,mts,tsx,vue}'] },
@@ -17,14 +19,14 @@ export default defineConfigWithVueTs(
   vueTsConfigs.recommended,
   {
     name: 'app/boundary-core',
-    files: ['src/core/**/*.{ts,vue}'],
+    files: sources('core'),
     rules: {
       'no-restricted-imports': [
         'error',
         {
           patterns: [
             packages(
-              ['vue', 'pinia', 'vue-router', 'dexie', 'reka-ui', '@tanstack'],
+              ['vue', '@vue', 'pinia', 'vue-router', 'dexie', 'reka-ui', '@tanstack'],
               'core 不得引用框架或資料庫套件',
             ),
             layer('ce-import'),
@@ -46,14 +48,14 @@ export default defineConfigWithVueTs(
   },
   {
     name: 'app/boundary-ce-import',
-    files: ['src/ce-import/**/*.{ts,vue}'],
+    files: sources('ce-import'),
     rules: {
       'no-restricted-imports': [
         'error',
         {
           patterns: [
             packages(
-              ['vue', 'pinia', 'vue-router', 'dexie', 'reka-ui'],
+              ['vue', '@vue', 'pinia', 'vue-router', 'dexie', 'reka-ui'],
               'ce-import 不得引用框架或資料庫套件',
             ),
             layer('storage'),
@@ -65,13 +67,13 @@ export default defineConfigWithVueTs(
   },
   {
     name: 'app/boundary-storage',
-    files: ['src/storage/**/*.{ts,vue}'],
+    files: sources('storage'),
     rules: {
       'no-restricted-imports': [
         'error',
         {
           patterns: [
-            packages(['vue', 'pinia', 'vue-router', 'reka-ui'], 'storage 不得引用畫面套件'),
+            packages(['vue', '@vue', 'pinia', 'vue-router', 'reka-ui'], 'storage 不得引用畫面套件'),
             layer('ce-import'),
             layer('ui'),
           ],
