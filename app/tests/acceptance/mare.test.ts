@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { LinePosition } from '../../src/core/lines'
 import {
   DEFAULT_MARE_AGE_SETTINGS,
   defaultAbsenceReason,
@@ -13,8 +14,12 @@ import {
   type OwnMare,
   type SisterStatusChange,
 } from '../../src/core/sisters'
+import { loadRuleSnapshot } from '../../src/storage/loaders'
+import type { MareRow } from '../../src/storage/records'
+import { addTestGame, testDatabase } from '../support/database'
+import { GAME, horseRow, ownMareRow, substituteMareRow, ungroupedMareRow } from '../support/rows'
 
-// 需求規格第 15 章「繁殖牝馬（MARE）」中由 core 負責的部分；卡片、匯入、事件與畫面由後續計畫補上
+// 需求規格第 15 章「繁殖牝馬（MARE）」中由 core 與儲存層彙整負責的部分；卡片、匯入、事件與畫面由後續計畫補上
 
 /** 父 S、母 D 的女兒 */
 const daughter = (id: string, inHerd: boolean, status: OwnMare['status']): OwnMare => ({
@@ -97,5 +102,61 @@ describe('繁殖牝馬（MARE）', () => {
     expect(mareAgeNotices(18, DEFAULT_MARE_AGE_SETTINGS)).toEqual(['senior'])
     expect(mareListedInTasks({ inHerd: true, age: 18 }, DEFAULT_MARE_AGE_SETTINGS)).toBe(true)
     expect(mareAgeNotices(18, { ...DEFAULT_MARE_AGE_SETTINGS, seniorAge: 20 })).toEqual([])
+  })
+})
+
+describe('繁殖牝馬（MARE）：儲存層彙整', () => {
+  /** 寫入母馬與她們的馬匹資料（1990 年 5 歲），回傳第 line 系的母馬群快照 */
+  async function mareGroupsAfter(mares: MareRow[], line: LinePosition) {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd(mares.map((mare) => horseRow(mare.horseId, { birthYear: 1985 })))
+    await db.mares.bulkAdd(mares)
+    const groups = async () =>
+      (await loadRuleSnapshot(db, GAME)).eightLines.lines[line - 1]!.mareGroups
+    return { db, groups }
+  }
+
+  it('MARE-02 第 3 系 3 代母馬群 → 只算該系該代的自家母馬與替代母馬', async () => {
+    const { groups } = await mareGroupsAfter(
+      [
+        ownMareRow('A', 3, 3),
+        substituteMareRow('B', 3, 3),
+        ownMareRow('C', 3, 2),
+        substituteMareRow('D', 2, 3),
+        ungroupedMareRow('E', 'unassigned'),
+      ],
+      3,
+    )
+    expect((await groups()).find((group) => group.generation === 3)).toEqual({
+      generation: 3,
+      established: true,
+      activeMares: 2,
+      ownMares: 1,
+    })
+  })
+
+  it('MARE-04 某代唯一的母馬離圈 → 該代仍為已成立', async () => {
+    const { db, groups } = await mareGroupsAfter([ownMareRow('A', 3, 3)], 3)
+    expect(await groups()).toEqual([
+      { generation: 3, established: true, activeMares: 1, ownMares: 1 },
+    ])
+    await db.mares.update('A', { herd: 'sold', sisterStatus: 'sold' })
+    expect(await groups()).toEqual([
+      { generation: 3, established: true, activeMares: 0, ownMares: 0 },
+    ])
+  })
+
+  it('MARE-24 姊妹一匹暫定保留、一匹候選 → 兩匹都列入任務；其中一匹被取代後只剩另一匹', async () => {
+    const { db, groups } = await mareGroupsAfter(
+      [
+        ownMareRow('A', 1, 2),
+        ownMareRow('B', 1, 2, { sisterStatus: 'candidate', establishedGeneration: false }),
+      ],
+      1,
+    )
+    expect((await groups())[0]!.activeMares).toBe(2)
+    await db.mares.update('B', { sisterStatus: 'replaced' })
+    expect((await groups())[0]!.activeMares).toBe(1)
   })
 })
