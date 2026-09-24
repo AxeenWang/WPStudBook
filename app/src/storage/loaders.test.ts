@@ -7,9 +7,11 @@ import {
   ownMareRow,
   restorationRow,
   stallionRow,
+  startMareRow,
   substituteMareRow,
 } from '../../tests/support/rows'
-import { loadRuleSnapshot } from './loaders'
+import { loadMating, loadRuleSnapshot } from './loaders'
+import { buildMating } from './mating'
 
 describe('loadRuleSnapshot', () => {
   it('讀取這一局的系位置、對照表、任用、母馬與補系，組成規則輸入快照', async () => {
@@ -81,5 +83,51 @@ describe('loadRuleSnapshot', () => {
 
     await db.horses.add(horseRow('M1', { gameId: 'G2', birthYear: 1985 }))
     await expect(loadRuleSnapshot(db, GAME)).rejects.toThrow('找不到馬匹：M1')
+  })
+})
+
+describe('loadMating', () => {
+  it('一代一代讀到第 4 代，近親重複的馬只讀一次，第 5 代不讀；結果與用全部資料列組出的相同', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const horses = [
+      horseRow('S', { sireId: 'X', damId: 'SD' }),
+      horseRow('D', { sireId: 'X', damId: 'DD' }),
+      horseRow('X', { sireId: 'Z1', damId: 'P1' }),
+      horseRow('SD', { sireId: 'Y' }),
+      horseRow('DD'),
+      horseRow('Z1'),
+      horseRow('P1', { sireSystem: 'ハイペリオン' }),
+      horseRow('Y', { sireId: 'Y1' }),
+      horseRow('Y1', { sireId: 'Y2' }),
+    ]
+    const lines = [lineRow(1, '系1子')]
+    const stallions = [stallionRow('Z1', 1, 0)]
+    const mares = [startMareRow('P1')]
+    await db.horses.bulkAdd(horses)
+    await db.lines.bulkAdd(lines)
+    await db.stallions.bulkAdd(stallions)
+    await db.mares.bulkAdd(mares)
+
+    const mating = await loadMating(db, GAME, 'S', 'D')
+    expect(mating).toEqual(
+      buildMating('S', 'D', { horses, stallions, mares, restorations: [], lines }),
+    )
+    expect(mating.sire!.sire!.horse.id).toBe('X')
+    expect(mating.dam!.sire!.horse.id).toBe('X')
+    expect(mating.sire!.sire!.sire!.horse).toEqual({
+      id: 'Z1',
+      sireSystem: '系1子',
+      buildPhaseMarket: true,
+    })
+    expect(await loadMating(db, GAME, undefined, undefined)).toEqual({ sire: null, dam: null })
+  })
+
+  it('樹上的馬找不到或屬於其他局時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([horseRow('S', { sireId: 'Q' }), horseRow('Q', { gameId: 'G2' })])
+    await expect(loadMating(db, GAME, 'S', undefined)).rejects.toThrow('找不到馬匹：Q')
+    await expect(loadMating(db, GAME, undefined, 'missing')).rejects.toThrow('找不到馬匹：missing')
   })
 })

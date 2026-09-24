@@ -1,8 +1,10 @@
 import type { EightLineSnapshot } from '../core/board'
+import { CLOSE_GENERATIONS, type Mating } from '../core/pedigree'
 import type { LineSystemSnapshot, SystemTable } from '../core/systems'
 import type { WPStudBookDatabase } from './database'
 import { loadGame, loadSettings } from './games'
-import type { HorseRow } from './records'
+import { buildMating } from './mating'
+import type { HorseRow, MareRow } from './records'
 import { buildEightLineSnapshot, buildLineSystems, buildSystemTable } from './snapshot'
 
 // 讀取 Dexie、交給純函式組成核心的輸入（技術設計 4.3「規則輸入快照的彙整」）。
@@ -59,6 +61,54 @@ export async function loadRuleSnapshot(
       }
     },
   )
+}
+
+/**
+ * 讀取一次配種的血統樹（需求規格 10.2）：從種牡馬與母馬往上一代一代批次讀到第 4 代；
+ * 近親重複的馬只讀一次。樹上的馬找不到或屬於其他局時丟出錯誤。
+ */
+export async function loadMating(
+  db: WPStudBookDatabase,
+  gameId: string,
+  sireId: string | undefined,
+  damId: string | undefined,
+): Promise<Mating> {
+  return db.transaction(
+    'r',
+    [db.horses, db.stallions, db.mares, db.restorations, db.lines],
+    async () => {
+      const horses: HorseRow[] = []
+      const loaded = new Set<string>()
+      let ids = uniqueIds([sireId, damId])
+      for (let depth = 1; depth <= CLOSE_GENERATIONS && ids.length > 0; depth++) {
+        const rows = await loadHorses(db, gameId, ids)
+        horses.push(...rows)
+        rows.forEach((row) => loaded.add(row.id))
+        ids = uniqueIds(rows.flatMap((row) => [row.sireId, row.damId])).filter(
+          (id) => !loaded.has(id),
+        )
+      }
+      const horseIds = horses.map((horse) => horse.id)
+      const [stallions, mares, restorations, lines] = await Promise.all([
+        db.stallions.where('horseId').anyOf(horseIds).toArray(),
+        db.mares.bulkGet(horseIds),
+        db.restorations.where('gameId').equals(gameId).toArray(),
+        db.lines.where('gameId').equals(gameId).toArray(),
+      ])
+      return buildMating(sireId, damId, {
+        horses,
+        stallions,
+        mares: mares.filter((mare): mare is MareRow => mare !== undefined),
+        restorations,
+        lines,
+      })
+    },
+  )
+}
+
+/** 去掉留空與重複的識別 */
+function uniqueIds(ids: readonly (string | undefined)[]): string[] {
+  return [...new Set(ids.filter((id): id is string => id !== undefined))]
 }
 
 /** 依識別讀取同一局的馬匹；找不到或屬於其他局時丟出錯誤 */
