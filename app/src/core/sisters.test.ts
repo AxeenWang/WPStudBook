@@ -64,6 +64,10 @@ describe('entrySisterStatus', () => {
     expect(entrySisterStatus(newcomer, [halfSister])).toBe('provisional')
     expect(entrySisterStatus(newcomer, [daughter('B', true, 'replaced')])).toBe('provisional')
   })
+
+  it('在圈但狀態是已售出的矛盾輸入丟出錯誤', () => {
+    expect(() => entrySisterStatus(newcomer, [daughter('A', true, 'sold')])).toThrow(RangeError)
+  })
 })
 
 describe('chooseKeptSister', () => {
@@ -95,5 +99,10 @@ describe('chooseKeptSister', () => {
   it('選定的母馬不存在或不在圈內時丟出錯誤', () => {
     expect(() => chooseKeptSister('X', [daughter('A', true, 'kept')])).toThrow(RangeError)
     expect(() => chooseKeptSister('A', [daughter('A', false, 'sold')])).toThrow(RangeError)
+  })
+
+  it('在圈但狀態是已售出的矛盾輸入丟出錯誤', () => {
+    const mares = [daughter('A', true, 'candidate'), daughter('B', true, 'sold')]
+    expect(() => chooseKeptSister('A', mares)).toThrow(RangeError)
   })
 })

@@ -41,14 +41,24 @@ export function establishesGeneration(status: SisterStatus): boolean {
   return status === 'provisional' || status === 'kept'
 }
 
+/** 在繁殖圈內的母馬不會是已售出；有這種矛盾的輸入時丟出 RangeError */
+function assertHerdStatus(mares: readonly OwnMare[]): void {
+  const contradictory = mares.find((mare) => mare.inHerd && mare.status === 'sold')
+  if (contradictory) {
+    throw new RangeError(`在繁殖圈內的母馬狀態不能是已售出：${contradictory.id}`)
+  }
+}
+
 /**
  * 自家母駒轉入或買回時的接替狀態（需求規格 8.9）：
  * 其他姊妹都不在圈內 → 暫定保留；已有姊妹在圈 → 候選。第二匹不得阻止，由使用者比較後決定。
+ * others 有在圈但狀態是已售出的母馬時丟出 RangeError。
  */
 export function entrySisterStatus(
   mare: Parentage,
   others: readonly OwnMare[],
 ): 'provisional' | 'candidate' {
+  assertHerdStatus(others)
   return others.some((other) => other.inHerd && isSister(mare, other)) ? 'candidate' : 'provisional'
 }
 
@@ -63,12 +73,14 @@ export interface SisterStatusChange {
  * 使用者比較姊妹後選定正式保留（需求規格 8.9）：
  * 選定的改為正式保留，其他在圈而且列入任務的姊妹改為已被取代，同一父母組合只剩一匹正式保留；
  * 已被取代、已售出與不在圈內的姊妹不變。
- * 選定的母馬不在 mares 中或不在圈內時丟出 RangeError（畫面只列出在圈的姊妹）。
+ * 選定的母馬不在 mares 中或不在圈內時丟出 RangeError（畫面只列出在圈的姊妹）；
+ * mares 有在圈但狀態是已售出的母馬時也丟出 RangeError。
  */
 export function chooseKeptSister(
   chosenId: string,
   mares: readonly OwnMare[],
 ): SisterStatusChange[] {
+  assertHerdStatus(mares)
   const chosen = mares.find((mare) => mare.id === chosenId)
   if (!chosen) throw new RangeError(`找不到要保留的母馬：${chosenId}`)
   if (!chosen.inHerd) throw new RangeError(`不在繁殖圈內的母馬不能選為正式保留：${chosenId}`)

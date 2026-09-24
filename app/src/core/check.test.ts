@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pairingOf } from '../../tests/support/eight-line'
+import { pairingOf, restorationOf } from '../../tests/support/eight-line'
 import { checkDesignatedBreeding } from './check'
 
 const clean = { blocks: [], warnings: [] }
@@ -90,6 +90,24 @@ describe('checkDesignatedBreeding', () => {
         found,
         { line: 3, generation: 0 },
         { kind: 'own', line: 1, generation: 2 },
+      ),
+    ).toEqual(clean)
+  })
+
+  it('補公系配對配替代第 1 系 12 代的市場母馬時警告；配自家母馬不警告', () => {
+    const restoring = restorationOf(5, 12)
+    expect(
+      checkDesignatedBreeding(
+        restoring,
+        { line: 5, generation: 0 },
+        { kind: 'substitute', forLine: 1, forGeneration: 12 },
+      ),
+    ).toEqual({ blocks: [], warnings: [{ kind: 'zero-sire-market-mare' }] })
+    expect(
+      checkDesignatedBreeding(
+        restoring,
+        { line: 5, generation: 0 },
+        { kind: 'own', line: 1, generation: 12 },
       ),
     ).toEqual(clean)
   })

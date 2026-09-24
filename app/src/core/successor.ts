@@ -1,5 +1,5 @@
 import { checkDesignatedBreeding, type BreedingBlock } from './check'
-import { designatedPairing } from './designated'
+import { designatedPairing, restorationPairing } from './designated'
 import { foalPlacement, type DamRole } from './generation'
 import type { LineGeneration } from './lines'
 
@@ -16,6 +16,11 @@ export interface DesignatedOrigin {
   dam: DamRole
   /** 出生紀錄的系與代數 */
   recorded: LineGeneration
+  /**
+   * 規則快照記下這次是補公系配對（需求規格 7.6）：種牡馬是補入的零代市場種牡馬，
+   * 以補公系配對核對；其他配種留空
+   */
+  restoration?: boolean
 }
 
 /**
@@ -38,7 +43,7 @@ export interface SuccessorCandidate {
  * - free-breeding：自由配種所生，不可成為八系後繼（9.5）
  * - parents：產駒記載的父母與配種紀錄不符，或有一方不明
  * - placement：依規則快照重算的系與代數與出生紀錄不符；expected 是重算的結果
- * - pairing：這次配種不是出生紀錄那一代的指定配對（例如偏離規則的配種）；
+ * - pairing：這次配種不是出生紀錄那一代的指定配對（例如偏離規則的配種），補公系所生則以補公系配對比對；
  *   blocks 是 10.3 的阻止內容，該系在那一代還沒成立時為空陣列
  * - target：要進入的母馬群或接任的位置與出生紀錄不符；expected 是出生紀錄的系與代數
  */
@@ -70,8 +75,12 @@ export function verifySuccessor(
   if (!samePlacement(computed, origin.recorded)) {
     blocks.push({ mismatch: 'placement', expected: computed })
   } else {
-    // 系與代數算得對，還要是那一代規則指定的配對（10.3）；零代種牡馬例外配市場母馬只警告，不阻止
-    const pairing = designatedPairing(origin.recorded.line, origin.recorded.generation)
+    // 系與代數算得對，還要是那一代規則指定的配對（10.3），補公系所生以補公系配對核對（7.6）；
+    // 零代種牡馬例外配市場母馬只警告，不阻止
+    const { line, generation } = origin.recorded
+    const pairing = origin.restoration
+      ? restorationPairing(line, generation - 1)
+      : designatedPairing(line, generation)
     const pairingBlocks = pairing
       ? checkDesignatedBreeding(pairing, origin.sire, origin.dam).blocks
       : []

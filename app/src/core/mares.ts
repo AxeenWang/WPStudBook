@@ -25,6 +25,13 @@ export function ageInYear(birthYear: number, year: number): number {
   return year - birthYear
 }
 
+/** 馬齡必須是 0 以上的整數；不符時丟出 RangeError（馬齡由程式內部傳入，錯誤屬於預期外的失敗） */
+function assertAge(age: number, label: string): void {
+  if (!Number.isInteger(age) || age < 0) {
+    throw new RangeError(`${label}必須是 0 以上的整數：${age}`)
+  }
+}
+
 /**
  * 母馬的年齡提醒（需求規格 8.5），都只提示、不影響操作：
  * - senior：達高齡提醒年齡，「產駒素質可能下降，可考慮出售」；已達定年的母馬不能賣出（4.6），不再提示
@@ -33,7 +40,9 @@ export function ageInYear(birthYear: number, year: number): number {
  */
 export type MareAgeNotice = 'senior' | 'last-breeding' | 'retirement-age'
 
+/** 依今年的馬齡列出年齡提醒；馬齡不是 0 以上的整數時丟出 RangeError */
 export function mareAgeNotices(age: number, settings: MareAgeSettings): MareAgeNotice[] {
+  assertAge(age, '馬齡')
   const notices: MareAgeNotice[] = []
   if (age >= settings.seniorAge && age < settings.retirementAge) notices.push('senior')
   if (age === settings.retirementAge - 1) notices.push('last-breeding')
@@ -47,12 +56,13 @@ export type AbsenceReason = 'retired' | 'sold'
 /**
  * 五月缺席、沒有在管理器登記賣出的母馬，預設的離圈原因（需求規格 11.5）：
  * 上次五月的馬齡達定年為定年引退，否則為售出（被取代的姊妹也一樣）；馬齡不明時為售出。
- * 使用者可在預覽逐匹更正。
+ * 使用者可在預覽逐匹更正。馬齡不是 0 以上的整數時丟出 RangeError。
  */
 export function defaultAbsenceReason(
   lastMayAge: number | undefined,
   settings: MareAgeSettings,
 ): AbsenceReason {
+  if (lastMayAge !== undefined) assertAge(lastMayAge, '上次五月的馬齡')
   return lastMayAge !== undefined && lastMayAge >= settings.retirementAge ? 'retired' : 'sold'
 }
 
@@ -69,8 +79,10 @@ export interface MareForTasks {
 /**
  * 列入任務的母馬（需求規格 8.5、8.9）：在繁殖圈內而且未達定年；
  * 自家母駒還要是暫定保留、候選或正式保留。規則輸入快照的「列入任務的母馬數」依此計算。
+ * 馬齡不是 0 以上的整數時丟出 RangeError。
  */
 export function mareListedInTasks(mare: MareForTasks, settings: MareAgeSettings): boolean {
+  if (mare.age !== undefined) assertAge(mare.age, '馬齡')
   if (!mare.inHerd) return false
   if (mare.age !== undefined && mare.age >= settings.retirementAge) return false
   return mare.sisterStatus === undefined || sisterStatusListed(mare.sisterStatus)
