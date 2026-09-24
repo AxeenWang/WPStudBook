@@ -159,9 +159,13 @@ function listed(
   return mareListedInTasks({ inHerd: true, age, sisterStatus: sisterStatusOf(mare) }, settings)
 }
 
-/** 自家母駒的接替狀態；市場母馬留空。自家母駒沒有接替狀態時丟出 RangeError */
+/** 接替狀態：自家母駒才有，市場母馬留空 */
 function sisterStatusOf(mare: MareRow): SisterStatus | undefined {
-  if (mare.usage !== 'own') return undefined
+  return mare.usage === 'own' ? ownSisterStatus(mare) : undefined
+}
+
+/** 自家母駒的接替狀態（需求規格 8.9）；沒有接替狀態時丟出 RangeError */
+export function ownSisterStatus(mare: MareRow): SisterStatus {
   if (mare.sisterStatus === undefined) {
     throw new RangeError(`自家母駒缺少接替狀態：${mare.horseId}`)
   }

@@ -10,7 +10,15 @@ import {
   startMareRow,
   substituteMareRow,
 } from '../../tests/support/rows'
-import { loadMating, loadRuleSnapshot } from './loaders'
+import {
+  loadKnownHorses,
+  loadMating,
+  loadRuleSnapshot,
+  loadSisters,
+  loadStallionRecords,
+  loadSubstituteMares,
+  loadSuccessorCandidate,
+} from './loaders'
 import { buildMating } from './mating'
 
 describe('loadRuleSnapshot', () => {
@@ -129,5 +137,135 @@ describe('loadMating', () => {
     await db.horses.bulkAdd([horseRow('S', { sireId: 'Q' }), horseRow('Q', { gameId: 'G2' })])
     await expect(loadMating(db, GAME, 'S', undefined)).rejects.toThrow('找不到馬匹：Q')
     await expect(loadMating(db, GAME, undefined, 'missing')).rejects.toThrow('找不到馬匹：missing')
+  })
+})
+
+describe('loadSisters', () => {
+  it('讀取這一局同父同母的自家母駒；父母任一方不明時回傳空陣列', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([
+      horseRow('A', { sireId: 'S', damId: 'D' }),
+      horseRow('B', { sireId: 'S', damId: 'D' }),
+      horseRow('C', { sireId: 'S2', damId: 'D' }),
+      horseRow('E', { sireId: 'S', damId: 'D' }),
+      horseRow('H', { gameId: 'G2', sireId: 'S', damId: 'D' }),
+    ])
+    await db.mares.bulkAdd([
+      ownMareRow('A', 1, 2),
+      ownMareRow('B', 1, 2, { sisterStatus: 'candidate', establishedGeneration: false }),
+      ownMareRow('C', 1, 2),
+      ownMareRow('H', 1, 2, { gameId: 'G2' }),
+    ])
+    const sisters = await loadSisters(db, GAME, 'S', 'D')
+    expect(sisters.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      { id: 'A', sireId: 'S', damId: 'D', inHerd: true, status: 'provisional' },
+      { id: 'B', sireId: 'S', damId: 'D', inHerd: true, status: 'candidate' },
+    ])
+    expect(await loadSisters(db, GAME, undefined, 'D')).toEqual([])
+    expect(await loadSisters(db, GAME, 'S', undefined)).toEqual([])
+  })
+})
+
+describe('loadStallionRecords', () => {
+  it('一般任用與補公系補入的任用分開讀取', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([horseRow('A'), horseRow('B'), horseRow('C', { sireId: 'A' })])
+    await db.stallions.bulkAdd([
+      stallionRow('A', 5, 0),
+      stallionRow('B', 5, 0, { restorationId: 'R1' }),
+      stallionRow('C', 5, 1),
+    ])
+    expect(await loadStallionRecords(db, GAME, 5, 0)).toEqual([
+      { id: 'A', placement: { line: 5, generation: 0 }, status: 'active' },
+    ])
+    expect(await loadStallionRecords(db, GAME, 5, 0, 'R1')).toEqual([
+      { id: 'B', placement: { line: 5, generation: 0 }, status: 'active' },
+    ])
+    expect(await loadStallionRecords(db, GAME, 5, 1)).toEqual([
+      { id: 'C', placement: { line: 5, generation: 1 }, sireId: 'A', status: 'active' },
+    ])
+  })
+})
+
+describe('loadSuccessorCandidate', () => {
+  it('讀取產駒與出生紀錄連結的配種紀錄；沒有配種紀錄時比照自由配種', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([
+      horseRow('F', {
+        sireId: 'S',
+        damId: 'M',
+        birth: { breedingId: 'BR', placement: { line: 1, generation: 5 } },
+      }),
+      horseRow('P', { sireId: 'S', damId: 'M' }),
+    ])
+    await db.breedings.add({
+      id: 'BR',
+      gameId: GAME,
+      mareId: 'M',
+      year: 1990,
+      kind: 'designated',
+      sireId: 'S',
+      conception: '受胎',
+      rule: {
+        distance: 1,
+        sire: { line: 1, generation: 4 },
+        dam: { kind: 'own', line: 2, generation: 4 },
+        output: { line: 1, generation: 5 },
+      },
+    })
+    expect(await loadSuccessorCandidate(db, GAME, 'F')).toEqual({
+      sireId: 'S',
+      damId: 'M',
+      origin: {
+        kind: 'designated',
+        breedingSireId: 'S',
+        breedingDamId: 'M',
+        sire: { line: 1, generation: 4 },
+        dam: { kind: 'own', line: 2, generation: 4 },
+        recorded: { line: 1, generation: 5 },
+      },
+    })
+    expect(await loadSuccessorCandidate(db, GAME, 'P')).toEqual({
+      sireId: 'S',
+      damId: 'M',
+      origin: { kind: 'free' },
+    })
+  })
+
+  it('產駒找不到，或出生紀錄連結的配種紀錄找不到、屬於其他局時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.add(horseRow('F', { birth: { breedingId: 'BR' } }))
+    await expect(loadSuccessorCandidate(db, GAME, 'missing')).rejects.toThrow('找不到馬匹：missing')
+    await expect(loadSuccessorCandidate(db, GAME, 'F')).rejects.toThrow('找不到配種紀錄：BR')
+    await db.breedings.add({ id: 'BR', gameId: 'G2', mareId: 'M', year: 1990, kind: 'free' })
+    await expect(loadSuccessorCandidate(db, GAME, 'F')).rejects.toThrow('找不到配種紀錄：BR')
+  })
+})
+
+describe('loadSubstituteMares、loadKnownHorses', () => {
+  it('只讀這一局的馬', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([
+      horseRow('A', { sireSystem: 'ハイペリオン', baseName: 'エー' }),
+      horseRow('B', { sireSystem: 'ハイペリオン', baseName: 'ビー' }),
+      horseRow('H', { gameId: 'G2', sireSystem: 'ハイペリオン', baseName: 'エイチ' }),
+    ])
+    await db.mares.bulkAdd([
+      substituteMareRow('A', 5, 3),
+      substituteMareRow('B', 7, 3),
+      substituteMareRow('H', 6, 3, { gameId: 'G2' }),
+    ])
+    expect(await loadSubstituteMares(db, GAME, 3, 'B')).toEqual([
+      { forLine: 5, forGeneration: 3, ownSireSystem: 'ハイペリオン' },
+    ])
+    expect((await loadKnownHorses(db, GAME)).map((horse) => horse.name).sort()).toEqual([
+      'エー',
+      'ビー',
+    ])
   })
 })
