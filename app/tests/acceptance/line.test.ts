@@ -20,6 +20,8 @@ import {
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
 import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
+import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { addTestGame, testDatabase } from '../support/database'
 import {
   describePairing,
   pairingOf,
@@ -27,9 +29,10 @@ import {
   snapshotOf,
   type LineSpec,
 } from '../support/eight-line'
+import { GAME, horseRow, lineRow, ownMareRow, stallionRow } from '../support/rows'
 import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
-// 需求規格第 15 章「八系管理（LINE）」中由 core 負責的部分；畫面、匯入與儲存的部分由後續計畫補上
+// 需求規格第 15 章「八系管理（LINE）」中由 core 與儲存層彙整負責的部分；畫面、匯入與儲存的寫入由後續計畫補上
 
 const described = (board: Board, generation?: number): string[] =>
   board.tasks
@@ -615,5 +618,24 @@ describe('八系管理（LINE）', () => {
         { id: 'D', mismatches: ['generation', 'sire'] },
       ])
     })
+  })
+})
+
+describe('八系管理（LINE）：儲存層彙整', () => {
+  it('LINE-17 第一匹自家母駒以暫定保留轉入 → 規則輸入快照中該代立即成立，配她的任務照常出現', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, subsystemOfLine(1)), lineRow(3, subsystemOfLine(3))])
+    await db.stallions.add(stallionRow('S15', 1, 5))
+    await db.horses.add(horseRow('F1', { birthYear: 1987 }))
+    await db.mares.add(ownMareRow('F1', 3, 5))
+
+    const { eightLines } = await loadRuleSnapshot(db, GAME)
+    expect(eightLines.lines[2]!.mareGroups).toEqual([
+      { generation: 5, established: true, activeMares: 1, ownMares: 1 },
+    ])
+    expect(described(listBoard(eightLines), 6)).toEqual([
+      '第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代',
+    ])
   })
 })
