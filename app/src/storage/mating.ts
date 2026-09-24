@@ -47,14 +47,15 @@ export function buildMating(
 
 /**
  * 血統樹上的一匹馬：馬名用基本馬名。零代市場種牡馬（含補公系補入的）父系留空時，
- * 改填他所在系目前的子系統（需求規格 10.2）。
+ * 改填他零代任用所在系目前的子系統（需求規格 10.2）；同時有建系與補公系的零代任用時取建系那一系。
  */
 function pedigreeHorse(horse: HorseRow, rows: PedigreeRows): PedigreeHorse {
   const zeroGeneration = rows.stallions.filter(
     (row) => row.horseId === horse.id && row.generation === 0,
   )
   const mare = rows.mares.find((row) => row.horseId === horse.id)
-  const firstZero = zeroGeneration[0]
+  const firstZero =
+    zeroGeneration.find((row) => row.restorationId === undefined) ?? zeroGeneration[0]
   return {
     id: horse.id,
     name: horse.baseName,

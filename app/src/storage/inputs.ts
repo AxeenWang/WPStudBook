@@ -116,13 +116,17 @@ export function buildSubstituteMares(
 
 /**
  * 身分比對用的既有馬匹（需求規格 6.2；技術設計 4.2「身分、母馬、種牡馬與後繼」）：只傳同一局的馬。
- * 馬名只傳正式馬名的基本馬名；父母名優先用保存的匯入名稱，沒有才用連結馬匹的基本馬名。
+ * 馬名只傳正式馬名的基本馬名；父母名優先用保存的匯入名稱，沒有才用連結馬匹經匯入確認的基本馬名。
+ * 連結馬匹的馬名還是手動輸入、尚未經匯入確認時不傳，免得手動名打錯時子女被誤判為衝突（技術設計 4.3）。
  * 連結的父母不在 horses 中時丟出錯誤。
  */
 export function buildKnownHorses(horses: readonly HorseRow[]): KnownHorse[] {
   const byId = horseMap(horses)
-  const parentName = (name: string | undefined, id: string | undefined) =>
-    name ?? (id === undefined ? undefined : requireHorse(byId, id).baseName)
+  const parentName = (name: string | undefined, id: string | undefined) => {
+    if (name !== undefined || id === undefined) return name
+    const parent = requireHorse(byId, id)
+    return parent.nameSource === 'import' ? parent.baseName : undefined
+  }
   return horses.map((horse) => ({
     id: horse.id,
     abilityNumber: horse.abilityNumber,

@@ -78,7 +78,7 @@ export async function loadRuleSnapshot(
 
 /**
  * 讀取一次配種的血統樹（需求規格 10.2）：從種牡馬與母馬往上一代一代批次讀到第 4 代；
- * 近親重複的馬只讀一次。樹上的馬找不到或屬於其他局時丟出錯誤。
+ * 近親重複的馬只讀一次；任用與母馬資料也只讀這一局的。樹上的馬找不到或屬於其他局時丟出錯誤。
  */
 export async function loadMating(
   db: WPStudBookDatabase,
@@ -103,7 +103,11 @@ export async function loadMating(
       }
       const horseIds = horses.map((horse) => horse.id)
       const [stallions, mares, restorations, lines] = await Promise.all([
-        db.stallions.where('horseId').anyOf(horseIds).toArray(),
+        db.stallions
+          .where('horseId')
+          .anyOf(horseIds)
+          .and((row) => row.gameId === gameId)
+          .toArray(),
         db.mares.bulkGet(horseIds),
         db.restorations.where('gameId').equals(gameId).toArray(),
         db.lines.where('gameId').equals(gameId).toArray(),
@@ -111,7 +115,9 @@ export async function loadMating(
       return buildMating(sireId, damId, {
         horses,
         stallions,
-        mares: mares.filter((mare): mare is MareRow => mare !== undefined),
+        mares: mares.filter(
+          (mare): mare is MareRow => mare !== undefined && mare.gameId === gameId,
+        ),
         restorations,
         lines,
       })

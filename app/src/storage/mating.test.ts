@@ -83,6 +83,19 @@ describe('buildMating', () => {
     expect(sireSystemOf('G')).toBeUndefined()
   })
 
+  it('同一匹馬同時有補公系與建系的零代任用時，父系改填建系那一系的子系統', () => {
+    const rows = rowsOf({
+      horses: [horseRow('Z')],
+      stallions: [
+        { ...stallionRow('Z', 5, 0, { restorationId: 'R1' }), id: 'Z-R' },
+        stallionRow('Z', 3, 0),
+      ],
+      restorations: [restorationRow('R1', 5, 12, 'sire')],
+      lines: [lineRow(3, '系3子'), lineRow(5, '系5子')],
+    })
+    expect(buildMating('Z', undefined, rows).sire!.horse.sireSystem).toBe('系3子')
+  })
+
   it('建系期標記：建系的零代市場種牡馬（含替換上來的）是；補公系補入的只在產出 4 代以內是', () => {
     const rows = rowsOf({
       horses: ['Z1', 'Z1b', 'R3', 'R4', 'Z6', 'G'].map((id) => horseRow(id)),

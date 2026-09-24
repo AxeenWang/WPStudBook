@@ -8,6 +8,7 @@ import {
   substituteMareRow,
   ungroupedMareRow,
 } from '../../tests/support/rows'
+import { matchHorse } from '../core/identity'
 import { verifySuccessor } from '../core/successor'
 import {
   buildKnownHorses,
@@ -158,7 +159,7 @@ describe('buildSubstituteMares', () => {
 })
 
 describe('buildKnownHorses', () => {
-  it('帶上能力番号、出生年與正式馬名的基本馬名；手動輸入的馬名標 manualName；父母名優先用匯入名稱', () => {
+  it('帶上能力番号、出生年與正式馬名的基本馬名；手動輸入的馬名標 manualName；父母名優先用匯入名稱，沒有才用連結父母經匯入確認的馬名', () => {
     const horses = [
       horseRow('A', {
         abilityNumber: '0x0000',
@@ -184,9 +185,31 @@ describe('buildKnownHorses', () => {
         damName: '母の名',
       },
       { id: 'B', name: 'ベータ', manualName: true },
-      { id: 'F', birthYear: 1990, manualName: false, sireName: 'アルファ', damName: 'ベータ' },
+      { id: 'F', birthYear: 1990, manualName: false, sireName: 'アルファ' },
       { id: 'G', manualName: false, sireName: '匯入の父' },
     ])
+  })
+
+  it('連結父母的馬名還是手動輸入時不傳，父母的手動名打錯時子女不會被誤判為衝突', () => {
+    const horses = [
+      horseRow('S', { baseName: '手動の父', nameSource: 'manual' }),
+      horseRow('D', { baseName: '確認の母', nameSource: 'import' }),
+      horseRow('F', { abilityNumber: '0x1234', birthYear: 1990, sireId: 'S', damId: 'D' }),
+    ]
+    const known = buildKnownHorses(horses)
+    expect(known[2]).toEqual({
+      id: 'F',
+      abilityNumber: '0x1234',
+      birthYear: 1990,
+      manualName: false,
+      damName: '確認の母',
+    })
+    expect(
+      matchHorse(
+        { abilityNumber: '0x1234', birthYear: 1990, sireName: '匯入の父', damName: '確認の母' },
+        known,
+      ),
+    ).toEqual({ kind: 'same', id: 'F' })
   })
 
   it('連結的父母不在同一批馬匹中時丟出錯誤', () => {

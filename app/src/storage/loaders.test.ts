@@ -138,6 +138,22 @@ describe('loadMating', () => {
     await expect(loadMating(db, GAME, 'S', undefined)).rejects.toThrow('找不到馬匹：Q')
     await expect(loadMating(db, GAME, undefined, 'missing')).rejects.toThrow('找不到馬匹：missing')
   })
+
+  it('任用與母馬資料只讀這一局的', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([horseRow('S', { sireSystem: 'ハイペリオン' }), horseRow('D')])
+    await db.stallions.add(stallionRow('S', 3, 0, { id: 'other-game-post', gameId: 'G2' }))
+    await db.mares.add(startMareRow('D', { gameId: 'G2' }))
+    expect(await loadMating(db, GAME, 'S', 'D')).toEqual({
+      sire: {
+        horse: { id: 'S', sireSystem: 'ハイペリオン', buildPhaseMarket: false },
+        sire: null,
+        dam: null,
+      },
+      dam: { horse: { id: 'D', buildPhaseMarket: false }, sire: null, dam: null },
+    })
+  })
 })
 
 describe('loadSisters', () => {
