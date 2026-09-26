@@ -128,13 +128,15 @@ describe('assignZeroStallion', () => {
     expect(await db.stallions.count()).toBe(1)
 
     const result = await assignZeroStallion(db, GAME, input, { confirmed: true })
-    expect(result.status === 'done' && result.warnings).toEqual([warning])
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.warnings).toEqual([warning])
     expect(await db.lines.get([GAME, 3])).toEqual(lineRow(3, 'ハイペリオン'))
     const [renamed, assigned] = await eventsByKind(db)
     expect(assigned).toMatchObject({ kind: 'stallion-assigned', confirmedWarnings: [warning] })
     expect(renamed).toMatchObject({
       kind: 'line-subsystem-changed',
       line: 3,
+      horseId: result.value.horse.id,
       from: 'マンノウォー',
       to: 'ハイペリオン',
     })

@@ -284,4 +284,13 @@ describe('updateSettings', () => {
     }
     expect(await loadGame(db, GAME)).toEqual(game)
   })
+
+  it('設定不存在時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.settings.delete(GAME)
+    await expect(updateSettings(db, GAME, { retirementAge: 24 })).rejects.toThrow(
+      '找不到遊戲局的設定：G',
+    )
+  })
 })

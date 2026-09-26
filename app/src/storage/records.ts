@@ -382,7 +382,7 @@ interface EventBase {
  * 一筆歷程事件（需求規格 5.3）：
  * - system-added、system-changed：系統對照表新增一筆、修改親系統或分出來源（7.2）
  * - line-opened：開啟新系，連同零代市場種牡馬（7.1）
- * - line-subsystem-changed：系的子系統名稱變更（7.1）
+ * - line-subsystem-changed：系的子系統名稱變更（7.1）；零代市場種牡馬的補入或替換造成時，horseId 是那匹種牡馬
  * - stallion-assigned：補入或替換零代市場種牡馬（7.6、7.7）；replacedHorseIds 是同一格原本的種牡馬
  * - stallion-status-changed：種牡馬標示退出生產行列、已引退，或更正回在崗（7.7）
  * - restoration-declared、restoration-revoked：斷血補系的宣告與撤銷（7.6）
@@ -408,7 +408,13 @@ export type EventRow = EventBase &
         stallionId: string
         subsystem: string
       }
-    | { kind: 'line-subsystem-changed'; line: LinePosition; from: string; to: string }
+    | {
+        kind: 'line-subsystem-changed'
+        line: LinePosition
+        horseId?: string
+        from: string
+        to: string
+      }
     | {
         kind: 'stallion-assigned'
         line: LinePosition
