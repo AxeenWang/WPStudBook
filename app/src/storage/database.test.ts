@@ -8,6 +8,7 @@ describe('createDatabase', () => {
     expect(db.verno).toBe(1)
     expect(db.tables.map((table) => table.name).sort()).toEqual([
       'breedings',
+      'events',
       'games',
       'horses',
       'lines',

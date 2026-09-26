@@ -2,7 +2,7 @@ import type { RestorationSlot } from '../core/board'
 import type { DamRole } from '../core/generation'
 import type { LineGeneration, LinePosition, PairingDistance } from '../core/lines'
 import type { SisterStatus } from '../core/sisters'
-import type { StallionStatus } from '../core/stallions'
+import type { MarketStallionSystemCheck, StallionStatus } from '../core/stallions'
 
 // 資料表的一列（技術設計 4.3）。除了全域的 MetaRow，每一列都以 gameId 歸屬某一局；
 // 識別一律是 crypto.randomUUID() 產生的字串（需求規格 12.2）。
@@ -225,3 +225,114 @@ export interface BreedingRow {
   /** 規則快照；八系指定配種才有 */
   rule?: BreedingRule
 }
+
+/**
+ * 更換現任的原因（需求規格 7.7）：弟弟較優、前任引退、無法供用、斷血補系、遊戲依史實引退、其他
+ */
+export type StallionChangeReasonKind =
+  | 'younger-brother'
+  | 'predecessor-retired'
+  | 'unavailable'
+  | 'restoration'
+  | 'historical-retirement'
+  | 'other'
+
+export interface StallionChangeReason {
+  kind: StallionChangeReasonKind
+  /** 補充說明；選「其他」時通常會填 */
+  note?: string
+}
+
+/**
+ * 寫入操作要求確認的警告（需求規格 5.2），確認後存在事件的 confirmedWarnings：
+ * - parent-system-duplicate：第 line 系的親系統 parentSystem 與 lines 這些系的親系統相同（7.2、LINE-03）
+ * - stallion-system：補入或替換的零代市場種牡馬，父系與第 line 系目前的子系統不同；
+ *   親系統也不同時一併列出，提示影響活血（7.6、7.7）
+ */
+export type WriteWarning =
+  | {
+      kind: 'parent-system-duplicate'
+      line: LinePosition
+      parentSystem: string
+      lines: LinePosition[]
+    }
+  | {
+      kind: 'stallion-system'
+      line: LinePosition
+      subsystem: NonNullable<MarketStallionSystemCheck['subsystem']>
+      parentSystem: MarketStallionSystemCheck['parentSystem']
+    }
+
+/** 系統對照表一筆的內容：親系統與分出來源 */
+export type SystemValue = Pick<SystemRow, 'parentSystem' | 'origin'>
+
+/**
+ * 事件的共用欄位（技術設計 4.3「寫入操作」）。
+ * 事件的對象另外放在 horseId、line、system，各自和 gameId 建索引；各種類自己的內容不使用這三個名稱，以免誤進索引
+ */
+interface EventBase {
+  id: string
+  gameId: string
+  /** 操作當時的目前遊戲年 */
+  year: number
+  /** 寫入時間（ISO 8601） */
+  recordedAt: string
+  /** 使用者確認過的警告（需求規格 5.2）；沒有警告時留空 */
+  confirmedWarnings?: WriteWarning[]
+}
+
+/**
+ * 一筆歷程事件（需求規格 5.3）：
+ * - system-added、system-changed：系統對照表新增一筆、修改親系統或分出來源（7.2）
+ * - line-opened：開啟新系，連同零代市場種牡馬（7.1）
+ * - line-subsystem-changed：系的子系統名稱變更（7.1）
+ * - stallion-assigned：補入或替換零代市場種牡馬（7.6、7.7）；replacedHorseIds 是同一格原本的種牡馬
+ * - stallion-status-changed：種牡馬標示退出生產行列、已引退，或更正回在崗（7.7）
+ * - restoration-declared、restoration-revoked：斷血補系的宣告與撤銷（7.6）
+ */
+export type EventRow = EventBase &
+  (
+    | { kind: 'system-added'; system: string; parentSystem: string; origin?: string }
+    | { kind: 'system-changed'; system: string; from: SystemValue; to: SystemValue }
+    | {
+        kind: 'line-opened'
+        line: LinePosition
+        horseId: string
+        stallionId: string
+        subsystem: string
+      }
+    | { kind: 'line-subsystem-changed'; line: LinePosition; from: string; to: string }
+    | {
+        kind: 'stallion-assigned'
+        line: LinePosition
+        horseId: string
+        stallionId: string
+        restorationId?: string
+        reason?: StallionChangeReason
+        replacedHorseIds: string[]
+      }
+    | {
+        kind: 'stallion-status-changed'
+        line: LinePosition
+        horseId?: string
+        stallionId: string
+        generation: number
+        restorationId?: string
+        from: StallionStatus
+        to: StallionStatus
+      }
+    | {
+        kind: 'restoration-declared'
+        line: LinePosition
+        restorationId: string
+        generation: number
+        side: RestorationRow['side']
+        reason: string
+      }
+    | { kind: 'restoration-revoked'; line: LinePosition; restorationId: string }
+  )
+
+/** 事件去掉共用欄位（識別、遊戲局、年份、寫入時間）後的內容，由寫入操作填寫 */
+export type EventContent<E extends EventRow = EventRow> = E extends unknown
+  ? Omit<E, 'id' | 'gameId' | 'year' | 'recordedAt'>
+  : never

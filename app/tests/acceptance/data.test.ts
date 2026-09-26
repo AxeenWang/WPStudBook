@@ -34,6 +34,7 @@ describe('資料保存（DATA）', () => {
       { generation: 1, established: true, activeMares: 1, ownMares: 1 },
     ])
   })
+
   it('DATA-13 新局選擇只複製設定 → 沒有八系位置、馬匹或歷程', async () => {
     const db = testDatabase()
     const source = await createGame(db, { name: '第一局', startYear: 1968 })
@@ -57,5 +58,8 @@ describe('資料保存（DATA）', () => {
     expect(await db.systems.where('gameId').equals(copy.id).count()).toBe(1)
     expect(await db.lines.where('gameId').equals(copy.id).count()).toBe(0)
     expect(await db.horses.where('gameId').equals(copy.id).count()).toBe(0)
+    for (const table of [db.mares, db.stallions, db.restorations, db.breedings, db.events]) {
+      expect(await table.where('gameId').equals(copy.id).count()).toBe(0)
+    }
   })
 })
