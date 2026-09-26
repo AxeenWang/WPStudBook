@@ -8,6 +8,7 @@ import {
   parentDuplicateWarnings,
   readLinesAndSystems,
   runWrite,
+  type WriteContext,
   type WriteOptions,
   type WriteResult,
 } from './writes'
@@ -158,4 +159,47 @@ function systemValue(row: SystemRow): SystemValue {
   return row.origin === undefined
     ? { parentSystem: row.parentSystem }
     : { parentSystem: row.parentSystem, origin: row.origin }
+}
+
+/**
+ * 對照表把 subsystem 登錄或改成 parentSystem 之後的內容（純函式，不寫入）：
+ * 沒登錄時新增一筆；已登錄時改親系統，分出來源不變
+ */
+export function withSystemEntry(
+  rows: readonly SystemRow[],
+  gameId: string,
+  subsystem: string,
+  parentSystem: string,
+): SystemRow[] {
+  if (!rows.some((row) => row.subsystem === subsystem)) {
+    return [...rows, { gameId, subsystem, parentSystem }]
+  }
+  return rows.map((row) => (row.subsystem === subsystem ? { ...row, parentSystem } : row))
+}
+
+/**
+ * 寫入 withSystemEntry 的變更與對照表事件（system-added 或 system-changed）；已經相同時什麼都不做。
+ * 開啟新系與系統名稱變更填了親系統時使用；在 runWrite 的交易內呼叫，交易要包含 systems
+ */
+export async function saveSystemEntry(
+  context: WriteContext,
+  rows: readonly SystemRow[],
+  subsystem: string,
+  parentSystem: string,
+): Promise<void> {
+  const { db, game } = context
+  const current = rows.find((row) => row.subsystem === subsystem)
+  if (!current) {
+    await db.systems.add({ gameId: game.id, subsystem, parentSystem })
+    await context.addEvent({ kind: 'system-added', system: subsystem, parentSystem })
+  } else if (current.parentSystem !== parentSystem) {
+    const next = { ...current, parentSystem }
+    await db.systems.put(next)
+    await context.addEvent({
+      kind: 'system-changed',
+      system: subsystem,
+      from: systemValue(current),
+      to: systemValue(next),
+    })
+  }
 }

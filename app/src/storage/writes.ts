@@ -66,7 +66,9 @@ export async function runWrite<T, B>(
   body: (context: WriteContext) => Promise<WriteResult<T, B>>,
 ): Promise<WriteResult<T, B>> {
   const now = (options.now ?? new Date()).toISOString()
-  return db.transaction('rw', [db.games, db.events, ...tables], async () => {
+  // tables 可能已含 games（例如 ruleTables），去掉重複的
+  const scope = [...new Set([db.games, db.events, ...tables])]
+  return db.transaction('rw', scope, async () => {
     // 不引用 games.ts 的 loadGame：games.ts 的寫入操作也用 runWrite，避免循環引用
     const game = await db.games.get(gameId)
     if (!game) throw new Error(`找不到遊戲局：${gameId}`)
@@ -221,4 +223,37 @@ export function parentDuplicateWarnings(
     const conflict = findParentSystemConflict(after, entry.line, entry.parentSystem)
     return conflict ? [{ kind: 'parent-system-duplicate', line: entry.line, ...conflict }] : []
   })
+}
+
+/** 零代市場種牡馬：新建一匹，或選這一局既有的市場馬（補公系可以沿用建系時的零代種牡馬） */
+export type ZeroStallionInput =
+  { kind: 'new'; horse: NewHorseInput } | { kind: 'existing'; horseId: string }
+
+/**
+ * 零代市場種牡馬的阻止原因：新建時同 NewHorseBlock；
+ * not-market-stallion：選的既有馬是自家產駒（有出生紀錄）或牝馬，不是市場種牡馬
+ */
+export type ZeroStallionBlock = NewHorseBlock | { kind: 'not-market-stallion' }
+
+/**
+ * 取得零代市場種牡馬的馬匹：新建時驗證輸入並組出資料列（isNew 為 true，由呼叫端寫入）；
+ * 選既有的馬時讀取並確認是市場種牡馬。在 runWrite 的交易內呼叫，交易要包含 horses。
+ * 既有的馬找不到或屬於其他局時丟出錯誤。
+ */
+export async function resolveZeroStallion(
+  context: WriteContext,
+  input: ZeroStallionInput,
+): Promise<Prepared<{ horse: HorseRow; isNew: boolean }, ZeroStallionBlock>> {
+  if (input.kind === 'new') {
+    const prepared = await prepareNewHorse(context, input.horse, 'male')
+    return prepared.ok ? { ok: true, value: { horse: prepared.value, isNew: true } } : prepared
+  }
+  const horse = await context.db.horses.get(input.horseId)
+  if (!horse || horse.gameId !== context.game.id) {
+    throw new Error(`找不到馬匹：${input.horseId}`)
+  }
+  if (horse.birth !== undefined || horse.sex === 'female') {
+    return { ok: false, blocks: [{ kind: 'not-market-stallion' }] }
+  }
+  return { ok: true, value: { horse, isNew: false } }
 }

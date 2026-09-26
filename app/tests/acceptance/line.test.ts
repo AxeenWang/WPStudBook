@@ -20,6 +20,7 @@ import {
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
 import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
+import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
@@ -665,6 +666,119 @@ describe('八系管理（LINE）：儲存層寫入', () => {
         year: 1990,
         from: { parentSystem: 'ファラリス' },
         to: { parentSystem: 'ネアルコ' },
+      }),
+    ])
+  })
+
+  it('LINE-02 開啟建立新系的分支 → 只能用規則指定的位置；子系統、親系統、零代市場種牡馬、代表色都要填', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const start: OpenLineInput = {
+      line: 1,
+      subsystem: 'マンノウォー',
+      parentSystem: 'マッチェム',
+      color: '#1f77b4',
+      stallion: { kind: 'new', horse: { fullName: 'ウォーアドミラル' } },
+    }
+    const branch: OpenLineInput = {
+      ...start,
+      line: 2,
+      subsystem: 'ハイペリオン',
+      parentSystem: 'ファラリス',
+      stallion: { kind: 'new', horse: { fullName: 'ハイペリオン' } },
+    }
+    expect(
+      await openLine(db, GAME, {
+        ...start,
+        subsystem: '',
+        parentSystem: '',
+        color: '',
+        stallion: { kind: 'new', horse: { fullName: '' } },
+      }),
+    ).toEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'blank', field: 'subsystem' },
+        { kind: 'blank', field: 'parentSystem' },
+        { kind: 'color' },
+        { kind: 'horse-name' },
+      ],
+    })
+    expect(await openLine(db, GAME, branch)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'not-openable' }],
+    })
+    expect((await openLine(db, GAME, start)).status).toBe('done')
+
+    // 第 1 系到達 1 代後，才能開啟產出 2 代的第 2 系；第 3 系要等第 1 系到達 2 代
+    expect((await openLine(db, GAME, branch)).status).toBe('blocked')
+    await db.stallions.add(stallionRow('S11', 1, 1))
+    expect(await openLine(db, GAME, { ...branch, line: 3 })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'not-openable' }],
+    })
+    expect((await openLine(db, GAME, branch)).status).toBe('done')
+  })
+
+  it('LINE-03 新系親系統與既有系重複 → 警告並確認，確認後可建立', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.systems.add({ gameId: GAME, subsystem: 'マンノウォー', parentSystem: 'マッチェム' })
+    await db.stallions.add(stallionRow('S11', 1, 1))
+    const input: OpenLineInput = {
+      line: 2,
+      subsystem: 'フェアプレイ',
+      parentSystem: 'マッチェム',
+      color: '#ff7f0e',
+      stallion: { kind: 'new', horse: { fullName: 'フェアプレイ' } },
+    }
+    const warning = {
+      kind: 'parent-system-duplicate',
+      line: 2,
+      parentSystem: 'マッチェム',
+      lines: [1],
+    }
+    expect(await openLine(db, GAME, input)).toEqual({ status: 'unconfirmed', warnings: [warning] })
+    expect(await db.lines.count()).toBe(1)
+
+    expect((await openLine(db, GAME, input, { confirmed: true })).status).toBe('done')
+    expect(await db.lines.count()).toBe(2)
+    const [opened] = await db.events.where('[gameId+line]').equals([GAME, 2]).toArray()
+    expect(opened).toMatchObject({ kind: 'line-opened', confirmedWarnings: [warning] })
+  })
+
+  it('LINE-06 更新某系目前子系統名稱 → 位置、任用與任務不變，歷程保存舊名與年份', async () => {
+    const db = testDatabase()
+    await addTestGame(db, { currentYear: 1975 })
+    await db.lines.bulkAdd([lineRow(1, 'マンノウォー'), lineRow(2, 'ハイペリオン')])
+    await db.systems.add({ gameId: GAME, subsystem: 'マンノウォー', parentSystem: 'マッチェム' })
+    await db.stallions.bulkAdd([
+      stallionRow('Z1', 1, 0),
+      stallionRow('S11', 1, 1),
+      stallionRow('Z2', 2, 0),
+    ])
+    const before = await loadRuleSnapshot(db, GAME)
+
+    const result = await changeLineSubsystem(db, GAME, 1, {
+      subsystem: 'ウォーアドミラル',
+      parentSystem: 'マッチェム',
+    })
+    expect(result.status).toBe('done')
+    const after = await loadRuleSnapshot(db, GAME)
+    expect(after.eightLines).toEqual(before.eightLines)
+    expect(listBoard(after.eightLines)).toEqual(listBoard(before.eightLines))
+    expect(after.lineSystems[0]).toEqual({
+      line: 1,
+      subsystem: 'ウォーアドミラル',
+      parentSystem: 'マッチェム',
+    })
+    expect(await db.events.where('[gameId+line]').equals([GAME, 1]).toArray()).toEqual([
+      expect.objectContaining({
+        kind: 'line-subsystem-changed',
+        year: 1975,
+        from: 'マンノウォー',
+        to: 'ウォーアドミラル',
       }),
     ])
   })
