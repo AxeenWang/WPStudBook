@@ -16,9 +16,18 @@ import {
 } from '../../src/core/sisters'
 import { updateSettings } from '../../src/storage/games'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { addMarketMare } from '../../src/storage/mare-writes'
 import type { MareRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from '../support/database'
-import { GAME, horseRow, ownMareRow, substituteMareRow, ungroupedMareRow } from '../support/rows'
+import {
+  GAME,
+  horseRow,
+  lineRow,
+  ownMareRow,
+  stallionRow,
+  substituteMareRow,
+  ungroupedMareRow,
+} from '../support/rows'
 
 // 需求規格第 15 章「繁殖牝馬（MARE）」中由 core 與儲存層彙整負責的部分；卡片、匯入、事件與畫面由後續計畫補上
 
@@ -167,5 +176,100 @@ describe('繁殖牝馬（MARE）：儲存層彙整', () => {
     expect((await groups())[0]!.activeMares).toBe(1)
     expect((await updateSettings(db, GAME, { retirementAge: 24 })).status).toBe('done')
     expect((await groups())[0]!.activeMares).toBe(0)
+  })
+})
+
+describe('繁殖牝馬（MARE）：儲存層寫入', () => {
+  it('MARE-05 在「第 6 系 6 代種牡馬 × 第 3 系 6 代母馬」任務的種牡馬底下新增市場母馬 → 記為替代第 3 系 6 代、來源市場，只出現在第 3 系 6 代母馬群，不宣告屬於第 3 系', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(3, '系3子'), lineRow(6, '系6子')])
+    await db.stallions.add(stallionRow('S66', 6, 6))
+    await db.horses.add(horseRow('F', { birthYear: 1985 }))
+    await db.mares.add(ownMareRow('F', 3, 6))
+    const result = await addMarketMare(db, GAME, {
+      horse: { fullName: '補血の母', sireSystem: 'ハイペリオン' },
+      assignment: { kind: 'pairing', line: 6, generation: 7 },
+    })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.mare).toMatchObject({
+      usage: 'substitute',
+      groupLine: 3,
+      groupGeneration: 6,
+      source: { kind: 'market-supplement' },
+    })
+    expect(result.value.horse.sireSystem).toBe('ハイペリオン')
+    const { eightLines } = await loadRuleSnapshot(db, GAME)
+    expect(eightLines.lines[2]!.mareGroups).toEqual([
+      { generation: 6, established: true, activeMares: 2, ownMares: 1 },
+    ])
+    expect(eightLines.lines[5]!.mareGroups).toEqual([])
+  })
+
+  it('MARE-26 從「待指定用途」清單新增母馬 → 標示待指定用途，指定前不進入任務', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.stallions.add(stallionRow('Z1', 1, 0))
+    const before = (await loadRuleSnapshot(db, GAME)).eightLines
+    const result = await addMarketMare(db, GAME, {
+      horse: { fullName: '混血用の母' },
+      assignment: { kind: 'unassigned' },
+      sourceKind: 'market-crossbreed',
+    })
+    expect(result.status === 'done' && result.value.mare.usage).toBe('unassigned')
+    expect((await loadRuleSnapshot(db, GAME)).eightLines).toEqual(before)
+  })
+
+  it('MARE-29 手動新增的母馬馬名與已售出的母馬相同 → 提示是否為買回，確認前不建立新馬', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.add(
+      horseRow('OLD', { fullName: 'ハナカゴ', baseName: 'ハナカゴ', nameSource: 'import' }),
+    )
+    await db.mares.add(ungroupedMareRow('OLD', 'unassigned', { herd: 'sold' }))
+    expect(
+      await addMarketMare(db, GAME, {
+        horse: { fullName: 'ハナカゴ' },
+        assignment: { kind: 'unassigned' },
+      }),
+    ).toEqual({
+      status: 'unconfirmed',
+      warnings: [{ kind: 'possible-buyback', horseIds: ['OLD'] }],
+    })
+    expect(await db.horses.count()).toBe(1)
+  })
+
+  it('MARE-31 在零代市場種牡馬的配對底下新增母馬 → 標示「例外補入」，需確認並填寫原因；建系起點新增起點母馬不需確認', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.stallions.add(stallionRow('Z1', 1, 0))
+    const start = await addMarketMare(db, GAME, {
+      horse: { fullName: '起點の母' },
+      assignment: { kind: 'pairing', line: 1, generation: 1 },
+    })
+    expect(start.status === 'done' && start.value.mare).toMatchObject({
+      usage: 'start',
+      groupLine: 1,
+      groupGeneration: 0,
+    })
+
+    await db.stallions.add(stallionRow('S11', 1, 1))
+    const found = {
+      horse: { fullName: '補入の母' },
+      assignment: { kind: 'pairing' as const, line: 2 as const, generation: 2 },
+    }
+    expect(await addMarketMare(db, GAME, found)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'reason-required' }],
+    })
+    const withReason = { ...found, exceptionReason: '自家母駒不足' }
+    expect(await addMarketMare(db, GAME, withReason)).toEqual({
+      status: 'unconfirmed',
+      warnings: [{ kind: 'exception-entry', line: 2, generation: 2 }],
+    })
+    const confirmed = await addMarketMare(db, GAME, withReason, { confirmed: true })
+    expect(confirmed.status === 'done' && confirmed.value.mare.exceptionReason).toBe('自家母駒不足')
   })
 })
