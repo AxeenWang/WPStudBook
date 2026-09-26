@@ -4,7 +4,7 @@ import type { LinePosition } from '../core/lines'
 import { checkSubstituteMare } from '../core/substitute'
 import { buildSubstituteMares } from './inputs'
 import { buildRuleSnapshot, type RuleRows, type RuleSnapshot } from './loaders'
-import type { Base, MarePlacement, MareSourceKind, WriteWarning } from './records'
+import type { Base, MarePlacement, MareRow, MareSourceKind, WriteWarning } from './records'
 import type { Prepared } from './writes'
 
 // 市場母馬的用途：由任務看板的配對推出用途、例外補入與來源，並做 8.3 親系統檢查
@@ -172,4 +172,34 @@ const BASES: readonly Base[] = [32, 33, 34, 35]
 /** 據點要是繋養牧場番号 32～35（第 3 章）；畫面只提供這四個，其他值丟出錯誤 */
 export function assertBase(location: Base): void {
   if (!BASES.includes(location)) throw new Error(`據點不符：${location}`)
+}
+
+/** 母馬目前的用途與所屬母馬群 */
+export function placementOf(mare: MareRow): MarePlacement {
+  return {
+    usage: mare.usage,
+    ...(mare.groupLine === undefined ? {} : { groupLine: mare.groupLine }),
+    ...(mare.groupGeneration === undefined ? {} : { groupGeneration: mare.groupGeneration }),
+  }
+}
+
+/** 兩個用途是否相同：用途與所屬母馬群的系與代數都相同 */
+export function samePlacement(a: MarePlacement, b: MarePlacement): boolean {
+  return (
+    a.usage === b.usage && a.groupLine === b.groupLine && a.groupGeneration === b.groupGeneration
+  )
+}
+
+/** 換成新用途的母馬資料列：換掉所屬母馬群；例外補入時寫原因，不是時清掉原因 */
+export function withPlacement(
+  mare: MareRow,
+  placement: MarePlacement,
+  exceptionReason: string | undefined,
+): MareRow {
+  const next: MareRow = { ...mare, ...placement }
+  if (placement.groupLine === undefined) delete next.groupLine
+  if (placement.groupGeneration === undefined) delete next.groupGeneration
+  if (exceptionReason === undefined) delete next.exceptionReason
+  else next.exceptionReason = exceptionReason
+  return next
 }

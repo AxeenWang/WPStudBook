@@ -2,7 +2,10 @@ import type { WPStudBookDatabase } from './database'
 import { readRuleRows, ruleTables, type RuleRows } from './loaders'
 import {
   assertBase,
+  placementOf,
   resolveAssignment,
+  samePlacement,
+  withPlacement,
   type AssignmentBlock,
   type MareAssignment,
 } from './mare-assignment'
@@ -128,4 +131,77 @@ function buybackCandidates(rows: RuleRows, horse: HorseRow): string[] {
     )
     .map((sold) => sold.id)
     .sort()
+}
+
+/** 修改用途的輸入 */
+export interface MareUsageInput {
+  assignment: MareAssignment
+  /** 改成例外補入時的原因（需求規格 7.3）；不是例外補入時不保存 */
+  exceptionReason?: string
+}
+
+/** 修改用途的阻止原因：用途不符，或和目前相同 */
+export type MareUsageBlock = AssignmentBlock | { kind: 'unchanged' }
+
+/** 修改用途後的母馬；parentSystemUnknown 為 true 時提示 8.3 無法判斷 */
+export interface ChangedMare {
+  mare: MareRow
+  parentSystemUnknown: boolean
+}
+
+/**
+ * 修改市場母馬的用途（需求規格 8.4、MARE-28）：改掛到另一條配對，或改為待指定用途；
+ * 用途的解析、例外補入與 8.3 檢查同新增，8.3 不和她自己比較。和目前相同時阻止。
+ * 來源記的是購入時的目的（8.1），不隨用途改變；已有的配種紀錄保留自己的規則快照，新用途從下一次配種生效。
+ * 事件 mare-usage-changed 記原用途與新用途。
+ * 母馬找不到、屬於其他局、不是市場母馬（自家母駒、自由配種所生）或不在圈內時丟出錯誤。
+ */
+export async function changeMareUsage(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  input: MareUsageInput,
+  options: WriteOptions = {},
+): Promise<WriteResult<ChangedMare, MareUsageBlock>> {
+  return runWrite(db, gameId, ruleTables(db), options, async (context) => {
+    const rows = await readRuleRows(db, gameId, context.game)
+    const current = marketMareInHerd(rows, horseId)
+    const horse = rows.horses.find((row) => row.id === horseId)
+    const resolved = resolveAssignment(
+      rows,
+      input.assignment,
+      { horseId, sireSystem: horse?.sireSystem },
+      input.exceptionReason,
+    )
+    const from = placementOf(current)
+    const blocks: MareUsageBlock[] = []
+    if (!resolved.ok) blocks.push(...resolved.blocks)
+    else if (samePlacement(from, resolved.value.placement)) blocks.push({ kind: 'unchanged' })
+    if (!resolved.ok || blocks.length > 0) return { status: 'blocked', blocks }
+    const { placement, exceptionReason, warnings, parentSystemUnknown } = resolved.value
+    const stop = gate([], warnings, context.confirmed)
+    if (stop) return stop
+    const mare = withPlacement(current, placement, exceptionReason)
+    await db.mares.put(mare)
+    await context.addEvent({
+      kind: 'mare-usage-changed',
+      horseId,
+      from,
+      to: placement,
+      ...(exceptionReason === undefined ? {} : { exceptionReason }),
+      ...confirmation(warnings),
+    })
+    return context.done({ mare, parentSystemUnknown }, warnings)
+  })
+}
+
+/** 在圈的市場母馬；找不到、屬於其他局、不是市場母馬或不在圈內時丟出錯誤 */
+function marketMareInHerd(rows: RuleRows, horseId: string): MareRow {
+  const mare = rows.mares.find((row) => row.horseId === horseId)
+  if (!mare) throw new Error(`找不到母馬：${horseId}`)
+  if (mare.usage === 'own' || mare.usage === 'free') {
+    throw new Error(`自家母駒的系與代數由出生紀錄決定，不能修改用途：${horseId}`)
+  }
+  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能修改用途：${horseId}`)
+  return mare
 }

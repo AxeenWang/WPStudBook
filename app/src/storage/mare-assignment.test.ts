@@ -12,7 +12,13 @@ import {
 import type { LinePosition } from '../core/lines'
 import type { WPStudBookDatabase } from './database'
 import { readRuleRows, ruleTables, type RuleRows } from './loaders'
-import { assertBase, resolveAssignment } from './mare-assignment'
+import {
+  assertBase,
+  placementOf,
+  resolveAssignment,
+  samePlacement,
+  withPlacement,
+} from './mare-assignment'
 import type { Base } from './records'
 
 /** 在唯讀交易內讀取規則輸入的資料列 */
@@ -228,5 +234,47 @@ describe('assertBase', () => {
     for (const base of [32, 33, 34, 35] as const) expect(() => assertBase(base)).not.toThrow()
     expect(() => assertBase(31 as Base)).toThrow('據點不符：31')
     expect(() => assertBase(36 as Base)).toThrow('據點不符：36')
+  })
+})
+
+describe('placementOf、samePlacement、withPlacement', () => {
+  it('取出用途與所屬母馬群；系與代數都相同才算相同用途', () => {
+    const substitute = substituteMareRow('M', 2, 1, { exceptionReason: '母駒不足' })
+    expect(placementOf(substitute)).toEqual({
+      usage: 'substitute',
+      groupLine: 2,
+      groupGeneration: 1,
+    })
+    expect(placementOf(substituteMareRow('M', 2, 1, { groupLine: undefined }))).toEqual({
+      usage: 'substitute',
+      groupGeneration: 1,
+    })
+    const placement = placementOf(substitute)
+    expect(
+      samePlacement(placement, { usage: 'substitute', groupLine: 2, groupGeneration: 1 }),
+    ).toBe(true)
+    expect(samePlacement(placement, { ...placement, usage: 'start' })).toBe(false)
+    expect(samePlacement(placement, { ...placement, groupLine: 3 })).toBe(false)
+    expect(samePlacement(placement, { ...placement, groupGeneration: 2 })).toBe(false)
+  })
+
+  it('換成新用途：換掉所屬母馬群，例外補入時寫原因，不是時清掉原因', () => {
+    const substitute = substituteMareRow('M', 2, 1, { exceptionReason: '母駒不足' })
+    expect(withPlacement(substitute, { usage: 'unassigned' }, undefined)).toEqual({
+      horseId: 'M',
+      gameId: GAME,
+      usage: 'unassigned',
+      herd: 'in-herd',
+      establishedGeneration: false,
+      source: { kind: 'market-supplement' },
+    })
+    expect(
+      withPlacement(
+        substitute,
+        { usage: 'substitute', groupLine: 1, groupGeneration: 1 },
+        '新原因',
+      ),
+    ).toMatchObject({ groupLine: 1, groupGeneration: 1, exceptionReason: '新原因' })
+    expect(substitute.exceptionReason).toBe('母駒不足')
   })
 })

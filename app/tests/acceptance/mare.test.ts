@@ -16,8 +16,8 @@ import {
 } from '../../src/core/sisters'
 import { updateSettings } from '../../src/storage/games'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
-import { addMarketMare } from '../../src/storage/mare-writes'
-import type { MareRow } from '../../src/storage/records'
+import { addMarketMare, changeMareUsage } from '../../src/storage/mare-writes'
+import type { BreedingRow, MareRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from '../support/database'
 import {
   GAME,
@@ -271,5 +271,36 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     })
     const confirmed = await addMarketMare(db, GAME, withReason, { confirmed: true })
     expect(confirmed.status === 'done' && confirmed.value.mare.exceptionReason).toBe('自家母駒不足')
+  })
+
+  it('MARE-28 已有八系指定配種紀錄的市場母馬修改用途 → 舊紀錄保留規則快照，新用途從下一次配種生效；自家母駒不能修改系與代數', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.stallions.bulkAdd([stallionRow('Z1', 1, 0), stallionRow('S11', 1, 1)])
+    await db.horses.bulkAdd([horseRow('M'), horseRow('F')])
+    await db.mares.bulkAdd([substituteMareRow('M', 2, 1), ownMareRow('F', 1, 1)])
+    const breeding: BreedingRow = {
+      id: 'B1',
+      gameId: GAME,
+      mareId: 'M',
+      year: 1989,
+      kind: 'designated',
+      sireId: 'S11',
+      rule: {
+        distance: 1,
+        sire: { line: 1, generation: 1 },
+        dam: { kind: 'substitute', forLine: 2, forGeneration: 1 },
+        output: { line: 1, generation: 2 },
+      },
+    }
+    await db.breedings.add(breeding)
+
+    const result = await changeMareUsage(db, GAME, 'M', { assignment: { kind: 'unassigned' } })
+    expect(result.status === 'done' && result.value.mare.usage).toBe('unassigned')
+    expect(await db.breedings.get('B1')).toEqual(breeding)
+    await expect(
+      changeMareUsage(db, GAME, 'F', { assignment: { kind: 'unassigned' } }),
+    ).rejects.toThrow('不能修改用途')
   })
 })

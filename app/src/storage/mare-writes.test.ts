@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
-import { GAME, horseRow, lineRow, stallionRow, ungroupedMareRow } from '../../tests/support/rows'
+import {
+  GAME,
+  horseRow,
+  lineRow,
+  ownMareRow,
+  stallionRow,
+  substituteMareRow,
+  ungroupedMareRow,
+} from '../../tests/support/rows'
 import type { LinePosition } from '../core/lines'
 import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
-import { addMarketMare } from './mare-writes'
+import { addMarketMare, changeMareUsage } from './mare-writes'
 import type { Base } from './records'
 import type { NewHorseInput } from './writes'
 
@@ -247,5 +255,138 @@ describe('addMarketMare', () => {
         location: 36 as Base,
       }),
     ).rejects.toThrow('據點不符：36')
+  })
+})
+
+describe('changeMareUsage', () => {
+  /** lineOneAtOne 再加上待指定用途的市場母馬 U（父系 マンノウォー，來源其他） */
+  async function withUnassigned(): Promise<WPStudBookDatabase> {
+    const db = await lineOneAtOne()
+    await db.horses.add(horseRow('U', { sireSystem: 'ハイペリオン' }))
+    await db.mares.add(ungroupedMareRow('U', 'unassigned'))
+    return db
+  }
+
+  it('待指定用途改掛到配對：用途與所屬母馬群改變，來源不變；事件記原用途與新用途', async () => {
+    const db = await withUnassigned()
+    const result = await changeMareUsage(db, GAME, 'U', { assignment: pairing(1, 2) }, { now })
+    const mare = {
+      horseId: 'U',
+      gameId: GAME,
+      usage: 'substitute',
+      groupLine: 2,
+      groupGeneration: 1,
+      herd: 'in-herd',
+      establishedGeneration: false,
+      source: { kind: 'other' },
+    }
+    expect(result).toEqual({
+      status: 'done',
+      value: { mare, parentSystemUnknown: true },
+      warnings: [],
+    })
+    expect(await db.mares.get('U')).toEqual(mare)
+    expect(await db.events.toArray()).toEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        year: 1990,
+        recordedAt: '2026-09-26T01:02:03.000Z',
+        source: { kind: 'manual' },
+        kind: 'mare-usage-changed',
+        horseId: 'U',
+        from: { usage: 'unassigned' },
+        to: { usage: 'substitute', groupLine: 2, groupGeneration: 1 },
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-26T01:02:03.000Z')
+  })
+
+  it('改為待指定用途：清掉所屬母馬群與例外補入的原因', async () => {
+    const db = await lineOneAtOne()
+    await db.horses.add(horseRow('E'))
+    await db.mares.add(substituteMareRow('E', 1, 1, { exceptionReason: '自家母駒不足' }))
+    const result = await changeMareUsage(db, GAME, 'E', { assignment: { kind: 'unassigned' } })
+    expect(result.status).toBe('done')
+    expect(await db.mares.get('E')).toEqual({
+      horseId: 'E',
+      gameId: GAME,
+      usage: 'unassigned',
+      herd: 'in-herd',
+      establishedGeneration: false,
+      source: { kind: 'market-supplement' },
+    })
+    expect((await db.events.toArray())[0]).toMatchObject({
+      from: { usage: 'substitute', groupLine: 1, groupGeneration: 1 },
+      to: { usage: 'unassigned' },
+    })
+  })
+
+  it('改成例外補入：原因必填並要確認；和目前相同時阻止', async () => {
+    const db = await withUnassigned()
+    const input = { assignment: pairing(2, 2), exceptionReason: ' 自家母駒不足 ' }
+    expect(await changeMareUsage(db, GAME, 'U', { assignment: pairing(2, 2) })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'reason-required' }],
+    })
+    const warning = { kind: 'exception-entry', line: 2, generation: 2 }
+    expect(await changeMareUsage(db, GAME, 'U', input)).toEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    expect(await db.mares.get('U')).toEqual(ungroupedMareRow('U', 'unassigned'))
+    expect(await db.events.count()).toBe(0)
+
+    const result = await changeMareUsage(db, GAME, 'U', input, { confirmed: true })
+    expect(result.status === 'done' && result.value.mare.exceptionReason).toBe('自家母駒不足')
+    expect((await db.events.toArray())[0]).toMatchObject({
+      exceptionReason: '自家母駒不足',
+      confirmedWarnings: [warning],
+    })
+    expect(await changeMareUsage(db, GAME, 'U', input, { confirmed: true })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+  })
+
+  it('8.3 以她自己的父系檢查', async () => {
+    const db = await lineOneAtOne()
+    await db.horses.add(horseRow('U', { sireSystem: 'マンノウォー' }))
+    await db.mares.add(ungroupedMareRow('U', 'unassigned'))
+    expect(await changeMareUsage(db, GAME, 'U', { assignment: pairing(1, 2) })).toEqual({
+      status: 'unconfirmed',
+      warnings: [
+        {
+          kind: 'substitute-parent-system',
+          line: 2,
+          generation: 1,
+          conflicts: [{ kind: 'line', parentSystem: 'マッチェム', lines: [1] }],
+        },
+      ],
+    })
+  })
+
+  it('母馬找不到、屬於其他局、是自家母駒或自由配種所生、不在圈內時丟出錯誤', async () => {
+    const db = await lineOneAtOne()
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('F'),
+      horseRow('R'),
+      horseRow('S'),
+      horseRow('X', { gameId: 'G2' }),
+    ])
+    await db.mares.bulkAdd([
+      ownMareRow('F', 1, 1),
+      ungroupedMareRow('R', 'free'),
+      substituteMareRow('S', 2, 1, { herd: 'sold' }),
+      ungroupedMareRow('X', 'unassigned', { gameId: 'G2' }),
+    ])
+    const change = (horseId: string) =>
+      changeMareUsage(db, GAME, horseId, { assignment: { kind: 'unassigned' } })
+    await expect(change('Q')).rejects.toThrow('找不到母馬：Q')
+    await expect(change('X')).rejects.toThrow('找不到母馬：X')
+    await expect(change('F')).rejects.toThrow('自家母駒的系與代數由出生紀錄決定，不能修改用途：F')
+    await expect(change('R')).rejects.toThrow('自家母駒的系與代數由出生紀錄決定，不能修改用途：R')
+    await expect(change('S')).rejects.toThrow('不在繁殖圈內的母馬不能修改用途：S')
   })
 })
