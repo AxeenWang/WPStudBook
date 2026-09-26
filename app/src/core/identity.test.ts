@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { duplicateAbilityNumbers, matchHorse, type KnownHorse } from './identity'
+import {
+  duplicateAbilityNumbers,
+  matchHorse,
+  normalizeAbilityNumber,
+  splitHorseName,
+  type KnownHorse,
+} from './identity'
 
 const mare: KnownHorse = {
   id: 'H1',
@@ -116,5 +122,50 @@ describe('duplicateAbilityNumbers', () => {
   it('列出重複的能力番号；沒有重複時為空陣列', () => {
     expect(duplicateAbilityNumbers(['0x0001', '0x0002', '0x0001', '0x0001'])).toEqual(['0x0001'])
     expect(duplicateAbilityNumbers(['0x0000', '0x0001'])).toEqual([])
+  })
+})
+
+describe('splitHorseName', () => {
+  it('去掉開頭的 (外) 或 [地] 得到基本馬名，完整馬名照原樣保存（需求規格 6.4、ID-09）', () => {
+    expect(splitHorseName('(外)マルゼンスキー')).toEqual({
+      fullName: '(外)マルゼンスキー',
+      baseName: 'マルゼンスキー',
+    })
+    expect(splitHorseName('[地]ハイセイコー')).toEqual({
+      fullName: '[地]ハイセイコー',
+      baseName: 'ハイセイコー',
+    })
+    expect(splitHorseName('シンザン')).toEqual({ fullName: 'シンザン', baseName: 'シンザン' })
+  })
+
+  it('只有前綴、沒有馬名，或完整馬名空白時為資料異常，回傳 null', () => {
+    expect(splitHorseName('(外)')).toBeNull()
+    expect(splitHorseName('[地]  ')).toBeNull()
+    expect(splitHorseName('')).toBeNull()
+  })
+
+  it('前綴只看開頭，馬名中間或結尾的括號不算', () => {
+    expect(splitHorseName('シンザン(外)')?.baseName).toBe('シンザン(外)')
+  })
+})
+
+describe('normalizeAbilityNumber', () => {
+  it('統一成 0x 加 4 位大寫十六進位，忽略前後空白', () => {
+    expect(normalizeAbilityNumber('0x030F')).toBe('0x030F')
+    expect(normalizeAbilityNumber(' 0x30f ')).toBe('0x030F')
+    expect(normalizeAbilityNumber('0XABCD')).toBe('0xABCD')
+  })
+
+  it('0x0000 是有效值（ID-12）', () => {
+    expect(normalizeAbilityNumber('0x0000')).toBe('0x0000')
+    expect(normalizeAbilityNumber('0x0')).toBe('0x0000')
+  })
+
+  it('沒有 0x、超過 4 位或不是十六進位時回傳 null', () => {
+    expect(normalizeAbilityNumber('030F')).toBeNull()
+    expect(normalizeAbilityNumber('0x12345')).toBeNull()
+    expect(normalizeAbilityNumber('0xGHIJ')).toBeNull()
+    expect(normalizeAbilityNumber('0x')).toBeNull()
+    expect(normalizeAbilityNumber('')).toBeNull()
   })
 })

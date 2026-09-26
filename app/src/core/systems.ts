@@ -82,3 +82,13 @@ export function findParentSystemConflict(
     .sort((a, b) => a - b)
   return conflicting.length === 0 ? null : { parentSystem, lines: conflicting }
 }
+
+/**
+ * 系統名稱的統一寫法：去掉前後空白與結尾的「系」（需求規格 11.1：`エクリプス系` → `エクリプス`）。
+ * 匯入檔的 `父系` 與手動輸入的系統名稱都照這個寫法保存，才對得上系統對照表；沒有名稱時回傳 null。
+ */
+export function normalizeSystemName(text: string): string | null {
+  const trimmed = text.trim()
+  const name = trimmed.endsWith('系') ? trimmed.slice(0, -1) : trimmed
+  return name === '' ? null : name
+}

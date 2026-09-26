@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { lineSystemsOf, systemTableOf } from '../../tests/support/systems'
-import { findParentSystemConflict, originOf, parentSystemOf, summarizeLineSystems } from './systems'
+import {
+  findParentSystemConflict,
+  normalizeSystemName,
+  originOf,
+  parentSystemOf,
+  summarizeLineSystems,
+} from './systems'
 
 const table = systemTableOf([
   ['マンノウォー', 'マッチェム'],
@@ -61,5 +67,23 @@ describe('findParentSystemConflict', () => {
 
   it('不跟自己比較', () => {
     expect(findParentSystemConflict(lines, 1, 'ナスルーラ')).toBeNull()
+  })
+})
+
+describe('normalizeSystemName', () => {
+  it('去掉前後空白與結尾的「系」（需求規格 11.1、IMP-17）', () => {
+    expect(normalizeSystemName('エクリプス系')).toBe('エクリプス')
+    expect(normalizeSystemName(' マンノウォー ')).toBe('マンノウォー')
+    expect(normalizeSystemName('ナスルーラ系 ')).toBe('ナスルーラ')
+  })
+
+  it('只去掉結尾的一個「系」', () => {
+    expect(normalizeSystemName('系統系')).toBe('系統')
+  })
+
+  it('沒有名稱時回傳 null', () => {
+    expect(normalizeSystemName('')).toBeNull()
+    expect(normalizeSystemName('  ')).toBeNull()
+    expect(normalizeSystemName('系')).toBeNull()
   })
 })

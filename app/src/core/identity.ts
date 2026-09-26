@@ -90,6 +90,37 @@ export function duplicateAbilityNumbers(abilityNumbers: readonly string[]): stri
   return [...duplicates]
 }
 
+/** 完整馬名與基本馬名（需求規格 6.4） */
+export interface HorseName {
+  /** 完整馬名（含 `(外)`、`[地]` 前綴） */
+  fullName: string
+  /** 去除前綴的基本馬名 */
+  baseName: string
+}
+
+/** 馬名前綴（需求規格 6.4） */
+const NAME_PREFIXES = ['(外)', '[地]']
+
+/**
+ * 從完整馬名取得基本馬名：去掉開頭的 `(外)` 或 `[地]`（需求規格 6.4）。
+ * 前綴後面一定接著馬名；沒有馬名（空白，或只有前綴）時回傳 null，屬於資料異常（5.2）。
+ * 不修剪內容：匯入檔的欄位不全面修剪（11.1），手動輸入由呼叫端先去掉前後空白。
+ */
+export function splitHorseName(fullName: string): HorseName | null {
+  const prefix = NAME_PREFIXES.find((candidate) => fullName.startsWith(candidate))
+  const baseName = prefix === undefined ? fullName : fullName.slice(prefix.length)
+  return baseName.trim() === '' ? null : { fullName, baseName }
+}
+
+/**
+ * 能力番号的統一寫法：`0x` 加 4 位大寫十六進位，例如 `0x030F`（需求規格 4.8；技術設計 4.2）。
+ * 忽略前後空白，接受 `0x` 或 `0X` 加 1～4 位十六進位；其他寫法回傳 null。`0x0000` 是有效值。
+ */
+export function normalizeAbilityNumber(text: string): string | null {
+  const match = /^0[xX]([0-9A-Fa-f]{1,4})$/.exec(text.trim())
+  return match ? `0x${match[1].toUpperCase().padStart(4, '0')}` : null
+}
+
 /** 配到一筆後，馬名或父母明顯不符時改為衝突；手動輸入、尚未經匯入確認的馬名不比 */
 function confirm(
   horse: KnownHorse,
