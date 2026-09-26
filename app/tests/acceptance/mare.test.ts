@@ -15,6 +15,7 @@ import {
   type SisterStatusChange,
 } from '../../src/core/sisters'
 import { updateSettings } from '../../src/storage/games'
+import { correctDeparture, sellMare } from '../../src/storage/herd-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare, changeMareUsage } from '../../src/storage/mare-writes'
 import type { BreedingRow, MareRow } from '../../src/storage/records'
@@ -302,5 +303,47 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     await expect(
       changeMareUsage(db, GAME, 'F', { assignment: { kind: 'unassigned' } }),
     ).rejects.toThrow('不能修改用途')
+  })
+
+  it('MARE-08 賣出母馬 → 離開母馬群（不再列入任務），紀錄可查', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.horses.add(horseRow('K', { birthYear: 1985 }))
+    await db.mares.add(ownMareRow('K', 1, 2))
+    expect((await sellMare(db, GAME, 'K')).status).toBe('done')
+    const { eightLines } = await loadRuleSnapshot(db, GAME)
+    expect(eightLines.lines[0]!.mareGroups).toEqual([
+      { generation: 2, established: true, activeMares: 0, ownMares: 0 },
+    ])
+    expect(await db.mares.get('K')).toMatchObject({ herd: 'sold' })
+    expect(await db.events.where('[gameId+horseId]').equals([GAME, 'K']).toArray()).toEqual([
+      expect.objectContaining({ kind: 'mare-departed', reason: 'sold' }),
+    ])
+  })
+
+  it('MARE-32 誤按賣出後撤銷 → 回到生產中與原本的接替狀態（例：正式保留），不建立回歸事件；圈內已有另一匹正式保留的姊妹時改為候選', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([
+      horseRow('A', { sireId: 'S', damId: 'D' }),
+      horseRow('B', { sireId: 'S', damId: 'D' }),
+    ])
+    await db.mares.bulkAdd([
+      ownMareRow('A', 1, 2, { sisterStatus: 'kept' }),
+      ownMareRow('B', 1, 2, { sisterStatus: 'replaced' }),
+    ])
+    expect((await sellMare(db, GAME, 'A')).status).toBe('done')
+    expect((await correctDeparture(db, GAME, 'A', 'in-herd')).status).toBe('done')
+    expect(await db.mares.get('A')).toMatchObject({ herd: 'in-herd', sisterStatus: 'kept' })
+    expect((await db.events.toArray()).map((event) => event.kind).sort()).toEqual([
+      'mare-departed',
+      'mare-departure-corrected',
+    ])
+
+    expect((await sellMare(db, GAME, 'A')).status).toBe('done')
+    await db.mares.update('B', { sisterStatus: 'kept' })
+    const revoked = await correctDeparture(db, GAME, 'A', 'in-herd')
+    expect(revoked.status === 'done' && revoked.value.sisterStatus).toBe('candidate')
   })
 })
