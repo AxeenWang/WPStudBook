@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { duplicateAbilityNumbers, matchHorse } from '../../src/core/identity'
+import { returnMare } from '../../src/storage/herd-writes'
 import { openLine } from '../../src/storage/line-writes'
 import { addTestGame, testDatabase } from '../support/database'
-import { GAME } from '../support/rows'
+import { GAME, horseRow, ungroupedMareRow } from '../support/rows'
 
 // 需求規格第 15 章「馬匹身分（ID）」中由 core 與儲存層寫入負責的部分；歷程、遊戲局隔離與備份由後續計畫補上
 
@@ -81,5 +82,27 @@ describe('馬匹身分（ID）：儲存層寫入', () => {
     expect(found.map((horse) => [horse.fullName, horse.baseName])).toEqual([
       ['(外)ウォーアドミラル', 'ウォーアドミラル'],
     ])
+  })
+
+  it('ID-04 已售出或定年引退的母馬回歸 → 沿用原識別並建立回歸事件', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([
+      horseRow('SOLD', { abilityNumber: '0x0100', birthYear: 1980 }),
+      horseRow('RETIRED', { abilityNumber: '0x0200', birthYear: 1965 }),
+    ])
+    await db.mares.bulkAdd([
+      ungroupedMareRow('SOLD', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('RETIRED', 'unassigned', { herd: 'retired' }),
+    ])
+    expect((await returnMare(db, GAME, 'SOLD')).status).toBe('done')
+    expect((await returnMare(db, GAME, 'RETIRED')).status).toBe('done')
+    expect(await db.horses.count()).toBe(2)
+    expect(await db.mares.get('RETIRED')).toMatchObject({ herd: 'in-herd' })
+    expect(
+      (await db.events.toArray())
+        .map((event) => event.kind === 'mare-returned' && `${event.horseId}:${event.from}`)
+        .sort(),
+    ).toEqual(['RETIRED:retired', 'SOLD:sold'])
   })
 })

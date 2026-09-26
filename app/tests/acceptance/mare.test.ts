@@ -15,7 +15,7 @@ import {
   type SisterStatusChange,
 } from '../../src/core/sisters'
 import { updateSettings } from '../../src/storage/games'
-import { correctDeparture, sellMare } from '../../src/storage/herd-writes'
+import { correctDeparture, returnMare, sellMare } from '../../src/storage/herd-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare, changeMareUsage } from '../../src/storage/mare-writes'
 import type { BreedingRow, MareRow } from '../../src/storage/records'
@@ -345,5 +345,52 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     await db.mares.update('B', { sisterStatus: 'kept' })
     const revoked = await correctDeparture(db, GAME, 'A', 'in-herd')
     expect(revoked.status === 'done' && revoked.value.sisterStatus).toBe('candidate')
+  })
+
+  it('MARE-29 手動新增時確認是買回 → 沿用原識別並建立回歸事件，不建立新馬', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.stallions.add(stallionRow('Z1', 1, 0))
+    await db.horses.add(
+      horseRow('OLD', { fullName: 'ハナカゴ', baseName: 'ハナカゴ', nameSource: 'import' }),
+    )
+    await db.mares.add(ungroupedMareRow('OLD', 'unassigned', { herd: 'sold' }))
+    const assignment = { kind: 'pairing' as const, line: 1 as const, generation: 1 }
+    const added = await addMarketMare(db, GAME, { horse: { fullName: 'ハナカゴ' }, assignment })
+    expect(added).toEqual({
+      status: 'unconfirmed',
+      warnings: [{ kind: 'possible-buyback', horseIds: ['OLD'] }],
+    })
+
+    const returned = await returnMare(db, GAME, 'OLD', { assignment, location: 32 })
+    expect(returned.status === 'done' && returned.value.mare).toMatchObject({
+      horseId: 'OLD',
+      herd: 'in-herd',
+      usage: 'start',
+      location: 32,
+    })
+    expect(await db.horses.count()).toBe(1)
+    expect((await db.events.toArray()).map((event) => event.kind)).toEqual(['mare-returned'])
+  })
+
+  it('MARE-30 妹妹已售出後買回被取代的姊姊 → 姊姊回歸為暫定保留；妹妹仍在圈時姊姊為候選', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([
+      horseRow('ELDER', { sireId: 'S', damId: 'D' }),
+      horseRow('YOUNGER', { sireId: 'S', damId: 'D' }),
+    ])
+    await db.mares.bulkAdd([
+      ownMareRow('ELDER', 1, 3, { sisterStatus: 'replaced', herd: 'sold' }),
+      ownMareRow('YOUNGER', 1, 3, { sisterStatus: 'kept' }),
+    ])
+    const candidate = await returnMare(db, GAME, 'ELDER')
+    expect(candidate.status === 'done' && candidate.value.mare.sisterStatus).toBe('candidate')
+
+    await db.mares.update('ELDER', { herd: 'sold', sisterStatus: 'replaced' })
+    expect((await sellMare(db, GAME, 'YOUNGER')).status).toBe('done')
+    const provisional = await returnMare(db, GAME, 'ELDER')
+    expect(provisional.status === 'done' && provisional.value.mare.sisterStatus).toBe('provisional')
   })
 })

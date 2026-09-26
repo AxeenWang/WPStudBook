@@ -1,12 +1,30 @@
 import { ageInYear } from '../core/mares'
-import type { SisterStatus } from '../core/sisters'
+import { entrySisterStatus, type SisterStatus } from '../core/sisters'
 import type { WPStudBookDatabase } from './database'
 import { loadSettings } from './games'
-import { loadSisters } from './loaders'
-import type { HerdStatus, MareRow } from './records'
-import { gate, runWrite, type WriteContext, type WriteOptions, type WriteResult } from './writes'
+import { buildOwnMares } from './inputs'
+import { loadSisters, readRuleRows, ruleTables, type RuleRows } from './loaders'
+import {
+  assertBase,
+  placementOf,
+  resolveAssignment,
+  samePlacement,
+  withPlacement,
+  type AssignmentBlock,
+  type MareAssignment,
+} from './mare-assignment'
+import type { Base, HerdStatus, MareRow } from './records'
+import { ownSisterStatus } from './snapshot'
+import {
+  confirmation,
+  gate,
+  runWrite,
+  type WriteContext,
+  type WriteOptions,
+  type WriteResult,
+} from './writes'
 
-// 母馬的在圈狀態：賣出與更正離圈原因（需求規格 8.5、8.9；技術設計 4.3「寫入操作」）
+// 母馬的在圈狀態：賣出、更正離圈原因與買回（需求規格 8.5、8.9；技術設計 4.3「寫入操作」）
 
 /** 賣出的阻止原因：已達定年（需求規格 4.6「無法再生產的母馬不能賣出」）；age 是今年的馬齡 */
 export interface SellBlock {
@@ -108,4 +126,124 @@ async function revokedSisterStatus(
   const sisters = await loadSisters(context.db, context.game.id, horse?.sireId, horse?.damId)
   const keptInHerd = sisters.some((sister) => sister.inHerd && sister.status === 'kept')
   return keptInHerd ? { from: 'kept', to: 'candidate' } : undefined
+}
+
+/** 買回與回歸的輸入 */
+export interface ReturnMareInput {
+  /** 從任務買回時的新用途；只限市場母馬，省略時沿用原用途 */
+  assignment?: MareAssignment
+  /** 改成例外補入時的原因（需求規格 7.3）；不是例外補入時不保存 */
+  exceptionReason?: string
+  /** 回到的據點；省略時不變 */
+  location?: Base
+}
+
+/** 買回後的母馬；parentSystemUnknown 為 true 時提示 8.3 無法判斷 */
+export interface ReturnedMare {
+  mare: MareRow
+  parentSystemUnknown: boolean
+}
+
+/**
+ * 已離圈（售出或定年引退）的母馬買回或回歸（需求規格 8.5、8.9、ID-04、MARE-29、MARE-30、CAND-07）：
+ * 恢復生產中，沿用原識別與血緣。自家母駒沿用出生紀錄的系與代數，接替狀態以 entrySisterStatus 重新判定
+ * （其他姊妹都不在圈 → 暫定保留；仍有姊妹在圈 → 候選），成為暫定保留時 establishedGeneration 設為 true；
+ * 自由配種所生只恢復生產中。市場母馬沒有傳用途時沿用原用途，不重做 8.3 檢查；從任務買回時傳配對，
+ * 照 resolveAssignment 處理。可以一併填據點。事件 mare-returned 記原離圈狀態，以及接替狀態、用途與據點的變化。
+ * 母馬找不到、屬於其他局或還在圈內、自家母駒或自由配種所生傳了用途、據點不是 32～35 時丟出錯誤。
+ */
+export async function returnMare(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  input: ReturnMareInput = {},
+  options: WriteOptions = {},
+): Promise<WriteResult<ReturnedMare, AssignmentBlock>> {
+  if (input.location !== undefined) assertBase(input.location)
+  return runWrite(db, gameId, ruleTables(db), options, async (context) => {
+    const rows = await readRuleRows(db, gameId, context.game)
+    const current = rows.mares.find((row) => row.horseId === horseId)
+    if (!current) throw new Error(`找不到母馬：${horseId}`)
+    const from = current.herd
+    if (from === 'in-herd') throw new Error(`母馬在繁殖圈內，不能買回：${horseId}`)
+    const own = current.usage === 'own' || current.usage === 'free'
+    if (own && input.assignment !== undefined) {
+      throw new Error(`自家母駒與自由配種所生的母馬沿用出生紀錄，不接受用途：${horseId}`)
+    }
+    const horse = rows.horses.find((row) => row.id === horseId)
+    const resolved =
+      input.assignment === undefined
+        ? undefined
+        : resolveAssignment(
+            rows,
+            input.assignment,
+            { horseId, sireSystem: horse?.sireSystem },
+            input.exceptionReason,
+          )
+    if (resolved && !resolved.ok) return { status: 'blocked', blocks: resolved.blocks }
+    const assigned = resolved?.value
+    const warnings = assigned?.warnings ?? []
+    const stop = gate([], warnings, context.confirmed)
+    if (stop) return stop
+
+    const sisterStatus = current.usage === 'own' ? reenteredSisterStatus(rows, current) : undefined
+    const location = locationChange(current.location, input.location)
+    const placed = assigned
+      ? withPlacement(current, assigned.placement, assigned.exceptionReason)
+      : current
+    const mare: MareRow = {
+      ...placed,
+      herd: 'in-herd',
+      ...(sisterStatus === undefined ? {} : { sisterStatus: sisterStatus.to }),
+      ...(sisterStatus?.to === 'provisional' ? { establishedGeneration: true } : {}),
+      ...(location === undefined ? {} : { location: location.to }),
+    }
+    const previous = placementOf(current)
+    const usage =
+      assigned && !samePlacement(previous, assigned.placement)
+        ? { from: previous, to: assigned.placement }
+        : undefined
+    await db.mares.put(mare)
+    await context.addEvent({
+      kind: 'mare-returned',
+      horseId,
+      from,
+      ...(sisterStatus === undefined ? {} : { sisterStatus }),
+      ...(usage === undefined ? {} : { usage }),
+      ...(assigned?.exceptionReason === undefined
+        ? {}
+        : { exceptionReason: assigned.exceptionReason }),
+      ...(location === undefined ? {} : { location }),
+      ...confirmation(warnings),
+    })
+    return context.done(
+      { mare, parentSystemUnknown: assigned?.parentSystemUnknown ?? false },
+      warnings,
+    )
+  })
+}
+
+/**
+ * 自家母駒回到繁殖圈時重新判定的接替狀態（需求規格 8.9）：
+ * 其他姊妹都不在圈 → 暫定保留；仍有姊妹在圈 → 候選
+ */
+function reenteredSisterStatus(
+  rows: RuleRows,
+  mare: MareRow,
+): { from: SisterStatus; to: SisterStatus } {
+  const horse = rows.horses.find((row) => row.id === mare.horseId)
+  const to = entrySisterStatus(
+    { id: mare.horseId, sireId: horse?.sireId, damId: horse?.damId },
+    buildOwnMares(rows.mares, rows.horses),
+  )
+  return { from: ownSisterStatus(mare), to }
+}
+
+/** 據點的變化：沒有填新據點或和目前相同時為 undefined；原本不知道據點時沒有 from */
+export function locationChange(
+  current: Base | undefined,
+  next: Base | undefined,
+): { from?: Base; to: Base } | undefined {
+  if (next === undefined || next === current) return undefined
+  return current === undefined ? { to: next } : { from: current, to: next }
 }
