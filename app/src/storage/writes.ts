@@ -183,11 +183,13 @@ export interface HorseFields {
 /**
  * 驗證手動輸入的馬匹欄位並統一寫法，不寫入：能力番号經 normalizeAbilityNumber，
  * 父母名去掉前綴、存基本馬名，父系去掉結尾「系」（normalizeSystemName）。阻止原因一次列全。
+ * 更正既有的馬時 exceptHorseId 是那匹馬自己，同一匹馬的比對排除自己。
  * 在 runWrite 的交易內呼叫，交易要包含 horses。
  */
 export async function checkHorseInput(
   context: WriteContext,
   input: NewHorseInput,
+  exceptHorseId?: string,
 ): Promise<Prepared<HorseFields, NewHorseBlock>> {
   const { db, game } = context
   const blocks: NewHorseBlock[] = []
@@ -209,6 +211,7 @@ export async function checkHorseInput(
     const same = await db.horses
       .where('[gameId+abilityNumber+birthYear]')
       .equals([game.id, abilityNumber, birthYear])
+      .filter((horse) => horse.id !== exceptHorseId)
       .first()
     if (same) blocks.push({ kind: 'same-horse', horseId: same.id })
   }
