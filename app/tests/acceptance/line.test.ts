@@ -22,6 +22,7 @@ import { checkSubstituteMare } from '../../src/core/substitute'
 import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
 import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { declareRestoration } from '../../src/storage/restoration-writes'
 import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
 import {
@@ -781,5 +782,25 @@ describe('八系管理（LINE）：儲存層寫入', () => {
         to: 'ウォーアドミラル',
       }),
     ])
+  })
+
+  it('LINE-39 第 5 系 12 代母馬群從未成立並宣告補母系 → 出現配它的任務；母馬群已成立時不能補母系', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, 'マンノウォー'), lineRow(5, 'ハイペリオン')])
+    await db.stallions.add(stallionRow('S112', 1, 12))
+    const input = { line: 5 as const, generation: 12, side: 'dam' as const, reason: '生不出母駒' }
+    expect((await declareRestoration(db, GAME, input)).status).toBe('done')
+    const { eightLines } = await loadRuleSnapshot(db, GAME)
+    expect(described(listBoard(eightLines), 13)).toContain(
+      '第 1 系 12 代 × 第 5 系 12 代母馬群 → 第 1 系 13 代',
+    )
+
+    await db.horses.add(horseRow('F', { birthYear: 1987 }))
+    await db.mares.add(ownMareRow('F', 5, 11))
+    expect(await declareRestoration(db, GAME, { ...input, generation: 11 })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'rule', rule: { reason: 'mares-established' } }],
+    })
   })
 })
