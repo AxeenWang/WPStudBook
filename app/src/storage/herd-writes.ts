@@ -24,7 +24,7 @@ import {
   type WriteResult,
 } from './writes'
 
-// 母馬的在圈狀態：賣出、更正離圈原因與買回（需求規格 8.5、8.9；技術設計 4.3「寫入操作」）
+// 母馬的在圈狀態與據點：賣出、更正離圈原因、買回與轉場（需求規格 8.5、8.6、8.9；技術設計 4.3「寫入操作」）
 
 /** 賣出的阻止原因：已達定年（需求規格 4.6「無法再生產的母馬不能賣出」）；age 是今年的馬齡 */
 export interface SellBlock {
@@ -246,4 +246,29 @@ export function locationChange(
 ): { from?: Base; to: Base } | undefined {
   if (next === undefined || next === current) return undefined
   return current === undefined ? { to: next } : { from: current, to: next }
+}
+
+/**
+ * 轉場（需求規格 8.6、MARE-19）：在圈的母馬換據點；和目前相同時阻止。
+ * 事件 mare-moved 記原據點（原本不知道時留空）與新據點；年份、時點與來源在事件的共用欄位，
+ * 由呼叫端以 WriteOptions 帶入。母馬找不到、屬於其他局或不在圈內，或據點不是 32～35 時丟出錯誤。
+ */
+export async function moveMare(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  location: Base,
+  options: WriteOptions = {},
+): Promise<WriteResult<MareRow, UnchangedBlock>> {
+  assertBase(location)
+  return runWrite(db, gameId, [db.mares], options, async (context) => {
+    const current = await loadMare(context, horseId)
+    if (current.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能轉場：${horseId}`)
+    const change = locationChange(current.location, location)
+    if (!change) return { status: 'blocked', blocks: [{ kind: 'unchanged' }] }
+    const mare: MareRow = { ...current, location }
+    await db.mares.put(mare)
+    await context.addEvent({ kind: 'mare-moved', horseId, ...change })
+    return context.done(mare)
+  })
 }

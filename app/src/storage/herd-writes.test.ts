@@ -12,7 +12,7 @@ import {
 import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
 import type { Base } from './records'
-import { correctDeparture, locationChange, returnMare, sellMare } from './herd-writes'
+import { correctDeparture, locationChange, moveMare, returnMare, sellMare } from './herd-writes'
 
 const now = new Date('2026-09-26T01:02:03.000Z')
 
@@ -379,5 +379,52 @@ describe('locationChange', () => {
     expect(locationChange(32, 32)).toBeUndefined()
     expect(locationChange(32, 35)).toStrictEqual({ from: 32, to: 35 })
     expect(locationChange(undefined, 33)).toStrictEqual({ to: 33 })
+  })
+})
+
+describe('moveMare', () => {
+  it('在圈的母馬換據點：事件記原據點與新據點，時點與來源照 WriteOptions', async () => {
+    const db = await herd()
+    await db.mares.update('M', { location: 32 })
+    const result = await moveMare(db, GAME, 'M', 33, { now, timing: { month: 8, week: 2 } })
+    const moved = substituteMareRow('M', 2, 3, { location: 33 })
+    expect(result).toEqual({ status: 'done', value: moved, warnings: [] })
+    expect(await db.mares.get('M')).toEqual(moved)
+    expect(await db.events.toArray()).toEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        year: 1990,
+        recordedAt: '2026-09-26T01:02:03.000Z',
+        source: { kind: 'manual' },
+        timing: { month: 8, week: 2 },
+        kind: 'mare-moved',
+        horseId: 'M',
+        from: 32,
+        to: 33,
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-26T01:02:03.000Z')
+  })
+
+  it('原本不知道據點時事件沒有原據點；和目前相同時阻止', async () => {
+    const db = await herd()
+    expect((await moveMare(db, GAME, 'A', 35)).status).toBe('done')
+    const [event] = await db.events.toArray()
+    expect(event).toMatchObject({ kind: 'mare-moved', to: 35 })
+    expect(event).not.toHaveProperty('from')
+    expect(await moveMare(db, GAME, 'A', 35)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    expect(await db.events.count()).toBe(1)
+  })
+
+  it('母馬找不到或不在圈內，或據點不是 32～35 時丟出錯誤', async () => {
+    const db = await herd()
+    await db.mares.update('M', { herd: 'sold' })
+    await expect(moveMare(db, GAME, 'Q', 33)).rejects.toThrow('找不到母馬：Q')
+    await expect(moveMare(db, GAME, 'M', 33)).rejects.toThrow('不在繁殖圈內的母馬不能轉場：M')
+    await expect(moveMare(db, GAME, 'A', 36 as Base)).rejects.toThrow('據點不符：36')
   })
 })

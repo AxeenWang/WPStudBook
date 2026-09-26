@@ -15,9 +15,10 @@ import {
   type SisterStatusChange,
 } from '../../src/core/sisters'
 import { updateSettings } from '../../src/storage/games'
-import { correctDeparture, returnMare, sellMare } from '../../src/storage/herd-writes'
+import { correctDeparture, moveMare, returnMare, sellMare } from '../../src/storage/herd-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare, changeMareUsage } from '../../src/storage/mare-writes'
+import { correctVigor, setMarePlan } from '../../src/storage/mare-year-writes'
 import type { BreedingRow, MareRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from '../support/database'
 import {
@@ -392,5 +393,73 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     expect((await sellMare(db, GAME, 'YOUNGER')).status).toBe('done')
     const provisional = await returnMare(db, GAME, 'ELDER')
     expect(provisional.status === 'done' && provisional.value.mare.sisterStatus).toBe('provisional')
+  })
+
+  it('MARE-13 活力 0、73、100 → 都能保存；沒有快照時是空白（待更新），不存成 0', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.mares.add(substituteMareRow('M', 2, 3))
+    await setMarePlan(db, GAME, 'M', 'resting')
+    expect(await db.mareYears.get([GAME, 'M', 1990])).not.toHaveProperty('mayVigor')
+    for (const [year, value] of [
+      [1988, 0],
+      [1989, 73],
+      [1990, 100],
+    ] as const) {
+      const vigor = { value, boosted: false }
+      expect((await correctVigor(db, GAME, 'M', { year, month: 5, vigor })).status).toBe('done')
+      expect((await db.mareYears.get([GAME, 'M', year]))?.mayVigor).toEqual(vigor)
+    }
+  })
+
+  it('MARE-14 増強中與非増強分開保存；不帶 * 的 100 → 非増強', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.mares.add(substituteMareRow('M', 2, 3))
+    const correct = (value: number, boosted: boolean) =>
+      correctVigor(db, GAME, 'M', { year: 1990, month: 7, vigor: { value, boosted } })
+    await correct(13, true)
+    expect((await db.mareYears.get([GAME, 'M', 1990]))?.julyVigor).toEqual({
+      value: 13,
+      boosted: true,
+    })
+    await correct(100, false)
+    expect((await db.mareYears.get([GAME, 'M', 1990]))?.julyVigor).toEqual({
+      value: 100,
+      boosted: false,
+    })
+  })
+
+  it('MARE-19 據點在 32～35 間變更 → 保存原據點、新據點、年、時點與來源', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.mares.add(substituteMareRow('M', 2, 3, { location: 32 }))
+    expect((await moveMare(db, GAME, 'M', 33, { timing: { month: 8, week: 1 } })).status).toBe(
+      'done',
+    )
+    expect(await db.events.toArray()).toEqual([
+      expect.objectContaining({
+        kind: 'mare-moved',
+        from: 32,
+        to: 33,
+        year: 1990,
+        timing: { month: 8, week: 1 },
+        source: { kind: 'manual' },
+      }),
+    ])
+  })
+
+  it('MARE-22 今年計畫 → 可設為待定、八系指定配種、自由配種、等待活力、輪休，可依年份篩選', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.mares.bulkAdd([substituteMareRow('A', 2, 3), substituteMareRow('B', 2, 3)])
+    for (const plan of ['designated', 'free', 'waiting-vigor', 'resting', 'pending'] as const) {
+      expect((await setMarePlan(db, GAME, 'A', plan)).status).toBe('done')
+    }
+    await setMarePlan(db, GAME, 'B', 'resting')
+    const thisYear = await db.mareYears.where('[gameId+year]').equals([GAME, 1990]).toArray()
+    expect(thisYear.filter((row) => row.plan === 'resting').map((row) => row.horseId)).toEqual([
+      'B',
+    ])
   })
 })
