@@ -163,7 +163,7 @@ export type DepartedStatus = Exclude<HerdStatus, 'in-herd'>
 /** 母馬的用途與所屬母馬群；待指定用途與自由配種所生沒有系與代數 */
 export type MarePlacement = Pick<MareRow, 'usage' | 'groupLine' | 'groupGeneration'>
 
-/** 活力快照（需求規格 8.7）：0～100 的總活力與是否増強；只有前置 `*` 才是増強，100 不代表增強 */
+/** 活力快照（需求規格 8.7）：0～100 的總活力與是否増強；只有前置 `*` 才是増強，100 不代表増強 */
 export interface Vigor {
   value: number
   boosted: boolean

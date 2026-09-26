@@ -107,6 +107,14 @@ export async function runWrite<T, B>(
   })
 }
 
+/** 遊戲內的時點：1～12 月、每月 1～4 週 */
+function isGameTiming(timing: GameTiming): boolean {
+  const { month, week } = timing
+  const inRange = (value: number, max: number) =>
+    Number.isInteger(value) && value >= 1 && value <= max
+  return inRange(month, 12) && inRange(week, 4)
+}
+
 /**
  * 寫入前的關卡：有阻止時回傳 blocked；有警告而使用者還沒確認時回傳 unconfirmed；可以寫入時回傳 null
  */
@@ -337,12 +345,4 @@ export async function resolveZeroStallion(
     return { ok: false, blocks: [{ kind: 'not-market-stallion' }] }
   }
   return { ok: true, value: { horse, isNew: false } }
-}
-
-/** 遊戲內的時點：1～12 月、每月 1～4 週 */
-function isGameTiming(timing: GameTiming): boolean {
-  const { month, week } = timing
-  const inRange = (value: number, max: number) =>
-    Number.isInteger(value) && value >= 1 && value <= max
-  return inRange(month, 12) && inRange(week, 4)
 }
