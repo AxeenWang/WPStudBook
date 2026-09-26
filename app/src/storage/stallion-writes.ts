@@ -1,5 +1,5 @@
 import type { LinePosition } from '../core/lines'
-import { checkMarketStallionSystem } from '../core/stallions'
+import { checkMarketStallionSystem, type StallionStatus } from '../core/stallions'
 import { parentSystemOf } from '../core/systems'
 import type { WPStudBookDatabase } from './database'
 import { saveLineSubsystem } from './line-writes'
@@ -173,21 +173,25 @@ function reasonOf(reason: StallionChangeReason): StallionChangeReason {
   return note ? { kind: reason.kind, note } : { kind: reason.kind }
 }
 
-/** 種牡馬狀態可以改成的值：標示退出生產行列、已引退，或更正回在崗 */
-export type StallionStatusTarget = 'withdrawn' | 'retired' | 'active'
+/** 種牡馬狀態可以改成的值：標示退出生產行列、已引退，或更正回在崗、已被取代 */
+export type StallionStatusTarget = 'withdrawn' | 'retired' | 'active' | 'replaced'
 
 /**
  * 種牡馬狀態的阻止原因：
- * - invalid-transition：不能這樣改。退出與引退只能從在崗或已被取代標示；
- *   在崗只能從退出或引退更正；已被取代由更換現任設定，預定後繼的取消也不在這裡
+ * - invalid-transition：不能這樣改。退出與引退只能從在崗或已被取代標示；在崗與已被取代只能從退出或引退更正；
+ *   預定後繼（狀態留空）的就緒與取消不在這裡
  * - slot-active：更正回在崗，但同一格已有其他在崗的種牡馬 stallionId；換人要用更換現任
+ * - no-incumbent：更正回已被取代，但同一格沒有在崗的種牡馬；請改為更正回在崗
  */
 export type StallionStatusBlock =
-  { kind: 'invalid-transition' } | { kind: 'slot-active'; stallionId: string }
+  | { kind: 'invalid-transition' }
+  | { kind: 'slot-active'; stallionId: string }
+  | { kind: 'no-incumbent' }
 
 /**
- * 標示種牡馬退出生產行列或已引退，或更正回在崗（需求規格 7.7：由使用者標示）；
+ * 標示種牡馬退出生產行列或已引退，或更正回在崗、已被取代（需求規格 7.7：由使用者標示）；
  * 維持每格（某系某代的一般任用，或同一次補公系的任用）最多一匹在崗。
+ * 原本已被取代、誤標為退出或引退的，更正回已被取代，只在同一格另有在崗時可以（使用者 2026-09-26 決定）。
  * 事件 stallion-status-changed 記原狀態與新狀態。任用找不到或屬於其他局時丟出錯誤。
  */
 export async function setStallionStatus(
@@ -203,26 +207,9 @@ export async function setStallionStatus(
       throw new Error(`找不到種牡馬的任用：${stallionId}`)
     }
     const from = current.status
-    const allowed =
-      to === 'active'
-        ? from === 'withdrawn' || from === 'retired'
-        : from === 'active' || from === 'replaced'
-    const blocks: StallionStatusBlock[] = allowed ? [] : [{ kind: 'invalid-transition' }]
-    if (allowed && to === 'active') {
-      const other = (
-        await db.stallions
-          .where('[gameId+line+generation]')
-          .equals([gameId, current.line, current.generation])
-          .toArray()
-      ).find(
-        (row) =>
-          row.id !== current.id &&
-          row.restorationId === current.restorationId &&
-          row.status === 'active',
-      )
-      if (other) blocks.push({ kind: 'slot-active', stallionId: other.id })
-    }
-    if (from === undefined || blocks.length > 0) return { status: 'blocked', blocks }
+    if (from === undefined) return { status: 'blocked', blocks: [{ kind: 'invalid-transition' }] }
+    const stop = gate(await statusBlocks(db, current, from, to), [], context.confirmed)
+    if (stop) return stop
     const next = { ...current, status: to }
     await db.stallions.put(next)
     await context.addEvent({
@@ -237,4 +224,33 @@ export async function setStallionStatus(
     })
     return context.done(next)
   })
+}
+
+/** 改法是否允許；更正時再看同一格（同系、同代、同一個 restorationId）的在崗種牡馬 */
+async function statusBlocks(
+  db: WPStudBookDatabase,
+  current: StallionRow,
+  from: StallionStatus,
+  to: StallionStatusTarget,
+): Promise<StallionStatusBlock[]> {
+  const correction = to === 'active' || to === 'replaced'
+  const allowed = correction
+    ? from === 'withdrawn' || from === 'retired'
+    : from === 'active' || from === 'replaced'
+  if (!allowed) return [{ kind: 'invalid-transition' }]
+  if (!correction) return []
+  const incumbent = (
+    await db.stallions
+      .where('[gameId+line+generation]')
+      .equals([current.gameId, current.line, current.generation])
+      .toArray()
+  ).find(
+    (row) =>
+      row.id !== current.id &&
+      row.restorationId === current.restorationId &&
+      row.status === 'active',
+  )
+  if (to === 'active' && incumbent) return [{ kind: 'slot-active', stallionId: incumbent.id }]
+  if (to === 'replaced' && !incumbent) return [{ kind: 'no-incumbent' }]
+  return []
 }

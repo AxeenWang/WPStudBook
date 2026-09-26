@@ -199,6 +199,17 @@ describe('prepareNewHorse', () => {
     const otherGame = { fullName: '別の馬', abilityNumber: '0x0100', birthYear: 1974 }
     expect((await prepare(db, otherGame)).ok).toBe(true)
   })
+  it('馬名不符時也照查同一匹馬，阻止原因一次列全', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.add(horseRow('H1', { abilityNumber: '0x030F', birthYear: 1974 }))
+    expect(
+      await prepare(db, { fullName: '[地]', abilityNumber: '0x030F', birthYear: 1974 }),
+    ).toEqual({
+      ok: false,
+      blocks: [{ kind: 'horse-name' }, { kind: 'same-horse', horseId: 'H1' }],
+    })
+  })
 })
 
 describe('parentDuplicateWarnings', () => {

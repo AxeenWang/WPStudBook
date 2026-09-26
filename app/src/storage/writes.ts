@@ -55,7 +55,8 @@ export interface WriteContext {
 /**
  * 在一個 rw 交易內執行寫入操作（技術設計 4.3「寫入操作」）：交易開始時確認遊戲局存在。
  * tables 是操作要讀寫的其他資料表，games 與 events 一定包含在交易內。
- * 呼叫端已在外層交易內時成為子交易（Dexie 的巢狀交易），外層失敗時一起回復（4.4）。
+ * 呼叫端已在外層交易內時成為子交易（Dexie 的巢狀交易），外層失敗時一起回復（4.4）；
+ * 外層交易要是 rw，並包含 games、events 與 tables 的每一張表，否則 Dexie 會丟出 SubTransactionError。
  * 遊戲局不存在時丟出錯誤。
  */
 export async function runWrite<T, B>(
@@ -160,10 +161,11 @@ export async function prepareNewHorse(
   const abilityNumber = abilityText === '' ? undefined : normalizeAbilityNumber(abilityText)
   if (abilityNumber === null) blocks.push({ kind: 'ability-number' })
   const { birthYear } = input
-  if (birthYear !== undefined && (!Number.isInteger(birthYear) || birthYear > game.currentYear)) {
-    blocks.push({ kind: 'birth-year' })
-  }
-  if (typeof abilityNumber === 'string' && birthYear !== undefined && blocks.length === 0) {
+  const birthYearValid =
+    birthYear === undefined || (Number.isInteger(birthYear) && birthYear <= game.currentYear)
+  if (!birthYearValid) blocks.push({ kind: 'birth-year' })
+  // 能力番号與出生年都有效時才查同一匹馬；馬名不符也照查，阻止原因一次列全（詮釋 1）
+  if (typeof abilityNumber === 'string' && birthYear !== undefined && birthYearValid) {
     const same = await db.horses
       .where('[gameId+abilityNumber+birthYear]')
       .equals([game.id, abilityNumber, birthYear])

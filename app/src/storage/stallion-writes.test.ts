@@ -227,6 +227,51 @@ describe('assignZeroStallion', () => {
       ).rejects.toThrow(`補系宣告不是有效的補公系：${restorationId}`)
     }
   })
+  it('替換者的父系沒登錄在對照表時，親系統的替換值為 null，提示補登', async () => {
+    const db = await lineThree()
+    expect(await assignZeroStallion(db, GAME, replaceLineThree('未登録系'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [
+        {
+          kind: 'stallion-system',
+          line: 3,
+          subsystem: { current: 'マンノウォー', replacement: '未登録' },
+          parentSystem: { current: 'マッチェム', replacement: null },
+        },
+      ],
+    })
+  })
+
+  it('原因的說明去掉前後空白；只有空白時不寫說明', async () => {
+    const db = await lineThree()
+    /** 這匹馬的補入或替換事件記下的原因 */
+    const reasonOfHorse = async (horseId: string) => {
+      const events = await db.events.where('[gameId+horseId]').equals([GAME, horseId]).toArray()
+      const assigned = events.find((event) => event.kind === 'stallion-assigned')
+      return assigned?.kind === 'stallion-assigned' ? assigned.reason : undefined
+    }
+    const first = await assignZeroStallion(db, GAME, {
+      ...replaceLineThree('マンノウォー'),
+      reason: { kind: 'other', note: ' 史実で早期引退 ' },
+    })
+    if (first.status !== 'done') throw new Error(first.status)
+    const retired = await setStallionStatus(db, GAME, first.value.appointment.id, 'retired')
+    expect(retired.status).toBe('done')
+    const second = await assignZeroStallion(db, GAME, {
+      slot: { kind: 'founding', line: 3 },
+      stallion: {
+        kind: 'new',
+        horse: { fullName: 'ウォーレリック二世', sireSystem: 'マンノウォー' },
+      },
+      reason: { kind: 'other', note: '  ' },
+    })
+    if (second.status !== 'done') throw new Error(second.status)
+    expect(await reasonOfHorse(first.value.horse.id)).toEqual({
+      kind: 'other',
+      note: '史実で早期引退',
+    })
+    expect(await reasonOfHorse(second.value.horse.id)).toEqual({ kind: 'other' })
+  })
 })
 
 describe('setStallionStatus', () => {
@@ -298,5 +343,37 @@ describe('setStallionStatus', () => {
         `找不到種牡馬的任用：${id}`,
       )
     }
+  })
+
+  it('誤標為退出或引退的已被取代種牡馬，可以更正回已被取代；同一格沒有在崗時阻止（使用者 2026-09-26 決定）', async () => {
+    const db = await lineThree('active')
+    await db.stallions.add(stallionRow('B', 3, 0, { status: 'retired' }))
+    const result = await setStallionStatus(db, GAME, 'B', 'replaced', { now })
+    const replaced = stallionRow('B', 3, 0, { status: 'replaced' })
+    expect(result).toEqual({ status: 'done', value: replaced, warnings: [] })
+    expect(await db.events.toArray()).toEqual([
+      expect.objectContaining({
+        kind: 'stallion-status-changed',
+        stallionId: 'B',
+        from: 'retired',
+        to: 'replaced',
+      }),
+    ])
+
+    expect((await setStallionStatus(db, GAME, 'Z3', 'retired')).status).toBe('done')
+    await db.stallions.update('B', { status: 'withdrawn' })
+    expect(await setStallionStatus(db, GAME, 'B', 'replaced')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'no-incumbent' }],
+    })
+  })
+
+  it('在崗不能直接改成已被取代：換人要用更換現任', async () => {
+    const db = await lineThree('active')
+    await db.stallions.add(stallionRow('B', 3, 0, { status: 'retired' }))
+    expect(await setStallionStatus(db, GAME, 'Z3', 'replaced')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'invalid-transition' }],
+    })
   })
 })

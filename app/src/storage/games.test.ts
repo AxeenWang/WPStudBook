@@ -268,4 +268,18 @@ describe('updateSettings', () => {
     })
     expect(await loadSettings(db, GAME)).toEqual({ gameId: GAME, ...DEFAULT_SETTINGS })
   })
+
+  it('沒有變更時不寫入，更新時間不變', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db)
+    const settings = { gameId: GAME, ...DEFAULT_SETTINGS }
+    for (const change of [{}, { retirementAge: DEFAULT_SETTINGS.retirementAge }]) {
+      expect(await updateSettings(db, GAME, change, { now })).toEqual({
+        status: 'done',
+        value: settings,
+        warnings: [],
+      })
+    }
+    expect(await loadGame(db, GAME)).toEqual(game)
+  })
 })

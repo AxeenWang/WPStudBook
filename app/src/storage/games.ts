@@ -161,7 +161,7 @@ export interface SettingsBlock {
 
 /**
  * 修改這一局的設定（需求規格 7.7、8.5）：只改 change 有填的欄位，每一項都要是 1 以上的整數。
- * 不寫事件；新設定從下一次判斷開始生效（MARE-10）。遊戲局或設定不存在時丟出錯誤。
+ * 不寫事件；新設定從下一次判斷開始生效（MARE-10）。沒有變更時不寫入。遊戲局或設定不存在時丟出錯誤。
  */
 export async function updateSettings(
   db: WPStudBookDatabase,
@@ -176,10 +176,14 @@ export async function updateSettings(
     }).map((field): SettingsBlock => ({ kind: 'not-positive-integer', field }))
     const stop = gate(blocks, [], context.confirmed)
     if (stop) return stop
-    const settings = { ...(await loadSettings(db, gameId)) }
+    const current = await loadSettings(db, gameId)
+    const settings = { ...current }
     for (const field of SETTING_FIELDS) {
       const value = change[field]
       if (value !== undefined) settings[field] = value
+    }
+    if (SETTING_FIELDS.every((field) => settings[field] === current[field])) {
+      return { status: 'done', value: current, warnings: [] }
     }
     await db.settings.put(settings)
     return context.done(settings)
