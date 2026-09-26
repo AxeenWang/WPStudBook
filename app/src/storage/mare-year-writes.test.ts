@@ -4,6 +4,7 @@ import { GAME, substituteMareRow } from '../../tests/support/rows'
 import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
 import { correctVigor, setMarePlan } from './mare-year-writes'
+import type { VigorMonth } from './records'
 
 const now = new Date('2026-09-26T01:02:03.000Z')
 
@@ -179,7 +180,7 @@ describe('correctVigor', () => {
     expect((await correct(1990, 100, true)).status).toBe('done')
   })
 
-  it('已離圈的母馬也可以更正；母馬找不到或屬於其他局時丟出錯誤', async () => {
+  it('已離圈的母馬也可以更正；月份不是五月或七月、母馬找不到或屬於其他局時丟出錯誤', async () => {
     const db = await oneMare()
     await db.mares.update('M', { herd: 'retired' })
     const vigor = { value: 10, boosted: false }
@@ -192,5 +193,8 @@ describe('correctVigor', () => {
     await expect(correctVigor(db, GAME, 'X', { year: 1990, month: 7, vigor })).rejects.toThrow(
       '找不到母馬：X',
     )
+    await expect(
+      correctVigor(db, GAME, 'M', { year: 1990, month: 6 as VigorMonth, vigor }),
+    ).rejects.toThrow('活力快照的月份不符：6')
   })
 })

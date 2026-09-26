@@ -35,7 +35,7 @@ export interface SellBlock {
 /**
  * 賣出母馬（需求規格 8.5、MARE-08）：在圈狀態改為售出；自家母駒的接替狀態保留離圈前的值（技術設計 4.2）。
  * 已達定年時阻止，出生年不明時可以賣出。這條只適用於手動賣出，五月缺席的判定由 CE 匯入計畫接上。
- * 事件 mare-departed。母馬找不到、屬於其他局或不在圈內時丟出錯誤。
+ * 事件 mare-departed。母馬或她的馬匹找不到、屬於其他局，或母馬不在圈內時丟出錯誤。
  */
 export async function sellMare(
   db: WPStudBookDatabase,
@@ -47,9 +47,10 @@ export async function sellMare(
     const current = await loadMare(context, horseId)
     if (current.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能賣出：${horseId}`)
     const horse = await db.horses.get(horseId)
+    if (!horse) throw new Error(`找不到馬匹：${horseId}`)
     const { retirementAge } = await loadSettings(db, gameId)
     const blocks: SellBlock[] = []
-    if (horse?.birthYear !== undefined) {
+    if (horse.birthYear !== undefined) {
       const age = ageInYear(horse.birthYear, context.game.currentYear)
       if (age >= retirementAge) blocks.push({ kind: 'retirement-age', age })
     }

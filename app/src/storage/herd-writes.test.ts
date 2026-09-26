@@ -85,14 +85,18 @@ describe('sellMare', () => {
     expect((await sellMare(db, GAME, 'O')).status).toBe('done')
   })
 
-  it('母馬找不到、屬於其他局或不在圈內時丟出錯誤', async () => {
+  it('母馬或她的馬匹找不到、屬於其他局，或母馬不在圈內時丟出錯誤', async () => {
     const db = await herd()
     await addTestGame(db, { id: 'G2' })
-    await db.mares.add(substituteMareRow('X', 2, 3, { gameId: 'G2' }))
+    await db.mares.bulkAdd([
+      substituteMareRow('X', 2, 3, { gameId: 'G2' }),
+      substituteMareRow('H', 2, 3),
+    ])
     await db.mares.update('M', { herd: 'retired' })
     await expect(sellMare(db, GAME, 'Q')).rejects.toThrow('找不到母馬：Q')
     await expect(sellMare(db, GAME, 'X')).rejects.toThrow('找不到母馬：X')
     await expect(sellMare(db, GAME, 'M')).rejects.toThrow('不在繁殖圈內的母馬不能賣出：M')
+    await expect(sellMare(db, GAME, 'H')).rejects.toThrow('找不到馬匹：H')
   })
 })
 
@@ -328,6 +332,19 @@ describe('returnMare', () => {
       sisterStatus: 'provisional',
       establishedGeneration: true,
     })
+  })
+
+  it('以候選買回時不改動已成立的代：establishedGeneration 維持 true（需求規格 8.2）', async () => {
+    const db = await herd()
+    await db.horses.add(horseRow('B', { sireId: 'S', damId: 'D' }))
+    await db.mares.add(ownMareRow('B', 1, 3, { sisterStatus: 'kept' }))
+    await db.mares.update('A', { herd: 'sold', sisterStatus: 'replaced' })
+    const result = await returnMare(db, GAME, 'A')
+    expect(result.status === 'done' && result.value.mare).toMatchObject({
+      sisterStatus: 'candidate',
+      establishedGeneration: true,
+    })
+    expect(await db.mares.get('A')).toMatchObject({ establishedGeneration: true })
   })
 
   it('自由配種所生只恢復生產中；據點一併填時記在事件上，和目前相同時不記', async () => {

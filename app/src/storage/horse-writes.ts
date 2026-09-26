@@ -9,8 +9,10 @@ import {
   gate,
   manualHorseRow,
   runWrite,
+  type HorseFields,
   type NewHorseBlock,
   type NewHorseInput,
+  type WriteContext,
   type WriteOptions,
   type WriteResult,
 } from './writes'
@@ -44,7 +46,7 @@ const FIELDS = [
   'sireName',
   'damName',
   'sireSystem',
-] as const
+] as const satisfies readonly (keyof HorseFieldValues)[]
 
 /**
  * 更正手動輸入、尚未經匯入確認的馬匹資料（需求規格 6.4、ID-08、ID-13）：只限這一局沒有出生紀錄、
@@ -76,7 +78,7 @@ export async function correctHorse(
     if (blocks.length > 0) return { status: 'blocked', blocks }
 
     const check = changed.includes('sireSystem')
-      ? await recheckSubstitute(context.db, gameId, next)
+      ? await recheckSubstitute(context, next)
       : { warnings: [], parentSystemUnknown: false }
     const stop = gate([], check.warnings, context.confirmed)
     if (stop) return stop
@@ -112,7 +114,7 @@ function mergedInput(current: HorseRow, input: HorseCorrectionInput): NewHorseIn
 }
 
 /** 換上更正後欄位的資料列：手動欄位與它們的來源重新組出，其他欄位（性別、父母的連結等）不變 */
-function corrected(current: HorseRow, fields: Parameters<typeof manualHorseRow>[2]): HorseRow {
+function corrected(current: HorseRow, fields: HorseFields): HorseRow {
   const rest: HorseRow = { ...current }
   delete rest.abilityNumber
   delete rest.birthYear
@@ -125,11 +127,10 @@ function corrected(current: HorseRow, fields: Parameters<typeof manualHorseRow>[
 
 /** 替代母馬的自身父系改了時重做 8.3 親系統檢查；不是替代母馬時沒有警告 */
 async function recheckSubstitute(
-  db: WPStudBookDatabase,
-  gameId: string,
+  context: WriteContext,
   horse: HorseRow,
 ): Promise<SubstituteWarnings> {
-  const rows = await readRuleRows(db, gameId)
+  const rows = await readRuleRows(context.db, context.game.id, context.game)
   const mare = rows.mares.find((row) => row.horseId === horse.id)
   const role = mare ? damRoleOf(mare) : null
   if (role?.kind !== 'substitute') return { warnings: [], parentSystemUnknown: false }

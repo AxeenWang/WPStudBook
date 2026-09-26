@@ -58,7 +58,8 @@ export type VigorBlock = { kind: 'vigor-range' } | { kind: 'year' } | { kind: 'u
 /**
  * 活力快照的人工更正（需求規格 8.7、MARE-13、MARE-14）：數值是 0～100 的整數，是否増強另外指定
  * （100 也可以不増強）；年份不能晚於目前遊戲年。快照原本沒有值時也可以填入，不提供清除；和目前相同時阻止。
- * 事件 vigor-corrected 記快照的年份、月份、原值與新值。母馬找不到或屬於其他局時丟出錯誤。
+ * 事件 vigor-corrected 記快照的年份、月份、原值與新值。
+ * 月份不是五月或七月（畫面只提供這兩個），或母馬找不到、屬於其他局時丟出錯誤。
  */
 export async function correctVigor(
   db: WPStudBookDatabase,
@@ -67,6 +68,9 @@ export async function correctVigor(
   correction: VigorCorrection,
   options: WriteOptions = {},
 ): Promise<WriteResult<MareYearRow, VigorBlock>> {
+  if (correction.month !== 5 && correction.month !== 7) {
+    throw new Error(`活力快照的月份不符：${correction.month}`)
+  }
   return runWrite(db, gameId, [db.mares, db.mareYears], options, async (context) => {
     await loadMare(context, horseId)
     const { year, month, vigor } = correction
