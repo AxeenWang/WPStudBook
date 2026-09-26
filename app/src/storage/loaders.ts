@@ -58,6 +58,7 @@ export function ruleTables(db: WPStudBookDatabase): Table[] {
 }
 
 /**
+ * 在呼叫端的交易內讀取規則輸入快照需要的資料列；交易要包含 ruleTables 的資料表。
  * 寫入操作傳入交易開始時已讀的遊戲局 game，就不再讀一次 games。
  * 替所有母馬讀馬匹，任何一匹母馬的馬匹不見都會丟出錯誤
  */
