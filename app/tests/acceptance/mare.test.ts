@@ -14,6 +14,7 @@ import {
   type OwnMare,
   type SisterStatusChange,
 } from '../../src/core/sisters'
+import { updateSettings } from '../../src/storage/games'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import type { MareRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from '../support/database'
@@ -158,5 +159,13 @@ describe('繁殖牝馬（MARE）：儲存層彙整', () => {
     expect((await groups())[0]!.activeMares).toBe(2)
     await db.mares.update('B', { sisterStatus: 'replaced' })
     expect((await groups())[0]!.activeMares).toBe(1)
+  })
+
+  it('MARE-10 修改定年設定 → 之後的規則輸入快照依新設定判斷是否列入任務', async () => {
+    const { db, groups } = await mareGroupsAfter([ownMareRow('A', 1, 2)], 1)
+    await db.horses.update('A', { birthYear: 1966 })
+    expect((await groups())[0]!.activeMares).toBe(1)
+    expect((await updateSettings(db, GAME, { retirementAge: 24 })).status).toBe('done')
+    expect((await groups())[0]!.activeMares).toBe(0)
   })
 })
