@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { testDatabase } from '../../tests/support/database'
+import { addTestGame, testDatabase } from '../../tests/support/database'
+import { GAME, horseRow } from '../../tests/support/rows'
 import {
   DEFAULT_SETTINGS,
   createGame,
@@ -8,6 +9,8 @@ import {
   loadGame,
   loadSettings,
   setCurrentGame,
+  setCurrentYear,
+  updateSettings,
 } from './games'
 
 describe('createGame', () => {
@@ -141,5 +144,142 @@ describe('currentGameId、setCurrentGame', () => {
     await setCurrentGame(db, game.id)
     await expect(setCurrentGame(db, 'missing')).rejects.toThrow('找不到遊戲局：missing')
     expect(await currentGameId(db)).toBe(game.id)
+  })
+})
+
+describe('setCurrentYear', () => {
+  const now = new Date('2026-09-26T01:02:03.000Z')
+
+  it('往後可以改成任何年份：更新目前遊戲年與更新時間，不寫事件', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db)
+    const updated = { ...game, currentYear: 1995, updatedAt: '2026-09-26T01:02:03.000Z' }
+    expect(await setCurrentYear(db, GAME, 1995, { now })).toEqual({
+      status: 'done',
+      value: updated,
+      warnings: [],
+    })
+    expect(await loadGame(db, GAME)).toEqual(updated)
+    expect(await db.events.count()).toBe(0)
+  })
+
+  it('和目前相同時不寫入，更新時間不變', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db)
+    expect(await setCurrentYear(db, GAME, 1990, { now })).toEqual({
+      status: 'done',
+      value: game,
+      warnings: [],
+    })
+    expect(await loadGame(db, GAME)).toEqual(game)
+  })
+
+  it('往回不能早於最後紀錄年：這一局事件的最大年份與馬的最大出生年（需求規格 12.1）', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('H1', { birthYear: 1985 }),
+      horseRow('H2', { gameId: 'G2', birthYear: 1989 }),
+    ])
+    await db.events.add({
+      id: 'E2',
+      gameId: 'G2',
+      year: 1989,
+      recordedAt: '2026-09-26T00:00:00.000Z',
+      kind: 'line-subsystem-changed',
+      line: 1,
+      from: 'A',
+      to: 'B',
+    })
+    expect(await setCurrentYear(db, GAME, 1984, { now })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'before-records', earliest: 1985 }],
+    })
+    expect(await loadGame(db, GAME)).toEqual(game)
+
+    await db.events.add({
+      id: 'E1',
+      gameId: GAME,
+      year: 1987,
+      recordedAt: '2026-09-26T00:00:00.000Z',
+      kind: 'line-subsystem-changed',
+      line: 1,
+      from: 'A',
+      to: 'B',
+    })
+    expect(await setCurrentYear(db, GAME, 1986, { now })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'before-records', earliest: 1987 }],
+    })
+    expect((await setCurrentYear(db, GAME, 1987, { now })).status).toBe('done')
+    expect((await loadGame(db, GAME)).currentYear).toBe(1987)
+  })
+
+  it('沒有任何紀錄時，往回不能早於起始年', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    expect(await setCurrentYear(db, GAME, 1967, { now })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'before-records', earliest: 1968 }],
+    })
+    expect((await setCurrentYear(db, GAME, 1968, { now })).status).toBe('done')
+  })
+
+  it('年份不是整數時阻止；遊戲局不存在時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    expect(await setCurrentYear(db, GAME, 1990.5, { now })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'not-integer' }],
+    })
+    await expect(setCurrentYear(db, 'missing', 1990)).rejects.toThrow('找不到遊戲局：missing')
+  })
+})
+
+describe('updateSettings', () => {
+  const now = new Date('2026-09-26T01:02:03.000Z')
+
+  it('只改有填的欄位，更新時間設為現在，不寫事件', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const result = await updateSettings(db, GAME, { retirementAge: 24 }, { now })
+    const expected = { gameId: GAME, ...DEFAULT_SETTINGS, retirementAge: 24 }
+    expect(result).toEqual({ status: 'done', value: expected, warnings: [] })
+    expect(await loadSettings(db, GAME)).toEqual(expected)
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-26T01:02:03.000Z')
+    expect(await db.events.count()).toBe(0)
+  })
+
+  it('不是 1 以上的整數時阻止，列出每一個不符的欄位，設定不變', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const result = await updateSettings(db, GAME, {
+      retirementAge: 0,
+      seniorAge: 18.5,
+      stallionReminderAge: 26,
+    })
+    expect(result).toEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'not-positive-integer', field: 'retirementAge' },
+        { kind: 'not-positive-integer', field: 'seniorAge' },
+      ],
+    })
+    expect(await loadSettings(db, GAME)).toEqual({ gameId: GAME, ...DEFAULT_SETTINGS })
+  })
+
+  it('沒有變更時不寫入，更新時間不變', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db)
+    const settings = { gameId: GAME, ...DEFAULT_SETTINGS }
+    for (const change of [{}, { retirementAge: DEFAULT_SETTINGS.retirementAge }]) {
+      expect(await updateSettings(db, GAME, change, { now })).toEqual({
+        status: 'done',
+        value: settings,
+        warnings: [],
+      })
+    }
+    expect(await loadGame(db, GAME)).toEqual(game)
   })
 })

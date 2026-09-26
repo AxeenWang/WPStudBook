@@ -1,3 +1,4 @@
+import type { Table } from 'dexie'
 import type { EightLineSnapshot } from '../core/board'
 import type { KnownHorse } from '../core/identity'
 import type { LinePosition } from '../core/lines'
@@ -17,8 +18,13 @@ import {
   buildSuccessorCandidate,
 } from './inputs'
 import { buildMating } from './mating'
-import type { HorseRow, MareRow } from './records'
-import { buildEightLineSnapshot, buildLineSystems, buildSystemTable } from './snapshot'
+import type { GameRow, HorseRow, MareRow, SettingsRow, SystemRow } from './records'
+import {
+  buildEightLineSnapshot,
+  buildLineSystems,
+  buildSystemTable,
+  type EightLineRows,
+} from './snapshot'
 
 // 讀取 Dexie、交給純函式組成核心的輸入（技術設計 4.3「規則輸入快照的彙整」）。
 // 找不到遊戲局，或資料列之間的關聯斷掉時，丟出帶識別的錯誤（技術設計第 5 章的預期外失敗）。
@@ -30,49 +36,66 @@ export interface RuleSnapshot {
   lineSystems: LineSystemSnapshot
 }
 
+/** 規則輸入快照需要的資料列：這一局、設定、系、系統對照表、任用、母馬與她們的馬匹、補系宣告 */
+export interface RuleRows extends EightLineRows {
+  game: GameRow
+  settings: SettingsRow
+  systems: readonly SystemRow[]
+}
+
+/** 規則輸入快照要讀的資料表；讀取與寫入操作的交易都要包含 */
+export function ruleTables(db: WPStudBookDatabase): Table[] {
+  return [
+    db.games,
+    db.settings,
+    db.lines,
+    db.systems,
+    db.stallions,
+    db.mares,
+    db.horses,
+    db.restorations,
+  ]
+}
+
+/**
+ * 在呼叫端的交易內讀取規則輸入快照需要的資料列；交易要包含 ruleTables 的資料表。
+ * 替所有母馬讀馬匹，任何一匹母馬的馬匹不見都會丟出錯誤
+ */
+export async function readRuleRows(db: WPStudBookDatabase, gameId: string): Promise<RuleRows> {
+  const game = await loadGame(db, gameId)
+  const settings = await loadSettings(db, gameId)
+  const [lines, systems, stallions, mares, restorations] = await Promise.all([
+    db.lines.where('gameId').equals(gameId).toArray(),
+    db.systems.where('gameId').equals(gameId).toArray(),
+    db.stallions.where('gameId').equals(gameId).toArray(),
+    db.mares.where('gameId').equals(gameId).toArray(),
+    db.restorations.where('gameId').equals(gameId).toArray(),
+  ])
+  const horses = await loadHorses(
+    db,
+    gameId,
+    mares.map((mare) => mare.horseId),
+  )
+  return { game, settings, lines, systems, stallions, mares, horses, restorations }
+}
+
+/** 由資料列組出規則輸入快照；年齡以目前遊戲年計算 */
+export function buildRuleSnapshot(rows: RuleRows): RuleSnapshot {
+  const systemTable = buildSystemTable(rows.systems)
+  return {
+    eightLines: buildEightLineSnapshot(rows, rows.game.currentYear, rows.settings),
+    systemTable,
+    lineSystems: buildLineSystems(rows.lines, systemTable),
+  }
+}
+
 /** 讀取一局的規則輸入快照；在同一個唯讀交易內讀完，資料一致。年齡以目前遊戲年計算 */
 export async function loadRuleSnapshot(
   db: WPStudBookDatabase,
   gameId: string,
 ): Promise<RuleSnapshot> {
-  return db.transaction(
-    'r',
-    [
-      db.games,
-      db.settings,
-      db.lines,
-      db.systems,
-      db.stallions,
-      db.mares,
-      db.horses,
-      db.restorations,
-    ],
-    async () => {
-      const game = await loadGame(db, gameId)
-      const settings = await loadSettings(db, gameId)
-      const [lines, systems, stallions, mares, restorations] = await Promise.all([
-        db.lines.where('gameId').equals(gameId).toArray(),
-        db.systems.where('gameId').equals(gameId).toArray(),
-        db.stallions.where('gameId').equals(gameId).toArray(),
-        db.mares.where('gameId').equals(gameId).toArray(),
-        db.restorations.where('gameId').equals(gameId).toArray(),
-      ])
-      const horses = await loadHorses(
-        db,
-        gameId,
-        mares.map((mare) => mare.horseId),
-      )
-      const systemTable = buildSystemTable(systems)
-      return {
-        eightLines: buildEightLineSnapshot(
-          { lines, stallions, mares, horses, restorations },
-          game.currentYear,
-          settings,
-        ),
-        systemTable,
-        lineSystems: buildLineSystems(lines, systemTable),
-      }
-    },
+  return db.transaction('r', ruleTables(db), async () =>
+    buildRuleSnapshot(await readRuleRows(db, gameId)),
   )
 }
 

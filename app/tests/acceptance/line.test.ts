@@ -20,7 +20,11 @@ import {
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
 import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
+import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { declareRestoration } from '../../src/storage/restoration-writes'
+import { assignZeroStallion } from '../../src/storage/stallion-writes'
+import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
 import {
   describePairing,
@@ -32,7 +36,7 @@ import {
 import { GAME, horseRow, lineRow, ownMareRow, stallionRow } from '../support/rows'
 import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
-// 需求規格第 15 章「八系管理（LINE）」中由 core 與儲存層彙整負責的部分；畫面、匯入與儲存的寫入由後續計畫補上
+// 需求規格第 15 章「八系管理（LINE）」中由 core 與儲存層（彙整與寫入）負責的部分；畫面、匯入與其他寫入由後續計畫補上
 
 const described = (board: Board, generation?: number): string[] =>
   board.tasks
@@ -637,5 +641,205 @@ describe('八系管理（LINE）：儲存層彙整', () => {
     expect(described(listBoard(eightLines), 6)).toEqual([
       '第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代',
     ])
+  })
+})
+
+describe('八系管理（LINE）：儲存層寫入', () => {
+  it('LINE-04 八系親系統重複，對照表更新升格後 → 重複解除，變更年份留在對照表的歷程', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, 'ネアルコ'), lineRow(2, 'フェアウェイ')])
+    await db.systems.bulkAdd([
+      { gameId: GAME, subsystem: 'ネアルコ', parentSystem: 'ファラリス' },
+      { gameId: GAME, subsystem: 'フェアウェイ', parentSystem: 'ファラリス' },
+    ])
+    const summary = async () => summarizeLineSystems((await loadRuleSnapshot(db, GAME)).lineSystems)
+    expect(await summary()).toEqual({
+      distinctCount: 1,
+      duplicates: [{ parentSystem: 'ファラリス', lines: [1, 2] }],
+    })
+
+    const result = await changeSystem(db, GAME, 'ネアルコ', { parentSystem: 'ネアルコ' })
+    expect(result.status).toBe('done')
+    expect(await summary()).toEqual({ distinctCount: 2, duplicates: [] })
+    expect(await db.events.where('[gameId+system]').equals([GAME, 'ネアルコ']).toArray()).toEqual([
+      expect.objectContaining({
+        kind: 'system-changed',
+        year: 1990,
+        from: { parentSystem: 'ファラリス' },
+        to: { parentSystem: 'ネアルコ' },
+      }),
+    ])
+  })
+
+  it('LINE-02 開啟建立新系的分支 → 只能用規則指定的位置；子系統、親系統、零代市場種牡馬、代表色都要填', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const start: OpenLineInput = {
+      line: 1,
+      subsystem: 'マンノウォー',
+      parentSystem: 'マッチェム',
+      color: '#1f77b4',
+      stallion: { kind: 'new', horse: { fullName: 'ウォーアドミラル' } },
+    }
+    const branch: OpenLineInput = {
+      ...start,
+      line: 2,
+      subsystem: 'ハイペリオン',
+      parentSystem: 'ファラリス',
+      stallion: { kind: 'new', horse: { fullName: 'ハイペリオン' } },
+    }
+    expect(
+      await openLine(db, GAME, {
+        ...start,
+        subsystem: '',
+        parentSystem: '',
+        color: '',
+        stallion: { kind: 'new', horse: { fullName: '' } },
+      }),
+    ).toEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'blank', field: 'subsystem' },
+        { kind: 'blank', field: 'parentSystem' },
+        { kind: 'color' },
+        { kind: 'horse-name' },
+      ],
+    })
+    expect(await openLine(db, GAME, branch)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'not-openable' }],
+    })
+    expect((await openLine(db, GAME, start)).status).toBe('done')
+
+    // 第 1 系到達 1 代後，才能開啟產出 2 代的第 2 系；第 3 系要等第 1 系到達 2 代
+    expect((await openLine(db, GAME, branch)).status).toBe('blocked')
+    await db.stallions.add(stallionRow('S11', 1, 1))
+    expect(await openLine(db, GAME, { ...branch, line: 3 })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'not-openable' }],
+    })
+    expect((await openLine(db, GAME, branch)).status).toBe('done')
+  })
+
+  it('LINE-03 新系親系統與既有系重複 → 警告並確認，確認後可建立', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.systems.add({ gameId: GAME, subsystem: 'マンノウォー', parentSystem: 'マッチェム' })
+    await db.stallions.add(stallionRow('S11', 1, 1))
+    const input: OpenLineInput = {
+      line: 2,
+      subsystem: 'フェアプレイ',
+      parentSystem: 'マッチェム',
+      color: '#ff7f0e',
+      stallion: { kind: 'new', horse: { fullName: 'フェアプレイ' } },
+    }
+    const warning = {
+      kind: 'parent-system-duplicate',
+      line: 2,
+      parentSystem: 'マッチェム',
+      lines: [1],
+    }
+    expect(await openLine(db, GAME, input)).toEqual({ status: 'unconfirmed', warnings: [warning] })
+    expect(await db.lines.count()).toBe(1)
+
+    expect((await openLine(db, GAME, input, { confirmed: true })).status).toBe('done')
+    expect(await db.lines.count()).toBe(2)
+    const [opened] = await db.events.where('[gameId+line]').equals([GAME, 2]).toArray()
+    expect(opened).toMatchObject({ kind: 'line-opened', confirmedWarnings: [warning] })
+  })
+
+  it('LINE-06 更新某系目前子系統名稱 → 位置、任用與任務不變，歷程保存舊名與年份', async () => {
+    const db = testDatabase()
+    await addTestGame(db, { currentYear: 1975 })
+    await db.lines.bulkAdd([lineRow(1, 'マンノウォー'), lineRow(2, 'ハイペリオン')])
+    await db.systems.add({ gameId: GAME, subsystem: 'マンノウォー', parentSystem: 'マッチェム' })
+    await db.stallions.bulkAdd([
+      stallionRow('Z1', 1, 0),
+      stallionRow('S11', 1, 1),
+      stallionRow('Z2', 2, 0),
+    ])
+    const before = await loadRuleSnapshot(db, GAME)
+
+    const result = await changeLineSubsystem(db, GAME, 1, {
+      subsystem: 'ウォーアドミラル',
+      parentSystem: 'マッチェム',
+    })
+    expect(result.status).toBe('done')
+    const after = await loadRuleSnapshot(db, GAME)
+    expect(after.eightLines).toEqual(before.eightLines)
+    expect(listBoard(after.eightLines)).toEqual(listBoard(before.eightLines))
+    expect(after.lineSystems[0]).toEqual({
+      line: 1,
+      subsystem: 'ウォーアドミラル',
+      parentSystem: 'マッチェム',
+    })
+    expect(await db.events.where('[gameId+line]').equals([GAME, 1]).toArray()).toEqual([
+      expect.objectContaining({
+        kind: 'line-subsystem-changed',
+        year: 1975,
+        from: 'マンノウォー',
+        to: 'ウォーアドミラル',
+      }),
+    ])
+  })
+
+  it('LINE-39 第 5 系 12 代母馬群從未成立並宣告補母系 → 出現配它的任務；母馬群已成立時不能補母系', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, 'マンノウォー'), lineRow(5, 'ハイペリオン')])
+    await db.stallions.add(stallionRow('S112', 1, 12))
+    const input = { line: 5 as const, generation: 12, side: 'dam' as const, reason: '生不出母駒' }
+    expect((await declareRestoration(db, GAME, input)).status).toBe('done')
+    const { eightLines } = await loadRuleSnapshot(db, GAME)
+    expect(described(listBoard(eightLines), 13)).toContain(
+      '第 1 系 12 代 × 第 5 系 12 代母馬群 → 第 1 系 13 代',
+    )
+
+    await db.horses.add(horseRow('F', { birthYear: 1987 }))
+    await db.mares.add(ownMareRow('F', 5, 11))
+    expect(await declareRestoration(db, GAME, { ...input, generation: 11 })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'rule', rule: { reason: 'mares-established' } }],
+    })
+  })
+
+  it('LINE-20 第 5 系 12 代斷血並市場補系 → 補入親馬為零代，後代記為第 5 系 13 代，其餘七系不變', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, 'マンノウォー'), lineRow(5, 'ハイペリオン')])
+    await db.stallions.bulkAdd([
+      stallionRow('S112', 1, 12),
+      stallionRow('S512', 5, 12, { status: 'retired' }),
+    ])
+    const before = (await loadRuleSnapshot(db, GAME)).eightLines
+
+    const declared = await declareRestoration(db, GAME, {
+      line: 5,
+      generation: 12,
+      side: 'sire',
+      reason: '後繼無法延續',
+    })
+    if (declared.status !== 'done') throw new Error(declared.status)
+    const assigned = await assignZeroStallion(db, GAME, {
+      slot: { kind: 'restoration', restorationId: declared.value.id },
+      stallion: {
+        kind: 'new',
+        horse: { fullName: 'ハイペリオン二世', sireSystem: 'ハイペリオン' },
+      },
+    })
+    expect(assigned.status === 'done' && assigned.value.appointment.generation).toBe(0)
+
+    const after = (await loadRuleSnapshot(db, GAME)).eightLines
+    expect(after.lines[4]!.restorations).toEqual([
+      { side: 'sire', generation: 12, stallion: 'active' },
+    ])
+    expect(listBoard(after).restorations.map((status) => describePairing(status.pairing))).toEqual([
+      '第 5 系 0 代 × 第 1 系 12 代母馬群 → 第 5 系 13 代',
+    ])
+    expect(after.lines.filter((line) => line.line !== 5)).toEqual(
+      before.lines.filter((line) => line.line !== 5),
+    )
   })
 })

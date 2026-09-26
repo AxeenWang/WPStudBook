@@ -1,7 +1,9 @@
+import Dexie from 'dexie'
 import { DEFAULT_MARE_AGE_SETTINGS } from '../core/mares'
 import { DEFAULT_STALLION_REMINDER_AGE } from '../core/stallions'
 import type { WPStudBookDatabase } from './database'
 import type { GameRow, SettingsRow, SystemRow } from './records'
+import { gate, runWrite, type WriteOptions, type WriteResult } from './writes'
 
 /** 新局的預設設定（需求規格 7.7、8.5） */
 export const DEFAULT_SETTINGS: Readonly<Omit<SettingsRow, 'gameId'>> = {
@@ -90,5 +92,100 @@ export async function setCurrentGame(db: WPStudBookDatabase, gameId: string): Pr
   await db.transaction('rw', [db.games, db.meta], async () => {
     await loadGame(db, gameId)
     await db.meta.put({ key: CURRENT_GAME_KEY, value: gameId })
+  })
+}
+
+/**
+ * 目前遊戲年的阻止原因：
+ * - not-integer：年份不是整數
+ * - before-records：往回改到起始年或最後紀錄年以前（需求規格 12.1）；earliest 是可以改的最早年份
+ */
+export type YearBlock = { kind: 'not-integer' } | { kind: 'before-records'; earliest: number }
+
+/**
+ * 更新目前遊戲年（需求規格 12.1）：只由使用者更新，更新前的影響與確認由畫面負責。
+ * 往後可以改成任何年份；往回不能早於起始年，也不能早於最後紀錄年，
+ * 也就是這一局事件的最大年份與馬的最大出生年（使用者 2026-09-26 決定）。
+ * 和目前相同時不寫入；遊戲年變更本身不寫事件。遊戲局不存在時丟出錯誤。
+ */
+export async function setCurrentYear(
+  db: WPStudBookDatabase,
+  gameId: string,
+  year: number,
+  options: WriteOptions = {},
+): Promise<WriteResult<GameRow, YearBlock>> {
+  return runWrite(db, gameId, [db.horses], options, async (context) => {
+    const { game } = context
+    const blocks: YearBlock[] = []
+    if (!Number.isInteger(year)) {
+      blocks.push({ kind: 'not-integer' })
+    } else if (year < game.currentYear) {
+      const earliest = Math.max(game.startYear, await latestRecordYear(db, gameId))
+      if (year < earliest) blocks.push({ kind: 'before-records', earliest })
+    }
+    const stop = gate(blocks, [], context.confirmed)
+    if (stop) return stop
+    if (year === game.currentYear) return { status: 'done', value: game, warnings: [] }
+    await db.games.update(gameId, { currentYear: year })
+    return context.done({ ...game, currentYear: year, updatedAt: context.now })
+  })
+}
+
+/** 最後紀錄年：這一局事件的最大年份與馬的最大出生年；兩者都沒有時為 -Infinity */
+async function latestRecordYear(db: WPStudBookDatabase, gameId: string): Promise<number> {
+  const lastEvent = await db.events
+    .where('[gameId+year]')
+    .between([gameId, Dexie.minKey], [gameId, Dexie.maxKey])
+    .last()
+  const lastBorn = await db.horses
+    .where('[gameId+birthYear]')
+    .between([gameId, Dexie.minKey], [gameId, Dexie.maxKey])
+    .last()
+  return Math.max(lastEvent?.year ?? -Infinity, lastBorn?.birthYear ?? -Infinity)
+}
+
+/** 可以修改的設定 */
+export type SettingsChange = Partial<Omit<SettingsRow, 'gameId'>>
+
+const SETTING_FIELDS: readonly (keyof SettingsChange)[] = [
+  'retirementAge',
+  'seniorAge',
+  'stallionReminderAge',
+]
+
+/** 設定的阻止原因：field 不是 1 以上的整數 */
+export interface SettingsBlock {
+  kind: 'not-positive-integer'
+  field: keyof SettingsChange
+}
+
+/**
+ * 修改這一局的設定（需求規格 7.7、8.5）：只改 change 有填的欄位，每一項都要是 1 以上的整數。
+ * 不寫事件；新設定從下一次判斷開始生效（MARE-10）。沒有變更時不寫入。遊戲局或設定不存在時丟出錯誤。
+ */
+export async function updateSettings(
+  db: WPStudBookDatabase,
+  gameId: string,
+  change: SettingsChange,
+  options: WriteOptions = {},
+): Promise<WriteResult<SettingsRow, SettingsBlock>> {
+  return runWrite(db, gameId, [db.settings], options, async (context) => {
+    const blocks = SETTING_FIELDS.filter((field) => {
+      const value = change[field]
+      return value !== undefined && !(Number.isInteger(value) && value >= 1)
+    }).map((field): SettingsBlock => ({ kind: 'not-positive-integer', field }))
+    const stop = gate(blocks, [], context.confirmed)
+    if (stop) return stop
+    const current = await loadSettings(db, gameId)
+    const settings = { ...current }
+    for (const field of SETTING_FIELDS) {
+      const value = change[field]
+      if (value !== undefined) settings[field] = value
+    }
+    if (SETTING_FIELDS.every((field) => settings[field] === current[field])) {
+      return { status: 'done', value: current, warnings: [] }
+    }
+    await db.settings.put(settings)
+    return context.done(settings)
   })
 }

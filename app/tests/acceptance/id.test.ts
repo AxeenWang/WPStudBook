@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { duplicateAbilityNumbers, matchHorse } from '../../src/core/identity'
+import { openLine } from '../../src/storage/line-writes'
+import { addTestGame, testDatabase } from '../support/database'
+import { GAME } from '../support/rows'
 
-// 需求規格第 15 章「馬匹身分（ID）」中由 core 負責的部分；歷程、事件、遊戲局隔離與備份由後續計畫補上
+// 需求規格第 15 章「馬匹身分（ID）」中由 core 與儲存層寫入負責的部分；歷程、遊戲局隔離與備份由後續計畫補上
 
 describe('馬匹身分（ID）', () => {
   const known = [
@@ -56,5 +59,27 @@ describe('馬匹身分（ID）', () => {
     expect(
       matchHorse({ abilityNumber: '0x0001', birthYear: 1960, name: 'ヒンドスタン' }, zero),
     ).toEqual({ kind: 'conflict', ids: ['S1'], reasons: ['ability-number'] })
+  })
+})
+
+describe('馬匹身分（ID）：儲存層寫入', () => {
+  it('ID-09 帶 (外) 或 [地] 前綴的馬 → 完整馬名與基本馬名都保存，以基本馬名也查得到', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const result = await openLine(db, GAME, {
+      line: 1,
+      subsystem: 'マンノウォー',
+      parentSystem: 'マッチェム',
+      color: '#1f77b4',
+      stallion: { kind: 'new', horse: { fullName: '(外)ウォーアドミラル' } },
+    })
+    expect(result.status).toBe('done')
+    const found = await db.horses
+      .where('[gameId+baseName]')
+      .equals([GAME, 'ウォーアドミラル'])
+      .toArray()
+    expect(found.map((horse) => [horse.fullName, horse.baseName])).toEqual([
+      ['(外)ウォーアドミラル', 'ウォーアドミラル'],
+    ])
   })
 })
