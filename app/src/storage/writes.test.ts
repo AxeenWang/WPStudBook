@@ -3,7 +3,7 @@ import { addTestGame, testDatabase } from '../../tests/support/database'
 import { GAME, horseRow } from '../../tests/support/rows'
 import { lineSystemsOf } from '../../tests/support/systems'
 import type { WPStudBookDatabase } from './database'
-import type { WriteWarning } from './records'
+import type { GameTiming, WriteWarning } from './records'
 import {
   confirmation,
   gate,
@@ -56,6 +56,7 @@ describe('runWrite', () => {
         gameId: GAME,
         year: 1990,
         recordedAt: '2026-09-26T01:02:03.000Z',
+        source: { kind: 'manual' },
         kind: 'line-subsystem-changed',
         line: 1,
         from: 'A',
@@ -142,6 +143,7 @@ describe('prepareNewHorse', () => {
         birthYear: 1974,
         sex: 'male',
         sireSystem: 'ニジンスキー',
+        pedigreeSource: 'manual',
       },
     })
     expect(await db.horses.count()).toBe(0)
@@ -247,5 +249,100 @@ describe('parentDuplicateWarnings', () => {
       entry.line === 3 ? { ...entry, subsystem: '未登録', parentSystem: null } : entry,
     )
     expect(parentDuplicateWarnings(before, after)).toEqual([])
+  })
+})
+
+describe('runWrite 的來源與時點（技術設計 4.3）', () => {
+  /** 以 timing 寫一筆轉場事件 */
+  function writeWithTiming(db: WPStudBookDatabase, timing: GameTiming) {
+    return runWrite(db, GAME, [], { now: NOW, timing }, async (context) => {
+      await context.addEvent({ kind: 'mare-moved', horseId: 'M1', to: 33 })
+      return context.done(null)
+    })
+  }
+
+  it('事件的來源預設為手動、沒有時點；WriteOptions 帶了來源與時點時照記', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await writeEvent(db)
+    const source = { kind: 'import' as const, importType: 'may-herd' as const }
+    await runWrite(
+      db,
+      GAME,
+      [],
+      { now: NOW, source, timing: { month: 5, week: 1 } },
+      async (context) => {
+        await context.addEvent({ kind: 'mare-moved', horseId: 'M1', to: 33 })
+        return context.done(null)
+      },
+    )
+    const events = await db.events.toArray()
+    const manual = events.find((event) => event.kind === 'line-subsystem-changed')
+    expect(manual?.source).toEqual({ kind: 'manual' })
+    expect(manual).not.toHaveProperty('timing')
+    expect(events.find((event) => event.kind === 'mare-moved')).toMatchObject({
+      source,
+      timing: { month: 5, week: 1 },
+    })
+  })
+
+  it('時點不是 1～12 月、1～4 週時丟出錯誤，什麼都不寫', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await expect(writeWithTiming(db, { month: 13, week: 1 })).rejects.toThrow(
+      '遊戲內的時點不符：13 月 1 週',
+    )
+    await expect(writeWithTiming(db, { month: 5, week: 5 })).rejects.toThrow(
+      '遊戲內的時點不符：5 月 5 週',
+    )
+    await expect(writeWithTiming(db, { month: 0, week: 1 })).rejects.toThrow('遊戲內的時點不符')
+    await expect(writeWithTiming(db, { month: 1, week: 0 })).rejects.toThrow('遊戲內的時點不符')
+    await expect(writeWithTiming(db, { month: 5.5, week: 1 })).rejects.toThrow('遊戲內的時點不符')
+    expect(await db.events.count()).toBe(0)
+    expect((await writeWithTiming(db, { month: 12, week: 4 })).status).toBe('done')
+    expect((await writeWithTiming(db, { month: 1, week: 1 })).status).toBe('done')
+  })
+})
+
+describe('prepareNewHorse 的父母名（需求規格 6.4）', () => {
+  it('父母名去掉前綴、存基本馬名；父母名或父系有填時，它們的來源記為手動', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    expect(
+      await prepare(db, { fullName: 'ハクチカラ', sireName: ' (外)トビサクラ ', damName: '昇城' }),
+    ).toEqual({
+      ok: true,
+      value: {
+        id: expect.any(String),
+        gameId: GAME,
+        fullName: 'ハクチカラ',
+        baseName: 'ハクチカラ',
+        nameSource: 'manual',
+        sex: 'male',
+        sireName: 'トビサクラ',
+        damName: '昇城',
+        pedigreeSource: 'manual',
+      },
+    })
+    const damOnly = await prepare(db, { fullName: 'ハクチカラ', damName: '昇城' })
+    expect(damOnly.ok && damOnly.value.pedigreeSource).toBe('manual')
+    const plain = await prepare(db, { fullName: 'ハクチカラ', sireName: '  ' })
+    if (!plain.ok) throw new Error('應該可以建立')
+    expect(plain.value).not.toHaveProperty('sireName')
+    expect(plain.value).not.toHaveProperty('pedigreeSource')
+  })
+
+  it('父母名只有前綴、沒有馬名時阻止', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    expect(
+      await prepare(db, { fullName: 'ハクチカラ', sireName: '(外)', damName: '[地]' }),
+    ).toEqual({
+      ok: false,
+      blocks: [
+        { kind: 'parent-name', parent: 'sire' },
+        { kind: 'parent-name', parent: 'dam' },
+      ],
+    })
   })
 })

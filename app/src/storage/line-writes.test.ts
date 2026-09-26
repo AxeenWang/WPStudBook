@@ -70,6 +70,7 @@ describe('openLine', () => {
       birthYear: 1934,
       sex: 'male',
       sireSystem: 'マンノウォー',
+      pedigreeSource: 'manual',
     })
     expect(appointment).toEqual({
       id: appointment.id,
@@ -92,6 +93,7 @@ describe('openLine', () => {
         gameId: GAME,
         year: 1990,
         recordedAt: '2026-09-26T01:02:03.000Z',
+        source: { kind: 'manual' },
         kind: 'line-opened',
         line: 1,
         horseId: horse.id,
@@ -233,6 +235,7 @@ describe('changeLineSubsystem', () => {
         gameId: GAME,
         year: 1990,
         recordedAt: '2026-09-26T01:02:03.000Z',
+        source: { kind: 'manual' },
         kind: 'line-subsystem-changed',
         line: 1,
         from: 'マンノウォー',

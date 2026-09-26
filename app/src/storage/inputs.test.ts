@@ -216,3 +216,22 @@ describe('buildKnownHorses', () => {
     expect(() => buildKnownHorses([horseRow('F', { sireId: 'Q' })])).toThrow('找不到馬匹：Q')
   })
 })
+
+describe('buildKnownHorses 的手動父母名（需求規格 6.4）', () => {
+  it('手動輸入的父母名不當作匯入名稱；有連結馬匹時改用它經匯入確認的馬名', () => {
+    const horses = [
+      horseRow('S', { baseName: '父の名', nameSource: 'import' }),
+      horseRow('M1', { sireName: '手動の父', damName: '手動の母', pedigreeSource: 'manual' }),
+      horseRow('M2', { sireId: 'S', sireName: '手動の父', pedigreeSource: 'manual' }),
+      horseRow('M3', { sireName: '匯入の父', damName: '匯入の母', pedigreeSource: 'import' }),
+    ]
+    expect(
+      buildKnownHorses(horses).map(({ id, sireName, damName }) => ({ id, sireName, damName })),
+    ).toEqual([
+      { id: 'S', sireName: undefined, damName: undefined },
+      { id: 'M1', sireName: undefined, damName: undefined },
+      { id: 'M2', sireName: '父の名', damName: undefined },
+      { id: 'M3', sireName: '匯入の父', damName: '匯入の母' },
+    ])
+  })
+})

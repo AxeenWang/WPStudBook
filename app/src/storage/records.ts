@@ -3,6 +3,7 @@ import type { DamRole } from '../core/generation'
 import type { LineGeneration, LinePosition, PairingDistance } from '../core/lines'
 import type { SisterStatus } from '../core/sisters'
 import type { MarketStallionSystemCheck, StallionStatus } from '../core/stallions'
+import type { SubstituteConflict } from '../core/substitute'
 
 // 資料表的一列（技術設計 4.3）。除了全域的 MetaRow，每一列都以 gameId 歸屬某一局；
 // 識別一律是 crypto.randomUUID() 產生的字串（需求規格 12.2）。
@@ -65,12 +66,17 @@ export interface HorseRow {
   sireId?: string
   /** 母馬的內部識別；沒有內部紀錄時留空 */
   damId?: string
-  /** 匯入檔記載的父馬基本馬名 */
+  /** 父馬的基本馬名：匯入檔記載的，或手動輸入的（見 pedigreeSource） */
   sireName?: string
-  /** 匯入檔記載的母馬基本馬名 */
+  /** 母馬的基本馬名：匯入檔記載的，或手動輸入的（見 pedigreeSource） */
   damName?: string
   /** 父系：父馬所屬的子系統，去掉結尾「系」保存（11.1） */
   sireSystem?: string
+  /**
+   * 父母名與父系的來源（6.4）：import 為經匯入確認；manual 為手動輸入、尚未經匯入確認，
+   * 只輔助身分配對，匯入時改用匯入值。三項都沒有值時留空
+   */
+  pedigreeSource?: 'import' | 'manual'
   /** 自家產駒的出生紀錄；市場馬沒有 */
   birth?: BirthRecord
 }
@@ -137,7 +143,10 @@ export interface MareRow {
   groupLine?: LinePosition
   groupGeneration?: number
   herd: HerdStatus
-  /** 自家母駒的接替狀態（8.9）；其他用途留空 */
+  /**
+   * 自家母駒的接替狀態（8.9）；其他用途留空。
+   * 售出或定年引退時保留離圈前的值，已售出由 herd 表示（技術設計 4.2）
+   */
   sisterStatus?: SisterStatus
   /** 以暫定保留或正式保留轉入時設為 true，之後不改回：她所屬的代因此成立（8.2） */
   establishedGeneration: boolean
@@ -146,6 +155,46 @@ export interface MareRow {
   location?: Base
   /** 例外補入的原因（7.3）：零代市場種牡馬的配對底下補入市場母馬時填寫 */
   exceptionReason?: string
+}
+
+/** 離圈的狀態：售出、定年引退 */
+export type DepartedStatus = Exclude<HerdStatus, 'in-herd'>
+
+/** 母馬的用途與所屬母馬群；待指定用途與自由配種所生沒有系與代數 */
+export type MarePlacement = Pick<MareRow, 'usage' | 'groupLine' | 'groupGeneration'>
+
+/** 活力快照（需求規格 8.7）：0～100 的總活力與是否増強；只有前置 `*` 才是増強，100 不代表增強 */
+export interface Vigor {
+  value: number
+  boosted: boolean
+}
+
+/** 活力快照的月份：五月繁殖圈名單、七月受胎名單 */
+export type VigorMonth = 5 | 7
+
+/** 今年計畫（需求規格 8.7）：待定、八系指定配種、自由配種、等待活力、輪休 */
+export type MarePlan = 'pending' | 'designated' | 'free' | 'waiting-vigor' | 'resting'
+
+/**
+ * 一匹母馬一年的資料（需求規格 8.7、8.8）；每一欄都可以留空，空白是還沒取得，不是 0。
+ * 活力的「不適用」與「待更新」不保存，讀取時推導（技術設計 4.3）
+ */
+export interface MareYearRow {
+  gameId: string
+  horseId: string
+  year: number
+  /** 五月的活力快照 */
+  mayVigor?: Vigor
+  /** 七月的活力快照 */
+  julyVigor?: Vigor
+  /** 仔出：0～15 的整數，11～15 是 CE 擴充值 */
+  offspringQuality?: number
+  /** 繁殖年數 */
+  breedingYears?: number
+  /** 繁殖頭數 */
+  foalCount?: number
+  /** 今年計畫；沒有值視為待定 */
+  plan?: MarePlan
 }
 
 /** 預定後繼已誕生、還沒正式供用時的就緒狀態（需求規格 7.7）：競走中、已引退待指定 */
@@ -248,6 +297,9 @@ export interface StallionChangeReason {
  * - parent-system-duplicate：第 line 系的親系統 parentSystem 與 lines 這些系的親系統相同（7.2、LINE-03）
  * - stallion-system：補入或替換的零代市場種牡馬，父系與第 line 系目前的子系統不同；
  *   親系統也不同時一併列出，提示影響活血（7.6、7.7）
+ * - substitute-parent-system：替代第 line 系第 generation 代的市場母馬，親系統會讓後代 3 代前撞系（8.3）
+ * - exception-entry：在產出第 line 系第 generation 代的零代市場種牡馬配對底下例外補入市場母馬（7.3、MARE-31）
+ * - possible-buyback：手動新增的母馬與已售出的母馬 horseIds 同名，可能是買回（8.4、MARE-29）
  */
 export type WriteWarning =
   | {
@@ -262,9 +314,50 @@ export type WriteWarning =
       subsystem: NonNullable<MarketStallionSystemCheck['subsystem']>
       parentSystem: MarketStallionSystemCheck['parentSystem']
     }
+  | {
+      kind: 'substitute-parent-system'
+      line: LinePosition
+      generation: number
+      conflicts: SubstituteConflict[]
+    }
+  | { kind: 'exception-entry'; line: LinePosition; generation: number }
+  | { kind: 'possible-buyback'; horseIds: string[] }
 
 /** 系統對照表一筆的內容：親系統與分出來源 */
 export type SystemValue = Pick<SystemRow, 'parentSystem' | 'origin'>
+
+/** 遊戲內的時點（需求規格 4.1、11.1）：month 月 week 週，每月 4 週 */
+export interface GameTiming {
+  month: number
+  week: number
+}
+
+/**
+ * 匯入的種類（需求規格 11.1）：一月二歲馬總表、四月誕生幼駒名單、五月繁殖圈名單、七月受胎名單、
+ * 候選 TXT、目標種牡馬 TXT、十月全世界繁殖牝馬總表、種牡馬總表
+ */
+export type ImportType =
+  | 'january-two-year-olds'
+  | 'april-foals'
+  | 'may-herd'
+  | 'july-conception'
+  | 'candidates'
+  | 'target-stallion'
+  | 'october-mares'
+  | 'stallion-list'
+
+/** 事件的來源：手動，或哪一種匯入；連到匯入紀錄的識別由 CE 匯入計畫加入（技術設計 4.3） */
+export type EventSource = { kind: 'manual' } | { kind: 'import'; importType: ImportType }
+
+/** 手動資料更正的欄位（需求規格 6.4）；事件記原值與新值，沒有值時記 null */
+export interface HorseFieldValues {
+  fullName?: string | null
+  abilityNumber?: string | null
+  birthYear?: number | null
+  sireName?: string | null
+  damName?: string | null
+  sireSystem?: string | null
+}
 
 /**
  * 事件的共用欄位（技術設計 4.3「寫入操作」）。
@@ -277,6 +370,10 @@ interface EventBase {
   year: number
   /** 寫入時間（ISO 8601） */
   recordedAt: string
+  /** 來源：手動，或哪一種匯入 */
+  source: EventSource
+  /** 遊戲內的時點；手動操作沒有選時留空 */
+  timing?: GameTiming
   /** 使用者確認過的警告（需求規格 5.2）；沒有警告時留空 */
   confirmedWarnings?: WriteWarning[]
 }
@@ -289,6 +386,16 @@ interface EventBase {
  * - stallion-assigned：補入或替換零代市場種牡馬（7.6、7.7）；replacedHorseIds 是同一格原本的種牡馬
  * - stallion-status-changed：種牡馬標示退出生產行列、已引退，或更正回在崗（7.7）
  * - restoration-declared、restoration-revoked：斷血補系的宣告與撤銷（7.6）
+ * - mare-added：新增市場母馬（8.4），記用途、母馬的來源與例外補入的原因
+ * - mare-usage-changed：修改市場母馬的用途（8.4）
+ * - mare-departed：母馬離圈，reason 為售出或定年引退（8.5）
+ * - mare-departure-corrected：更正離圈原因，或撤銷離圈回到生產中（8.5）
+ * - mare-returned：已離圈的母馬買回或回歸（8.5、8.9），記接替狀態、用途與據點的變化
+ * - mare-moved：轉場（8.6）；原本不知道據點時沒有 from
+ * - horse-corrected：手動資料的更正（6.4），只記有改的欄位
+ * - mare-plan-changed：今年計畫（8.7）；年份是事件的年份
+ * - vigor-corrected：活力快照的人工更正（8.7），snapshotYear 是快照的年份
+ * 母馬的事件只填對象 horseId：替代母馬不屬於她替代的系（8.3）
  */
 export type EventRow = EventBase &
   (
@@ -330,9 +437,51 @@ export type EventRow = EventBase &
         reason: string
       }
     | { kind: 'restoration-revoked'; line: LinePosition; restorationId: string }
+    | {
+        kind: 'mare-added'
+        horseId: string
+        placement: MarePlacement
+        mareSource: MareSource
+        exceptionReason?: string
+      }
+    | {
+        kind: 'mare-usage-changed'
+        horseId: string
+        from: MarePlacement
+        to: MarePlacement
+        exceptionReason?: string
+      }
+    | { kind: 'mare-departed'; horseId: string; reason: DepartedStatus }
+    | {
+        kind: 'mare-departure-corrected'
+        horseId: string
+        from: DepartedStatus
+        to: HerdStatus
+        sisterStatus?: { from: SisterStatus; to: SisterStatus }
+      }
+    | {
+        kind: 'mare-returned'
+        horseId: string
+        from: DepartedStatus
+        sisterStatus?: { from: SisterStatus; to: SisterStatus }
+        usage?: { from: MarePlacement; to: MarePlacement }
+        exceptionReason?: string
+        location?: { from?: Base; to: Base }
+      }
+    | { kind: 'mare-moved'; horseId: string; from?: Base; to: Base }
+    | { kind: 'horse-corrected'; horseId: string; from: HorseFieldValues; to: HorseFieldValues }
+    | { kind: 'mare-plan-changed'; horseId: string; from?: MarePlan; to: MarePlan }
+    | {
+        kind: 'vigor-corrected'
+        horseId: string
+        snapshotYear: number
+        month: VigorMonth
+        from?: Vigor
+        to: Vigor
+      }
   )
 
-/** 事件去掉共用欄位（識別、遊戲局、年份、寫入時間）後的內容，由寫入操作填寫 */
+/** 事件去掉共用欄位（識別、遊戲局、年份、寫入時間、來源、時點）後的內容，由寫入操作填寫 */
 export type EventContent<E extends EventRow = EventRow> = E extends unknown
-  ? Omit<E, 'id' | 'gameId' | 'year' | 'recordedAt'>
+  ? Omit<E, 'id' | 'gameId' | 'year' | 'recordedAt' | 'source' | 'timing'>
   : never
