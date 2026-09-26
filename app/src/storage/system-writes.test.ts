@@ -49,6 +49,7 @@ describe('addSystem', () => {
         gameId: GAME,
         year: 1990,
         recordedAt: '2026-09-26T01:02:03.000Z',
+        source: { kind: 'manual' },
         kind: 'system-added',
         system: 'ノーザンダンサー',
         parentSystem: 'ノーザンダンサー',
@@ -156,6 +157,7 @@ describe('changeSystem', () => {
         gameId: GAME,
         year: 1990,
         recordedAt: '2026-09-26T01:02:03.000Z',
+        source: { kind: 'manual' },
         kind: 'system-changed',
         system: 'マンノウォー',
         from: { parentSystem: 'マッチェム' },
@@ -165,7 +167,7 @@ describe('changeSystem', () => {
     expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-26T01:02:03.000Z')
   })
 
-  it('可以設定或清除分出來源', async () => {
+  it('分出來源：填了就設定，省略時不變，傳 null 或只有空白時清除', async () => {
     const db = await twoLines()
     const withOrigin = systemRow('マンノウォー', 'マッチェム', 'フェアプレイ')
     expect(
@@ -174,14 +176,26 @@ describe('changeSystem', () => {
         origin: 'フェアプレイ',
       }),
     ).toEqual({ status: 'done', value: withOrigin, warnings: [] })
-    const withoutOrigin = systemRow('マンノウォー', 'マッチェム')
-    expect(await changeSystem(db, GAME, 'マンノウォー', { parentSystem: 'マッチェム' })).toEqual({
+    const promoted = systemRow('マンノウォー', 'マンノウォー', 'フェアプレイ')
+    expect(await changeSystem(db, GAME, 'マンノウォー', { parentSystem: 'マンノウォー' })).toEqual({
       status: 'done',
-      value: withoutOrigin,
+      value: promoted,
       warnings: [],
     })
+    const withoutOrigin = systemRow('マンノウォー', 'マンノウォー')
+    expect(
+      await changeSystem(db, GAME, 'マンノウォー', { parentSystem: 'マンノウォー', origin: null }),
+    ).toEqual({ status: 'done', value: withoutOrigin, warnings: [] })
     expect(await db.systems.get([GAME, 'マンノウォー'])).toEqual(withoutOrigin)
-    expect(await db.events.count()).toBe(2)
+    expect(await db.events.count()).toBe(3)
+
+    await changeSystem(db, GAME, 'マンノウォー', {
+      parentSystem: 'マンノウォー',
+      origin: 'フェアプレイ',
+    })
+    expect(
+      await changeSystem(db, GAME, 'マンノウォー', { parentSystem: 'マンノウォー', origin: ' ' }),
+    ).toEqual({ status: 'done', value: withoutOrigin, warnings: [] })
   })
 
   it('沒有變更時不寫入，更新時間不變', async () => {

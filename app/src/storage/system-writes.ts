@@ -23,10 +23,13 @@ export interface NewSystemInput {
   origin?: string
 }
 
-/** 修改系統對照表一筆的輸入：親系統（升格）與分出來源；分出來源留空表示清除 */
+/**
+ * 修改系統對照表一筆的輸入：親系統（升格）與分出來源。
+ * 分出來源省略時不變；null 或只有空白時清除
+ */
 export interface SystemChangeInput {
   parentSystem: string
-  origin?: string
+  origin?: string | null
 }
 
 /**
@@ -97,7 +100,10 @@ export async function changeSystem(
     const current = systems.find((row) => row.subsystem === subsystem)
     if (!current) throw new Error(`找不到系統對照表的子系統：${subsystem}`)
     const parentSystem = normalizeSystemName(change.parentSystem)
-    const origin = optionalName(change.origin)
+    const origin =
+      change.origin === undefined
+        ? (current.origin ?? null)
+        : optionalName(change.origin ?? undefined)
     const blocks = systemBlocks(subsystem, parentSystem, origin)
     if (parentSystem === null || blocks.length > 0) return { status: 'blocked', blocks }
     const next = systemRow(gameId, subsystem, { parentSystem, origin })

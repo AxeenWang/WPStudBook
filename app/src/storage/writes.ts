@@ -8,7 +8,9 @@ import {
 import type { WPStudBookDatabase } from './database'
 import type {
   EventContent,
+  EventSource,
   GameRow,
+  GameTiming,
   HorseRow,
   LineRow,
   Sex,
@@ -35,6 +37,10 @@ export interface WriteOptions {
   confirmed?: boolean
   /** 寫入時間；省略時為現在 */
   now?: Date
+  /** 事件的來源；省略時為手動（技術設計 4.3） */
+  source?: EventSource
+  /** 事件的遊戲內時點；省略時留空 */
+  timing?: GameTiming
 }
 
 /** 寫入操作在交易內使用的上下文 */
@@ -46,7 +52,7 @@ export interface WriteContext {
   confirmed: boolean
   /** 寫入時間（ISO 8601） */
   now: string
-  /** 寫一筆事件：年份為目前遊戲年，寫入時間為 now */
+  /** 寫一筆事件：年份為目前遊戲年，寫入時間為 now，來源與時點取自 WriteOptions */
   addEvent(content: EventContent): Promise<void>
   /** 把遊戲局的更新時間設為 now，回傳 done */
   done<T>(value: T, warnings?: WriteWarning[]): Promise<WriteResult<T, never>>
@@ -57,7 +63,7 @@ export interface WriteContext {
  * tables 是操作要讀寫的其他資料表，games 與 events 一定包含在交易內。
  * 呼叫端已在外層交易內時成為子交易（Dexie 的巢狀交易），外層失敗時一起回復（4.4）；
  * 外層交易要是 rw，並包含 games、events 與 tables 的每一張表，否則 Dexie 會丟出 SubTransactionError。
- * 遊戲局不存在時丟出錯誤。
+ * 遊戲局不存在，或時點不是 1～12 月、1～4 週時丟出錯誤。
  */
 export async function runWrite<T, B>(
   db: WPStudBookDatabase,
@@ -67,6 +73,10 @@ export async function runWrite<T, B>(
   body: (context: WriteContext) => Promise<WriteResult<T, B>>,
 ): Promise<WriteResult<T, B>> {
   const now = (options.now ?? new Date()).toISOString()
+  const { source = { kind: 'manual' }, timing } = options
+  if (timing !== undefined && !isGameTiming(timing)) {
+    throw new Error(`遊戲內的時點不符：${timing.month} 月 ${timing.week} 週`)
+  }
   // tables 可能已含 games（例如 ruleTables），去掉重複的
   const scope = [...new Set([db.games, db.events, ...tables])]
   return db.transaction('rw', scope, async () => {
@@ -85,6 +95,8 @@ export async function runWrite<T, B>(
           gameId,
           year: game.currentYear,
           recordedAt: now,
+          source,
+          ...(timing === undefined ? {} : { timing }),
         })
       },
       async done(value, warnings = []) {
@@ -93,6 +105,14 @@ export async function runWrite<T, B>(
       },
     })
   })
+}
+
+/** 遊戲內的時點：1～12 月、每月 1～4 週 */
+function isGameTiming(timing: GameTiming): boolean {
+  const { month, week } = timing
+  const inRange = (value: number, max: number) =>
+    Number.isInteger(value) && value >= 1 && value <= max
+  return inRange(month, 12) && inRange(week, 4)
 }
 
 /**
@@ -126,6 +146,10 @@ export interface NewHorseInput {
   fullName: string
   abilityNumber?: string
   birthYear?: number
+  /** 父馬名；去掉 `(外)`、`[地]` 前綴後存基本馬名 */
+  sireName?: string
+  /** 母馬名；去掉 `(外)`、`[地]` 前綴後存基本馬名 */
+  damName?: string
   /** 父系：父馬的子系統 */
   sireSystem?: string
 }
@@ -135,24 +159,38 @@ export interface NewHorseInput {
  * - horse-name：完整馬名空白，或只有前綴、沒有馬名（需求規格 6.4）
  * - ability-number：能力番号的格式不符
  * - birth-year：出生年不是整數，或晚於目前遊戲年
+ * - parent-name：父馬名或母馬名只有前綴、沒有馬名（6.4）
  * - same-horse：能力番号與出生年都和這一局既有的馬相同，是同一匹馬（6.2），應改選既有的馬
  */
 export type NewHorseBlock =
   | { kind: 'horse-name' }
   | { kind: 'ability-number' }
   | { kind: 'birth-year' }
+  | { kind: 'parent-name'; parent: 'sire' | 'dam' }
   | { kind: 'same-horse'; horseId: string }
 
+/** 手動輸入的馬匹欄位，驗證並統一寫法之後的值；沒有填的選填欄位留空 */
+export interface HorseFields {
+  fullName: string
+  baseName: string
+  abilityNumber?: string
+  birthYear?: number
+  sireName?: string
+  damName?: string
+  sireSystem?: string
+}
+
 /**
- * 驗證手動輸入並組出新馬匹的資料列，不寫入。馬名來源為手動輸入，
- * 能力番号統一寫法（normalizeAbilityNumber），父系去掉結尾「系」（normalizeSystemName）。
+ * 驗證手動輸入的馬匹欄位並統一寫法，不寫入：能力番号經 normalizeAbilityNumber，
+ * 父母名去掉前綴、存基本馬名，父系去掉結尾「系」（normalizeSystemName）。阻止原因一次列全。
+ * 更正既有的馬時 exceptHorseId 是那匹馬自己，同一匹馬的比對排除自己。
  * 在 runWrite 的交易內呼叫，交易要包含 horses。
  */
-export async function prepareNewHorse(
+export async function checkHorseInput(
   context: WriteContext,
   input: NewHorseInput,
-  sex: Sex,
-): Promise<Prepared<HorseRow, NewHorseBlock>> {
+  exceptHorseId?: string,
+): Promise<Prepared<HorseFields, NewHorseBlock>> {
   const { db, game } = context
   const blocks: NewHorseBlock[] = []
   const name = splitHorseName(input.fullName.trim())
@@ -164,29 +202,81 @@ export async function prepareNewHorse(
   const birthYearValid =
     birthYear === undefined || (Number.isInteger(birthYear) && birthYear <= game.currentYear)
   if (!birthYearValid) blocks.push({ kind: 'birth-year' })
-  // 能力番号與出生年都有效時才查同一匹馬；馬名不符也照查，阻止原因一次列全（詮釋 1）
+  const sireName = parentName(input.sireName)
+  if (sireName === null) blocks.push({ kind: 'parent-name', parent: 'sire' })
+  const damName = parentName(input.damName)
+  if (damName === null) blocks.push({ kind: 'parent-name', parent: 'dam' })
+  // 能力番号與出生年都有效時才查同一匹馬；馬名不符也照查，阻止原因一次列全
   if (typeof abilityNumber === 'string' && birthYear !== undefined && birthYearValid) {
     const same = await db.horses
       .where('[gameId+abilityNumber+birthYear]')
       .equals([game.id, abilityNumber, birthYear])
+      .filter((horse) => horse.id !== exceptHorseId)
       .first()
     if (same) blocks.push({ kind: 'same-horse', horseId: same.id })
   }
-  if (!name || abilityNumber === null || blocks.length > 0) return { ok: false, blocks }
+  if (!name || abilityNumber === null || sireName === null || damName === null) {
+    return { ok: false, blocks }
+  }
+  if (blocks.length > 0) return { ok: false, blocks }
   const sireSystem = input.sireSystem === undefined ? null : normalizeSystemName(input.sireSystem)
   return {
     ok: true,
     value: {
-      id: crypto.randomUUID(),
-      gameId: game.id,
       fullName: name.fullName,
       baseName: name.baseName,
-      nameSource: 'manual',
       ...(abilityNumber === undefined ? {} : { abilityNumber }),
       ...(birthYear === undefined ? {} : { birthYear }),
-      sex,
+      ...(sireName === undefined ? {} : { sireName }),
+      ...(damName === undefined ? {} : { damName }),
       ...(sireSystem === null ? {} : { sireSystem }),
     },
+  }
+}
+
+/** 選填的父母名：沒有填或只有空白時為 undefined；只有前綴、沒有馬名時為 null */
+function parentName(text: string | undefined): string | null | undefined {
+  const trimmed = text?.trim() ?? ''
+  if (trimmed === '') return undefined
+  return splitHorseName(trimmed)?.baseName ?? null
+}
+
+/**
+ * 由手動輸入的欄位組出馬匹的資料列：馬名來源為手動輸入；
+ * 父母名或父系有值時，它們的來源也是手動輸入（需求規格 6.4），沒有值時不寫來源
+ */
+export function manualHorseRow(
+  gameId: string,
+  id: string,
+  fields: HorseFields,
+  sex: Sex | undefined,
+): HorseRow {
+  const pedigree =
+    fields.sireName !== undefined || fields.damName !== undefined || fields.sireSystem !== undefined
+  return {
+    id,
+    gameId,
+    ...fields,
+    nameSource: 'manual',
+    ...(sex === undefined ? {} : { sex }),
+    ...(pedigree ? { pedigreeSource: 'manual' as const } : {}),
+  }
+}
+
+/**
+ * 驗證手動輸入並組出新馬匹的資料列，不寫入（checkHorseInput、manualHorseRow）。
+ * 在 runWrite 的交易內呼叫，交易要包含 horses。
+ */
+export async function prepareNewHorse(
+  context: WriteContext,
+  input: NewHorseInput,
+  sex: Sex,
+): Promise<Prepared<HorseRow, NewHorseBlock>> {
+  const checked = await checkHorseInput(context, input)
+  if (!checked.ok) return checked
+  return {
+    ok: true,
+    value: manualHorseRow(context.game.id, crypto.randomUUID(), checked.value, sex),
   }
 }
 

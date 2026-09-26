@@ -63,6 +63,7 @@ describe('declareRestoration', () => {
         gameId: GAME,
         year: 1990,
         recordedAt: '2026-09-26T01:02:03.000Z',
+        source: { kind: 'manual' },
         kind: 'restoration-declared',
         line: 5,
         restorationId: row.id,

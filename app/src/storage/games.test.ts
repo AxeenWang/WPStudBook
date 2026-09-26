@@ -187,6 +187,7 @@ describe('setCurrentYear', () => {
       gameId: 'G2',
       year: 1989,
       recordedAt: '2026-09-26T00:00:00.000Z',
+      source: { kind: 'manual' },
       kind: 'line-subsystem-changed',
       line: 1,
       from: 'A',
@@ -203,6 +204,7 @@ describe('setCurrentYear', () => {
       gameId: GAME,
       year: 1987,
       recordedAt: '2026-09-26T00:00:00.000Z',
+      source: { kind: 'manual' },
       kind: 'line-subsystem-changed',
       line: 1,
       from: 'A',
@@ -281,5 +283,14 @@ describe('updateSettings', () => {
       })
     }
     expect(await loadGame(db, GAME)).toEqual(game)
+  })
+
+  it('設定不存在時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.settings.delete(GAME)
+    await expect(updateSettings(db, GAME, { retirementAge: 24 })).rejects.toThrow(
+      '找不到遊戲局的設定：G',
+    )
   })
 })

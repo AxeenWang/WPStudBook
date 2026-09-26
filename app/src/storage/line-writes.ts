@@ -70,7 +70,7 @@ export async function openLine(
   options: WriteOptions = {},
 ): Promise<WriteResult<OpenedLine, OpenLineBlock>> {
   return runWrite(db, gameId, ruleTables(db), options, async (context) => {
-    const rows = await readRuleRows(db, gameId)
+    const rows = await readRuleRows(db, gameId, context.game)
     const { openableBranches } = listBoard(buildRuleSnapshot(rows).eightLines)
     const subsystem = normalizeSystemName(input.subsystem)
     const parentSystem = normalizeSystemName(input.parentSystem)
@@ -190,18 +190,20 @@ export async function changeLineSubsystem(
 
 /**
  * 寫入系的子系統名稱變更與事件 line-subsystem-changed；系統名稱變更與零代市場種牡馬的補入、替換共用。
- * 在 runWrite 的交易內呼叫，交易要包含 lines
+ * horseId 是造成變更的零代市場種牡馬，記為事件的對象。在 runWrite 的交易內呼叫，交易要包含 lines
  */
 export async function saveLineSubsystem(
   context: WriteContext,
   current: LineRow,
   subsystem: string,
   warnings: readonly WriteWarning[] = [],
+  horseId?: string,
 ): Promise<void> {
   await context.db.lines.put({ ...current, subsystem })
   await context.addEvent({
     kind: 'line-subsystem-changed',
     line: current.line,
+    ...(horseId === undefined ? {} : { horseId }),
     from: current.subsystem,
     to: subsystem,
     ...confirmation(warnings),

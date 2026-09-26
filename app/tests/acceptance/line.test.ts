@@ -22,6 +22,7 @@ import { checkSubstituteMare } from '../../src/core/substitute'
 import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
 import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { addMarketMare } from '../../src/storage/mare-writes'
 import { declareRestoration } from '../../src/storage/restoration-writes'
 import { assignZeroStallion } from '../../src/storage/stallion-writes'
 import { changeSystem } from '../../src/storage/system-writes'
@@ -841,5 +842,95 @@ describe('八系管理（LINE）：儲存層寫入', () => {
     expect(after.lines.filter((line) => line.line !== 5)).toEqual(
       before.lines.filter((line) => line.line !== 5),
     )
+  })
+
+  it('LINE-29 登記替代第 q 系的市場母馬，親系統與第 q 系以外的已成立系相同 → 警告並確認，確認後可保存；與第 q 系相同 → 不警告', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([
+      lineRow(1, 'マンノウォー'),
+      lineRow(2, 'ネアルコ'),
+      lineRow(3, 'ハイペリオン'),
+    ])
+    await db.systems.bulkAdd([
+      { gameId: GAME, subsystem: 'マンノウォー', parentSystem: 'マッチェム' },
+      { gameId: GAME, subsystem: 'ネアルコ', parentSystem: 'ファラリス' },
+      { gameId: GAME, subsystem: 'ハイペリオン', parentSystem: 'ハイペリオン' },
+    ])
+    await db.stallions.add(stallionRow('S14', 1, 4))
+    await db.horses.add(horseRow('F', { birthYear: 1985 }))
+    await db.mares.add(ownMareRow('F', 2, 4))
+    const substitute = (fullName: string, sireSystem: string) => ({
+      horse: { fullName, sireSystem },
+      assignment: { kind: 'pairing' as const, line: 1 as const, generation: 5 },
+    })
+    const conflicting = substitute('撞到第 3 系', 'ハイペリオン系')
+    expect(await addMarketMare(db, GAME, conflicting)).toEqual({
+      status: 'unconfirmed',
+      warnings: [
+        {
+          kind: 'substitute-parent-system',
+          line: 2,
+          generation: 4,
+          conflicts: [{ kind: 'line', parentSystem: 'ハイペリオン', lines: [3] }],
+        },
+      ],
+    })
+    expect((await addMarketMare(db, GAME, conflicting, { confirmed: true })).status).toBe('done')
+    const same = await addMarketMare(db, GAME, substitute('與第 2 系相同', 'ネアルコ'))
+    expect(same.status === 'done' && same.warnings).toEqual([])
+  })
+
+  it('LINE-38 替代第 5 系 3 代與替代第 7 系 3 代的市場母馬用同一個八系沒用到的親系統 → 登記第二匹時警告並確認；兩匹都替代第 5 系 → 不警告', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, subsystemOfLine(1)), lineRow(2, subsystemOfLine(2))])
+    const { table } = eightLineSystems()
+    await db.systems.bulkAdd([
+      ...table.map((entry) => ({ gameId: GAME, ...entry })),
+      { gameId: GAME, subsystem: '外來子', parentSystem: '外來親' },
+    ])
+    await db.stallions.bulkAdd([stallionRow('S13', 1, 3), stallionRow('S23', 2, 3)])
+    const mare = (fullName: string, line: LinePosition) => ({
+      horse: { fullName, sireSystem: '外來子' },
+      assignment: { kind: 'pairing' as const, line, generation: 4 },
+    })
+    expect((await addMarketMare(db, GAME, mare('替代第 5 系', 1))).status).toBe('done')
+    expect((await addMarketMare(db, GAME, mare('也替代第 5 系', 1))).status).toBe('done')
+    expect(await addMarketMare(db, GAME, mare('替代第 7 系', 2))).toEqual({
+      status: 'unconfirmed',
+      warnings: [
+        {
+          kind: 'substitute-parent-system',
+          line: 7,
+          generation: 3,
+          conflicts: [{ kind: 'substitute', parentSystem: '外來親', lines: [5] }],
+        },
+      ],
+    })
+  })
+
+  it('LINE-39 宣告補母系後，在配它的任務底下登記替代母馬 → 來源記為市場補系', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, 'マンノウォー'), lineRow(5, 'ハイペリオン')])
+    await db.stallions.add(stallionRow('S112', 1, 12))
+    const declared = await declareRestoration(db, GAME, {
+      line: 5,
+      generation: 12,
+      side: 'dam',
+      reason: '生不出母駒',
+    })
+    expect(declared.status).toBe('done')
+    const result = await addMarketMare(db, GAME, {
+      horse: { fullName: '補系の母' },
+      assignment: { kind: 'pairing', line: 1, generation: 13 },
+    })
+    expect(result.status === 'done' && result.value.mare).toMatchObject({
+      usage: 'substitute',
+      groupLine: 5,
+      groupGeneration: 12,
+      source: { kind: 'market-restoration' },
+    })
   })
 })

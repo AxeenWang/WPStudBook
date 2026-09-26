@@ -146,7 +146,9 @@ export async function assignZeroStallion(
       replacedHorseIds: previous.flatMap((row) => row.horseId ?? []),
       ...confirmation(warnings),
     })
-    if (check.subsystem) await saveLineSubsystem(context, lineRow, check.subsystem.replacement)
+    if (check.subsystem) {
+      await saveLineSubsystem(context, lineRow, check.subsystem.replacement, [], horse.id)
+    }
     return context.done({ appointment, horse }, warnings)
   })
 }

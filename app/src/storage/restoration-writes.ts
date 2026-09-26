@@ -39,7 +39,7 @@ export async function declareRestoration(
   options: WriteOptions = {},
 ): Promise<WriteResult<RestorationRow, DeclareRestorationBlock>> {
   return runWrite(db, gameId, ruleTables(db), options, async (context) => {
-    const { eightLines } = buildRuleSnapshot(await readRuleRows(db, gameId))
+    const { eightLines } = buildRuleSnapshot(await readRuleRows(db, gameId, context.game))
     const declaration = { line: input.line, generation: input.generation, side: input.side }
     const blocks = checkRestoration(eightLines, declaration).map(
       (rule): DeclareRestorationBlock => ({ kind: 'rule', rule }),

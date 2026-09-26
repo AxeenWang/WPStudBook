@@ -18,6 +18,8 @@ import {
   loadStallionRecords,
   loadSubstituteMares,
   loadSuccessorCandidate,
+  readRuleRows,
+  ruleTables,
 } from './loaders'
 import { buildMating } from './mating'
 
@@ -283,5 +285,17 @@ describe('loadSubstituteMares、loadKnownHorses', () => {
       'エー',
       'ビー',
     ])
+  })
+})
+
+describe('readRuleRows', () => {
+  it('傳入交易已讀的遊戲局時直接使用，不再讀取 games', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db)
+    const loaded = { ...game, currentYear: 1999 }
+    const rows = await db.transaction('r', ruleTables(db), () => readRuleRows(db, GAME, loaded))
+    expect(rows.game).toBe(loaded)
+    const read = await db.transaction('r', ruleTables(db), () => readRuleRows(db, GAME))
+    expect(read.game).toEqual(game)
   })
 })

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { duplicateAbilityNumbers, matchHorse } from '../../src/core/identity'
+import { correctHorse } from '../../src/storage/horse-writes'
+import { returnMare } from '../../src/storage/herd-writes'
 import { openLine } from '../../src/storage/line-writes'
+import { loadKnownHorses } from '../../src/storage/loaders'
+import { addMarketMare } from '../../src/storage/mare-writes'
 import { addTestGame, testDatabase } from '../support/database'
-import { GAME } from '../support/rows'
+import { GAME, horseRow, ungroupedMareRow } from '../support/rows'
 
 // 需求規格第 15 章「馬匹身分（ID）」中由 core 與儲存層寫入負責的部分；歷程、遊戲局隔離與備份由後續計畫補上
 
@@ -81,5 +85,92 @@ describe('馬匹身分（ID）：儲存層寫入', () => {
     expect(found.map((horse) => [horse.fullName, horse.baseName])).toEqual([
       ['(外)ウォーアドミラル', 'ウォーアドミラル'],
     ])
+  })
+
+  it('ID-04 已售出或定年引退的母馬回歸 → 沿用原識別並建立回歸事件', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([
+      horseRow('SOLD', { abilityNumber: '0x0100', birthYear: 1980 }),
+      horseRow('RETIRED', { abilityNumber: '0x0200', birthYear: 1965 }),
+    ])
+    await db.mares.bulkAdd([
+      ungroupedMareRow('SOLD', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('RETIRED', 'unassigned', { herd: 'retired' }),
+    ])
+    expect((await returnMare(db, GAME, 'SOLD')).status).toBe('done')
+    expect((await returnMare(db, GAME, 'RETIRED')).status).toBe('done')
+    expect(await db.horses.count()).toBe(2)
+    expect(await db.mares.get('RETIRED')).toMatchObject({ herd: 'in-herd' })
+    expect(
+      (await db.events.toArray())
+        .map((event) => event.kind === 'mare-returned' && `${event.horseId}:${event.from}`)
+        .sort(),
+    ).toEqual(['RETIRED:retired', 'SOLD:sold'])
+  })
+
+  it('ID-08 手動輸入、尚未經匯入確認的馬名可以更正並保存歷程；經匯入確認的馬名不能手動修改', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const added = await addMarketMare(db, GAME, {
+      horse: { fullName: 'ハナカコ' },
+      assignment: { kind: 'unassigned' },
+    })
+    if (added.status !== 'done') throw new Error(added.status)
+    const id = added.value.horse.id
+    expect((await correctHorse(db, GAME, id, { fullName: 'ハナカゴ' })).status).toBe('done')
+    expect(await db.horses.get(id)).toMatchObject({ fullName: 'ハナカゴ', baseName: 'ハナカゴ' })
+    expect(await db.events.where('[gameId+horseId]').equals([GAME, id]).toArray()).toContainEqual(
+      expect.objectContaining({
+        kind: 'horse-corrected',
+        from: { fullName: 'ハナカコ' },
+        to: { fullName: 'ハナカゴ' },
+      }),
+    )
+
+    await db.horses.update(id, { nameSource: 'import' })
+    await expect(correctHorse(db, GAME, id, { fullName: 'ハナカゴ二' })).rejects.toThrow(
+      '只有手動輸入、尚未經匯入確認的市場馬可以更正',
+    )
+  })
+
+  it('ID-13 手動新增的母馬填了父母名與自身父系，五月名單的值不同 → 不算衝突；經匯入確認前這些欄位可以手動更正並保存歷程', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const added = await addMarketMare(db, GAME, {
+      horse: {
+        fullName: 'ハナカゴ',
+        birthYear: 1980,
+        sireName: '手動の父',
+        damName: '手動の母',
+        sireSystem: 'ハイペリオン',
+      },
+      assignment: { kind: 'unassigned' },
+    })
+    if (added.status !== 'done') throw new Error(added.status)
+    const id = added.value.horse.id
+    const incoming = {
+      abilityNumber: '0x0100',
+      birthYear: 1980,
+      name: 'ハナカゴ',
+      sireName: '匯入の父',
+      damName: '匯入の母',
+    }
+    expect(matchHorse(incoming, await loadKnownHorses(db, GAME))).toEqual({ kind: 'assisted', id })
+
+    const corrected = await correctHorse(db, GAME, id, {
+      sireName: '匯入の父',
+      damName: null,
+      sireSystem: 'ネアルコ',
+      abilityNumber: '0x0100',
+    })
+    expect(corrected.status).toBe('done')
+    expect(await db.horses.get(id)).toMatchObject({
+      sireName: '匯入の父',
+      sireSystem: 'ネアルコ',
+      abilityNumber: '0x0100',
+      pedigreeSource: 'manual',
+    })
+    expect(await db.horses.get(id)).not.toHaveProperty('damName')
   })
 })

@@ -87,6 +87,7 @@ describe('資料保存（DATA）', () => {
       gameId: GAME,
       year: 1991,
       recordedAt: '2026-09-26T00:00:00.000Z',
+      source: { kind: 'manual' },
       kind: 'restoration-revoked',
       line: 1,
       restorationId: 'R1',
