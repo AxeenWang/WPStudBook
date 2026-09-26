@@ -21,6 +21,7 @@ import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/s
 import { checkSubstituteMare } from '../../src/core/substitute'
 import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
 import {
   describePairing,
@@ -32,7 +33,7 @@ import {
 import { GAME, horseRow, lineRow, ownMareRow, stallionRow } from '../support/rows'
 import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
-// 需求規格第 15 章「八系管理（LINE）」中由 core 與儲存層彙整負責的部分；畫面、匯入與儲存的寫入由後續計畫補上
+// 需求規格第 15 章「八系管理（LINE）」中由 core 與儲存層（彙整與寫入）負責的部分；畫面、匯入與其他寫入由後續計畫補上
 
 const described = (board: Board, generation?: number): string[] =>
   board.tasks
@@ -636,6 +637,35 @@ describe('八系管理（LINE）：儲存層彙整', () => {
     ])
     expect(described(listBoard(eightLines), 6)).toEqual([
       '第 1 系 5 代 × 第 3 系 5 代母馬群 → 第 1 系 6 代',
+    ])
+  })
+})
+
+describe('八系管理（LINE）：儲存層寫入', () => {
+  it('LINE-04 八系親系統重複，對照表更新升格後 → 重複解除，變更年份留在對照表的歷程', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, 'ネアルコ'), lineRow(2, 'フェアウェイ')])
+    await db.systems.bulkAdd([
+      { gameId: GAME, subsystem: 'ネアルコ', parentSystem: 'ファラリス' },
+      { gameId: GAME, subsystem: 'フェアウェイ', parentSystem: 'ファラリス' },
+    ])
+    const summary = async () => summarizeLineSystems((await loadRuleSnapshot(db, GAME)).lineSystems)
+    expect(await summary()).toEqual({
+      distinctCount: 1,
+      duplicates: [{ parentSystem: 'ファラリス', lines: [1, 2] }],
+    })
+
+    const result = await changeSystem(db, GAME, 'ネアルコ', { parentSystem: 'ネアルコ' })
+    expect(result.status).toBe('done')
+    expect(await summary()).toEqual({ distinctCount: 2, duplicates: [] })
+    expect(await db.events.where('[gameId+system]').equals([GAME, 'ネアルコ']).toArray()).toEqual([
+      expect.objectContaining({
+        kind: 'system-changed',
+        year: 1990,
+        from: { parentSystem: 'ファラリス' },
+        to: { parentSystem: 'ネアルコ' },
+      }),
     ])
   })
 })

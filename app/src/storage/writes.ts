@@ -1,8 +1,21 @@
 import type { Table } from 'dexie'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
-import { normalizeSystemName } from '../core/systems'
+import {
+  findParentSystemConflict,
+  normalizeSystemName,
+  type LineSystemSnapshot,
+} from '../core/systems'
 import type { WPStudBookDatabase } from './database'
-import type { EventContent, GameRow, HorseRow, Sex, WriteWarning } from './records'
+import type {
+  EventContent,
+  GameRow,
+  HorseRow,
+  LineRow,
+  Sex,
+  SystemRow,
+  WriteWarning,
+} from './records'
+import { buildLineSystems, buildSystemTable } from './snapshot'
 
 // 寫入操作的共用部分（技術設計 4.3「寫入操作」）
 
@@ -171,4 +184,41 @@ export async function prepareNewHorse(
       ...(sireSystem === null ? {} : { sireSystem }),
     },
   }
+}
+
+/** 在寫入交易內讀取這一局已開啟的系與系統對照表；交易要包含 lines 與 systems */
+export async function readLinesAndSystems(
+  context: WriteContext,
+): Promise<{ lines: LineRow[]; systems: SystemRow[] }> {
+  const { db, game } = context
+  const [lines, systems] = await Promise.all([
+    db.lines.where('gameId').equals(game.id).toArray(),
+    db.systems.where('gameId').equals(game.id).toArray(),
+  ])
+  return { lines, systems }
+}
+
+/** 由資料列組出八系目前的系統（技術設計 4.3「規則輸入快照的彙整」的系統） */
+export function lineSystemsFromRows(
+  lines: readonly LineRow[],
+  systems: readonly SystemRow[],
+): LineSystemSnapshot {
+  return buildLineSystems(lines, buildSystemTable(systems))
+}
+
+/**
+ * 親系統重複的警告（需求規格 7.2、LINE-03）：比較修改前後八系目前的系統，
+ * 親系統因此改變的系（包括這次開啟的系：開啟前親系統留空），與其他系目前的親系統相同時列出；
+ * 原本就重複、這次沒有變的不列。
+ */
+export function parentDuplicateWarnings(
+  before: LineSystemSnapshot,
+  after: LineSystemSnapshot,
+): WriteWarning[] {
+  return after.flatMap((entry): WriteWarning[] => {
+    const previous = before.find((candidate) => candidate.line === entry.line)
+    if (previous?.parentSystem === entry.parentSystem) return []
+    const conflict = findParentSystemConflict(after, entry.line, entry.parentSystem)
+    return conflict ? [{ kind: 'parent-system-duplicate', line: entry.line, ...conflict }] : []
+  })
 }

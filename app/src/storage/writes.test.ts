@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { GAME, horseRow } from '../../tests/support/rows'
+import { lineSystemsOf } from '../../tests/support/systems'
 import type { WPStudBookDatabase } from './database'
 import type { WriteWarning } from './records'
-import { confirmation, gate, prepareNewHorse, runWrite, type NewHorseInput } from './writes'
+import {
+  confirmation,
+  gate,
+  parentDuplicateWarnings,
+  prepareNewHorse,
+  runWrite,
+  type NewHorseInput,
+} from './writes'
 
 const NOW = new Date('2026-09-26T01:02:03.000Z')
 
@@ -190,5 +198,43 @@ describe('prepareNewHorse', () => {
     expect((await prepare(db, otherYear)).ok).toBe(true)
     const otherGame = { fullName: '別の馬', abilityNumber: '0x0100', birthYear: 1974 }
     expect((await prepare(db, otherGame)).ok).toBe(true)
+  })
+})
+
+describe('parentDuplicateWarnings', () => {
+  const before = lineSystemsOf({
+    1: ['ネアルコ', 'ファラリス'],
+    2: ['フェアウェイ', 'ファラリス'],
+    3: ['マンノウォー', 'マッチェム'],
+  })
+
+  it('親系統改變的系與其他系重複時列出；原本就重複、這次沒有變的系不列', () => {
+    const after = lineSystemsOf({
+      1: ['ネアルコ', 'ファラリス'],
+      2: ['フェアウェイ', 'ファラリス'],
+      3: ['マンノウォー', 'ファラリス'],
+    })
+    expect(parentDuplicateWarnings(before, after)).toEqual([
+      { kind: 'parent-system-duplicate', line: 3, parentSystem: 'ファラリス', lines: [1, 2] },
+    ])
+  })
+
+  it('這次才開啟的系也要檢查', () => {
+    const after = lineSystemsOf({
+      1: ['ネアルコ', 'ファラリス'],
+      2: ['フェアウェイ', 'ファラリス'],
+      3: ['マンノウォー', 'マッチェム'],
+      4: ['ハイペリオン', 'マッチェム'],
+    })
+    expect(parentDuplicateWarnings(before, after)).toEqual([
+      { kind: 'parent-system-duplicate', line: 4, parentSystem: 'マッチェム', lines: [3] },
+    ])
+  })
+
+  it('親系統變成查不到時不警告', () => {
+    const after = before.map((entry) =>
+      entry.line === 3 ? { ...entry, subsystem: '未登録', parentSystem: null } : entry,
+    )
+    expect(parentDuplicateWarnings(before, after)).toEqual([])
   })
 })
