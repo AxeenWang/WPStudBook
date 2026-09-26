@@ -123,6 +123,20 @@ describe('stallionState', () => {
       ]),
     ).toBe('ended')
   })
+
+  it('同一格有兩匹以上在崗時丟出 RangeError：資料列互相矛盾', () => {
+    expect(() => stallionState([stallionRow('A', 1, 3), stallionRow('B', 1, 3)])).toThrow(
+      '同一格有兩匹以上在崗的種牡馬：A、B',
+    )
+    const rows: EightLineRows = {
+      lines: [lineRow(1, 'マンノウォー')],
+      stallions: [stallionRow('A', 1, 3), stallionRow('B', 1, 3)],
+      mares: [],
+      horses: [],
+      restorations: [],
+    }
+    expect(() => buildEightLineSnapshot(rows, YEAR, DEFAULT_MARE_AGE_SETTINGS)).toThrow(RangeError)
+  })
 })
 
 describe('damRoleOf', () => {

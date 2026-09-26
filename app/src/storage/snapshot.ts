@@ -35,6 +35,7 @@ export function buildLineSystems(
 /**
  * 同一格（某系某代，或某次補公系）的任用彙整成種牡馬狀態（需求規格 7.7）：
  * 有在崗的為在崗；否則有狀態留空的（預定後繼）為已指定；否則為已離場。沒有任用時回傳 undefined。
+ * 同一格有兩匹以上在崗時丟出 RangeError：每系每代同時只有一匹在崗，由寫入操作維持（技術設計 4.3）。
  */
 export function stallionState(rows: readonly StallionRow[]): StallionState | undefined {
   return rows.length === 0 ? undefined : occupiedState(rows)
@@ -42,7 +43,11 @@ export function stallionState(rows: readonly StallionRow[]): StallionState | und
 
 /** 至少有一筆任用時的種牡馬狀態 */
 function occupiedState(rows: readonly StallionRow[]): StallionState {
-  if (rows.some((row) => row.status === 'active')) return 'active'
+  const active = rows.filter((row) => row.status === 'active')
+  if (active.length > 1) {
+    throw new RangeError(`同一格有兩匹以上在崗的種牡馬：${active.map((row) => row.id).join('、')}`)
+  }
+  if (active.length === 1) return 'active'
   if (rows.some((row) => row.status === undefined)) return 'waiting'
   return 'ended'
 }
@@ -79,7 +84,7 @@ export interface EightLineRows {
   lines: readonly LineRow[]
   stallions: readonly StallionRow[]
   mares: readonly MareRow[]
-  /** 至少包含在圈母馬的馬匹資料，用來算馬齡 */
+  /** 至少包含有分群的在圈母馬的馬匹資料，用來算馬齡 */
   horses: readonly HorseRow[]
   restorations: readonly RestorationRow[]
 }
@@ -87,7 +92,7 @@ export interface EightLineRows {
 /**
  * 規則輸入快照（技術設計 4.2「規則輸入快照」、4.3「規則輸入快照的彙整」）。
  * year 是目前遊戲年，用來算馬齡；settings 是這一局的母馬年齡設定。
- * 在圈母馬找不到馬匹資料、自家母駒缺少接替狀態時丟出錯誤。
+ * 有分群的在圈母馬找不到馬匹資料、自家母駒缺少接替狀態、同一格有兩匹以上在崗的種牡馬時丟出錯誤。
  */
 export function buildEightLineSnapshot(
   rows: EightLineRows,
@@ -95,6 +100,8 @@ export function buildEightLineSnapshot(
   settings: MareAgeSettings,
 ): EightLineSnapshot {
   const horses = new Map(rows.horses.map((horse) => [horse.id, horse]))
+  const groups = groupMares(rows.mares)
+  const isListed = (mare: MareRow) => listed(mare, horses, year, settings)
   return {
     lines: LINE_POSITIONS.map((line) => ({
       line,
@@ -102,7 +109,7 @@ export function buildEightLineSnapshot(
       stallions: stallionSlots(
         rows.stallions.filter((row) => row.line === line && row.restorationId === undefined),
       ),
-      mareGroups: mareGroupSlots(line, rows.mares, (mare) => listed(mare, horses, year, settings)),
+      mareGroups: mareGroupSlots(groups.get(line), isListed),
       restorations: restorationSlots(line, rows.restorations, rows.stallions),
     })),
   }
@@ -117,22 +124,32 @@ function stallionSlots(rows: readonly StallionRow[]): StallionSlot[] {
   }))
 }
 
-/** 第 line 系的母馬群，依代數排序；母馬全部離圈的群仍然列出 */
-function mareGroupSlots(
-  line: LinePosition,
-  mares: readonly MareRow[],
-  isListed: (mare: MareRow) => boolean,
-): MareGroupSlot[] {
-  const groups = new Map<number, MareRow[]>()
+/**
+ * 母馬依所屬母馬群的系與代數分群，起點母馬在第 1 系 0 代（第 1 系起點母馬群）；
+ * 待指定用途與自由配種所生的母馬不分群
+ */
+function groupMares(mares: readonly MareRow[]): Map<LinePosition, Map<number, MareRow[]>> {
+  const groups = new Map<LinePosition, Map<number, MareRow[]>>()
   for (const mare of mares) {
     const role = damRoleOf(mare)
     if (!role) continue
     const placement = damPlacement(role)
-    const group = placement.kind === 'start' ? { line: 1, generation: 0 } : placement
-    if (group.line !== line) continue
-    groups.set(group.generation, [...(groups.get(group.generation) ?? []), mare])
+    const group = placement.kind === 'start' ? { line: 1 as const, generation: 0 } : placement
+    const byGeneration = groups.get(group.line) ?? new Map<number, MareRow[]>()
+    groups.set(group.line, byGeneration)
+    const members = byGeneration.get(group.generation)
+    if (members) members.push(mare)
+    else byGeneration.set(group.generation, [mare])
   }
-  return [...groups.entries()]
+  return groups
+}
+
+/** 一系的母馬群，依代數排序；母馬全部離圈的群仍然列出 */
+function mareGroupSlots(
+  byGeneration: ReadonlyMap<number, readonly MareRow[]> | undefined,
+  isListed: (mare: MareRow) => boolean,
+): MareGroupSlot[] {
+  return [...(byGeneration ?? new Map<number, MareRow[]>()).entries()]
     .sort(([a], [b]) => a - b)
     .map(([generation, members]) => {
       const active = members.filter(isListed)

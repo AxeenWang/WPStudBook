@@ -23,6 +23,7 @@ import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor
 import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { declareRestoration } from '../../src/storage/restoration-writes'
+import { assignZeroStallion } from '../../src/storage/stallion-writes'
 import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
 import {
@@ -802,5 +803,43 @@ describe('八系管理（LINE）：儲存層寫入', () => {
       status: 'blocked',
       blocks: [{ kind: 'rule', rule: { reason: 'mares-established' } }],
     })
+  })
+
+  it('LINE-20 第 5 系 12 代斷血並市場補系 → 補入親馬為零代，後代記為第 5 系 13 代，其餘七系不變', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.bulkAdd([lineRow(1, 'マンノウォー'), lineRow(5, 'ハイペリオン')])
+    await db.stallions.bulkAdd([
+      stallionRow('S112', 1, 12),
+      stallionRow('S512', 5, 12, { status: 'retired' }),
+    ])
+    const before = (await loadRuleSnapshot(db, GAME)).eightLines
+
+    const declared = await declareRestoration(db, GAME, {
+      line: 5,
+      generation: 12,
+      side: 'sire',
+      reason: '後繼無法延續',
+    })
+    if (declared.status !== 'done') throw new Error(declared.status)
+    const assigned = await assignZeroStallion(db, GAME, {
+      slot: { kind: 'restoration', restorationId: declared.value.id },
+      stallion: {
+        kind: 'new',
+        horse: { fullName: 'ハイペリオン二世', sireSystem: 'ハイペリオン' },
+      },
+    })
+    expect(assigned.status === 'done' && assigned.value.appointment.generation).toBe(0)
+
+    const after = (await loadRuleSnapshot(db, GAME)).eightLines
+    expect(after.lines[4]!.restorations).toEqual([
+      { side: 'sire', generation: 12, stallion: 'active' },
+    ])
+    expect(listBoard(after).restorations.map((status) => describePairing(status.pairing))).toEqual([
+      '第 5 系 0 代 × 第 1 系 12 代母馬群 → 第 5 系 13 代',
+    ])
+    expect(after.lines.filter((line) => line.line !== 5)).toEqual(
+      before.lines.filter((line) => line.line !== 5),
+    )
   })
 })
