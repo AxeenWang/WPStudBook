@@ -1,6 +1,21 @@
+import { listBoard } from '../core/board'
+import { checkDesignatedBreeding, type BreedingBlock } from '../core/check'
+import type { DesignatedPairing } from '../core/designated'
+import type { LineGeneration } from '../core/lines'
+import { checkPedigree } from '../core/vitality'
 import type { WPStudBookDatabase } from './database'
-import { ruleTables } from './loaders'
-import type { BreedingRow, BreedingValue, HorseRow, MareRow, WriteWarning } from './records'
+import { mareAgeSettings } from './inputs'
+import { buildRuleSnapshot, loadMating, readRuleRows, ruleTables, type RuleRows } from './loaders'
+import { substituteWarnings } from './mare-assignment'
+import type {
+  BreedingRow,
+  BreedingValue,
+  HorseRow,
+  MareRow,
+  StallionRow,
+  WriteWarning,
+} from './records'
+import { damRoleOf, mareListed } from './snapshot'
 import {
   confirmation,
   gate,
@@ -18,11 +33,42 @@ import {
 
 // 配種紀錄的寫入操作：登記、更正與受胎狀態（需求規格 7.4、9.1、10.2、10.3；技術設計 4.3「寫入操作」）
 
-/** 配種的輸入：自由配種傳實際種牡馬（內部馬匹或外部名稱） */
-export type BreedingInput = { kind: 'free'; sire: SireInput }
+/** 八系指定配種的輸入：任務看板上一條配對的產出與實際種牡馬 */
+export interface DesignatedBreedingInput {
+  kind: 'designated'
+  /** 任務看板上配對的產出：第 line 系第 generation 代 */
+  output: LineGeneration
+  /** 實際種牡馬的內部識別 */
+  sireId: string
+  /** 例外補入的原因（7.3、10.3）；沒有傳時沿用母馬登記時的原因，不是例外補入時不保存 */
+  exceptionReason?: string
+}
 
-/** 配種內容的阻止原因，登記與更正共用 */
-export type BreedingCheckBlock = SireNameBlock
+/** 自由配種的輸入：實際種牡馬（內部馬匹或外部名稱） */
+export interface FreeBreedingInput {
+  kind: 'free'
+  sire: SireInput
+}
+
+/** 配種的輸入：八系指定配種或自由配種 */
+export type BreedingInput = DesignatedBreedingInput | FreeBreedingInput
+
+/**
+ * 配種內容的阻止原因，登記與更正共用：
+ * - no-pairing：產出這一系這一代的配對不在任務看板的任務上（含暫停中的，不含還沒開啟的分支）
+ * - mare-not-listed：母馬沒有列入任務（已達定年、已被取代的姊妹），不能登記指定配種
+ * - rule：種牡馬或母馬的系、代數或身分與規則不符（10.3）；rule 是 core 的阻止內容
+ * - sire-not-active：種牡馬的系與代數相符，但不是那一格目前在崗的種牡馬（10.3「現任種牡馬」）
+ * - reason-required：零代市場種牡馬配替代母馬（例外補入）要有原因（7.3、10.3）
+ * - sire-name：自由配種的種牡馬外部名稱空白或只有前綴
+ */
+export type BreedingCheckBlock =
+  | { kind: 'no-pairing' }
+  | { kind: 'mare-not-listed' }
+  | { kind: 'rule'; rule: BreedingBlock }
+  | { kind: 'sire-not-active' }
+  | { kind: 'reason-required' }
+  | SireNameBlock
 
 /** 已有產駒的出生紀錄連到這筆配種紀錄（需求規格 9.1、BRD-25）；horseId 是那匹產駒 */
 export interface FoalExistsBlock {
@@ -60,9 +106,9 @@ function breedingTables(db: WPStudBookDatabase) {
 
 /**
  * 登記目前遊戲年的配種（需求規格 9.1）：一匹母馬一年一筆，已有時阻止並指出那一筆（改用更正）。
- * 自由配種（7.8）：種牡馬是內部馬匹或外部名稱，不做規則與血統檢查，母馬只要在圈，不看用途與馬齡。
- * 登記不改今年計畫。事件 breeding-registered。
- * 母馬找不到、屬於其他局或不在圈內，或種牡馬找不到、屬於其他局或是牝馬時丟出錯誤。
+ * 八系指定配種（7.4、10.3）：配對要在任務看板的任務上，母馬要列入任務，種牡馬要是那一格在崗的一匹，
+ * 系、代數與身分以 checkDesignatedBreeding 比對；例外補入警告並確認、原因必填（沒有傳時沿用母馬登記時的），
+ * 替代母馬重做 8.3 親系統檢查；規則快照記配對、母馬當時的身分與血統檢查的結果。
  */
 export async function registerBreeding(
   db: WPStudBookDatabase,
@@ -72,13 +118,13 @@ export async function registerBreeding(
   options: WriteOptions = {},
 ): Promise<WriteResult<SavedBreeding, RegisterBreedingBlock>> {
   return runWrite(db, gameId, breedingTables(db), options, async (context) => {
-    await mareInHerd(context, mareId)
+    const mare = await mareInHerd(context, mareId)
     const year = context.game.currentYear
     const existing = await db.breedings
       .where('[gameId+mareId+year]')
       .equals([gameId, mareId, year])
       .first()
-    const checked = await checkBreeding(context, input)
+    const checked = await checkBreeding(context, mare, input)
     const blocks: RegisterBreedingBlock[] = [
       ...(existing ? [{ kind: 'already-registered' as const, breedingId: existing.id }] : []),
       ...(checked.ok ? [] : checked.blocks),
@@ -125,11 +171,11 @@ export async function correctBreeding(
     if (current.year !== context.game.currentYear) {
       return { status: 'blocked', blocks: [{ kind: 'past-year' }] }
     }
-    await mareInHerd(context, current.mareId)
+    const mare = await mareInHerd(context, current.mareId)
     const blocks: CorrectBreedingBlock[] = []
     const foal = await linkedFoal(context, current)
     if (foal) blocks.push({ kind: 'foal-exists', horseId: foal.id })
-    const checked = await checkBreeding(context, input)
+    const checked = await checkBreeding(context, mare, input)
     if (!checked.ok) blocks.push(...checked.blocks)
     else if (sameBreeding(breedingValue(current), breedingValue(checked.value.fields))) {
       blocks.push({ kind: 'unchanged' })
@@ -163,8 +209,10 @@ export async function correctBreeding(
 /** 驗證配種的內容，不寫入 */
 async function checkBreeding(
   context: WriteContext,
+  mare: MareRow,
   input: BreedingInput,
 ): Promise<Prepared<CheckedBreeding, BreedingCheckBlock>> {
+  if (input.kind === 'designated') return checkDesignated(context, mare, input)
   const sire = await resolveSire(context, input.sire)
   if (!sire.ok) return sire
   return {
@@ -199,6 +247,124 @@ async function linkedFoal(
     .equals([context.game.id, breeding.mareId])
     .filter((horse) => horse.birth?.breedingId === breeding.id)
     .first()
+}
+
+/**
+ * 八系指定配種的檢查（需求規格 7.3、8.3、10.2、10.3；技術設計 4.3「配種的登記：指定配種」）：
+ * 交易內重新組出八系快照，從任務看板的任務找配對，再比對母馬、種牡馬與例外補入；
+ * 都通過後做 8.3 與血統檢查，組出規則快照
+ */
+async function checkDesignated(
+  context: WriteContext,
+  mare: MareRow,
+  input: DesignatedBreedingInput,
+): Promise<Prepared<CheckedBreeding, BreedingCheckBlock>> {
+  const { db, game } = context
+  const rows = await readRuleRows(db, game.id, game)
+  const snapshot = buildRuleSnapshot(rows)
+  const pairing = listBoard(snapshot.eightLines)
+    .tasks.map((task) => task.pairing)
+    .find(
+      (candidate) =>
+        candidate.output.line === input.output.line &&
+        candidate.output.generation === input.output.generation,
+    )
+  if (!pairing) return { ok: false, blocks: [{ kind: 'no-pairing' }] }
+  const sire = await db.horses.get(input.sireId)
+  if (!sire || sire.gameId !== game.id) throw new Error(`找不到馬匹：${input.sireId}`)
+
+  const blocks: BreedingCheckBlock[] = []
+  const horses = new Map(rows.horses.map((horse) => [horse.id, horse]))
+  if (!mareListed(mare, horses, game.currentYear, mareAgeSettings(rows.settings))) {
+    blocks.push({ kind: 'mare-not-listed' })
+  }
+  const role = damRoleOf(mare)
+  const active = slotStallions(rows, pairing).some(
+    (row) => row.horseId === input.sireId && row.status === 'active',
+  )
+  const check = checkDesignatedBreeding(
+    pairing,
+    active ? pairing.sire : sirePlacement(rows.stallions, input.sireId),
+    role ?? { kind: 'unassigned' },
+  )
+  blocks.push(...check.blocks.map((rule) => ({ kind: 'rule' as const, rule })))
+  if (!active && check.blocks.every((block) => block.side !== 'sire')) {
+    blocks.push({ kind: 'sire-not-active' })
+  }
+  const exception = check.warnings.length > 0
+  const reason = (input.exceptionReason ?? mare.exceptionReason ?? '').trim()
+  if (exception && reason === '') blocks.push({ kind: 'reason-required' })
+  if (blocks.length > 0 || role === null) return { ok: false, blocks }
+
+  const substitute =
+    role.kind === 'substitute'
+      ? substituteWarnings(rows, snapshot, role.forLine, role.forGeneration, {
+          horseId: mare.horseId,
+          sireSystem: horses.get(mare.horseId)?.sireSystem,
+        })
+      : { warnings: [], parentSystemUnknown: false }
+  const mating = await loadMating(db, game.id, input.sireId, mare.horseId)
+  const pedigree = checkPedigree(
+    pairing.output.generation,
+    mating,
+    snapshot.systemTable,
+    snapshot.lineSystems,
+  )
+  const warnings: WriteWarning[] = [
+    ...(exception ? [{ kind: 'exception-entry' as const, ...pairing.output }] : []),
+    ...substitute.warnings,
+  ]
+  return {
+    ok: true,
+    value: {
+      fields: {
+        kind: 'designated',
+        sireId: input.sireId,
+        rule: {
+          distance: pairing.distance,
+          sire: pairing.sire,
+          dam: role,
+          output: pairing.output,
+          ...(pairing.kind === 'restore' ? { restoration: true as const } : {}),
+          pedigree,
+        },
+        ...(exception ? { exceptionReason: reason } : {}),
+      },
+      warnings,
+      parentSystemUnknown: substitute.parentSystemUnknown,
+    },
+  }
+}
+
+/**
+ * 配對指定的那一格種牡馬任用（10.3）：一般配對是該系該代不屬於補系的任用；
+ * 補公系配對是那一次（未撤銷的）補公系的任用
+ */
+function slotStallions(rows: RuleRows, pairing: DesignatedPairing): StallionRow[] {
+  const { line, generation } = pairing.sire
+  if (pairing.kind !== 'restore') {
+    return rows.stallions.filter(
+      (row) =>
+        row.restorationId === undefined && row.line === line && row.generation === generation,
+    )
+  }
+  const restoration = rows.restorations.find(
+    (row) =>
+      !row.revoked &&
+      row.side === 'sire' &&
+      row.line === line &&
+      row.generation === pairing.output.generation - 1,
+  )
+  return rows.stallions.filter(
+    (row) => restoration !== undefined && row.restorationId === restoration.id,
+  )
+}
+
+/** 種牡馬在八系中的系與代數（10.3 比對用）：取他的任用，優先在崗的；沒有任用時為八系以外 */
+function sirePlacement(stallions: readonly StallionRow[], horseId: string): LineGeneration | null {
+  const posts = stallions.filter((row) => row.horseId === horseId)
+  const post = posts.find((row) => row.status === 'active') ?? posts[0]
+  return post ? { line: post.line, generation: post.generation } : null
 }
 
 /** 事件記的配種內容：類型、實際種牡馬、指定配種的預計產出與例外補入的原因 */

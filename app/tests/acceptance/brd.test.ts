@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { checkSubAbilityTotal, foalDisplayName, trackingName } from '../../src/core/foal'
 import { matchHorse } from '../../src/core/identity'
 import { verifySuccessor } from '../../src/core/successor'
+import { registerBreeding } from '../../src/storage/breeding-writes'
+import { buildPhaseHerd, designatedTo } from '../support/breeding'
+import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
 
-// 需求規格第 15 章「配種與產駒（BRD）」中由 core 負責的部分；繁殖紀錄、匯入與畫面由後續計畫補上
+// 需求規格第 15 章「配種與產駒（BRD）」中由 core 與儲存層負責的部分；匯入與畫面由後續計畫補上
 
 describe('配種與產駒（BRD）', () => {
   it('BRD-07 1990 年出生未命名的產駒 → 顯示 オオトリモナーコス1990', () => {
@@ -51,5 +54,39 @@ describe('配種與產駒（BRD）', () => {
         { line: 1, generation: 6 },
       ),
     ).toEqual([{ mismatch: 'free-breeding' }])
+  })
+
+  it('BRD-22 零代市場種牡馬 × 替代母馬的指定配種 → 警告並確認，原因預填登記時的、可修改；登記時沒有原因 → 配種時要填', async () => {
+    const db = await buildPhaseHerd()
+    // 第 2 系零代 × 替代第 1 系 1 代：登記母馬時已填原因「自家母駒不足」
+    const warning = { kind: 'exception-entry', line: 2, generation: 2 }
+    expect(await registerBreeding(db, GAME, 'SUB11', designatedTo(2, 2, 'Z2'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    const kept = await registerBreeding(db, GAME, 'SUB11', designatedTo(2, 2, 'Z2'), {
+      confirmed: true,
+    })
+    expect(kept.status === 'done' && kept.value.breeding.exceptionReason).toBe('自家母駒不足')
+
+    // 之後才宣告第 1 系 1 代補公系：替代第 2 系 1 代的母馬登記時不是例外補入，沒有原因
+    await db.stallions.update('S11', { status: 'retired' })
+    await db.restorations.add(restorationRow('R1', 1, 1, 'sire'))
+    await db.horses.add(horseRow('ZR', { sex: 'male' }))
+    await db.stallions.add(stallionRow('ZR', 1, 0, { restorationId: 'R1' }))
+    expect(await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'ZR'))).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'reason-required' }],
+    })
+    const filled = await registerBreeding(
+      db,
+      GAME,
+      'SUB21',
+      designatedTo(1, 2, 'ZR', '第 1 系 1 代沒有種牡馬'),
+      { confirmed: true },
+    )
+    expect(filled.status === 'done' && filled.value.breeding.exceptionReason).toBe(
+      '第 1 系 1 代沒有種牡馬',
+    )
   })
 })

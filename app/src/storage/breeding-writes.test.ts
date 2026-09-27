@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
-import { GAME, horseRow, ownMareRow, ungroupedMareRow } from '../../tests/support/rows'
+import { BUILD_PHASE_PEDIGREE, buildPhaseHerd, designatedTo } from '../../tests/support/breeding'
+import {
+  GAME,
+  horseRow,
+  ownMareRow,
+  restorationRow,
+  stallionRow,
+  substituteMareRow,
+  ungroupedMareRow,
+} from '../../tests/support/rows'
 import { correctBreeding, registerBreeding } from './breeding-writes'
 import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
@@ -235,5 +244,289 @@ describe('correctBreeding：自由配種', () => {
     await expect(correctBreeding(db, GAME, 'B2', freeWith('S'))).rejects.toThrow(
       '找不到配種紀錄：B2',
     )
+  })
+})
+
+describe('registerBreeding：指定配種', () => {
+  it('第 1 系 1 代 × 替代第 2 系 1 代 → 第 1 系 2 代：寫入規則快照與事件；建系期不計算活血', async () => {
+    const db = await buildPhaseHerd()
+    const result = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11'), { now })
+    if (result.status !== 'done') throw new Error(result.status)
+    const { breeding } = result.value
+    expect(result).toEqual({
+      status: 'done',
+      value: { breeding, parentSystemUnknown: false },
+      warnings: [],
+    })
+    expect(breeding).toStrictEqual({
+      id: breeding.id,
+      gameId: GAME,
+      mareId: 'SUB21',
+      year: 1990,
+      kind: 'designated',
+      sireId: 'S11',
+      rule: {
+        distance: 1,
+        sire: { line: 1, generation: 1 },
+        dam: { kind: 'substitute', forLine: 2, forGeneration: 1 },
+        output: { line: 1, generation: 2 },
+        pedigree: BUILD_PHASE_PEDIGREE,
+      },
+    })
+    expect(await db.breedings.get(breeding.id)).toStrictEqual(breeding)
+    expect(await db.events.toArray()).toEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        year: 1990,
+        recordedAt: '2026-09-27T01:02:03.000Z',
+        source: { kind: 'manual' },
+        kind: 'breeding-registered',
+        horseId: 'SUB21',
+        breedingId: breeding.id,
+        breeding: { kind: 'designated', sireId: 'S11', output: { line: 1, generation: 2 } },
+      },
+    ])
+  })
+
+  it('自家母駒配零代種牡馬是一般情況，不警告；傳了例外補入的原因也不保存', async () => {
+    const db = await buildPhaseHerd()
+    const result = await registerBreeding(
+      db,
+      GAME,
+      'D11',
+      designatedTo(2, 2, 'Z2', '不是例外補入，不保存'),
+    )
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.warnings).toEqual([])
+    expect(result.value.breeding).not.toHaveProperty('exceptionReason')
+    expect(result.value.breeding.rule).toMatchObject({
+      distance: 1,
+      sire: { line: 2, generation: 0 },
+      dam: { kind: 'own', line: 1, generation: 1 },
+      output: { line: 2, generation: 2 },
+    })
+  })
+
+  it('產出那一系那一代的配對不在任務看板上時只回傳 no-pairing', async () => {
+    const db = await buildPhaseHerd()
+    expect(await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 3, 'S11'))).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'no-pairing' }],
+    })
+    expect(await registerBreeding(db, GAME, 'SUB21', designatedTo(3, 3, 'S11'))).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'no-pairing' }],
+    })
+    // 第 2 系還沒開啟時，產出第 2 系 2 代的建立新系只是可開啟分支的配對，還不是任務
+    await db.lines.delete([GAME, 2])
+    await db.stallions.delete('Z2')
+    expect(await registerBreeding(db, GAME, 'D11', designatedTo(2, 2, 'Z2'))).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'no-pairing' }],
+    })
+    expect(await db.breedings.count()).toBe(0)
+  })
+
+  it('八系以外的種牡馬、待指定用途的母馬：身分不符而阻止（10.3）', async () => {
+    const db = await buildPhaseHerd()
+    await db.horses.bulkAdd([horseRow('X', { sex: 'male' }), horseRow('U', { sex: 'female' })])
+    await db.mares.add(ungroupedMareRow('U', 'unassigned'))
+    expect(await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'X'))).toEqual({
+      status: 'blocked',
+      blocks: [
+        {
+          kind: 'rule',
+          rule: { side: 'sire', expected: { line: 1, generation: 1 }, mismatches: ['role'] },
+        },
+      ],
+    })
+    expect(await registerBreeding(db, GAME, 'U', designatedTo(1, 2, 'S11'))).toEqual({
+      status: 'blocked',
+      blocks: [
+        {
+          kind: 'rule',
+          rule: { side: 'dam', expected: { line: 2, generation: 1 }, mismatches: ['role'] },
+        },
+      ],
+    })
+    expect(await db.breedings.count()).toBe(0)
+  })
+
+  it('系與代數相符、但不是那一格在崗的種牡馬時阻止：已被取代、還沒正式供用的預定後繼', async () => {
+    const db = await buildPhaseHerd()
+    await db.horses.bulkAdd([horseRow('S11B', { sex: 'male' }), horseRow('W', { sex: 'male' })])
+    await db.stallions.update('S11', { status: 'replaced' })
+    await db.stallions.bulkAdd([
+      stallionRow('S11B', 1, 1),
+      stallionRow('W', 1, 1, { status: undefined, readiness: 'racing' }),
+    ])
+    for (const sireId of ['S11', 'W']) {
+      expect(await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, sireId))).toEqual({
+        status: 'blocked',
+        blocks: [{ kind: 'sire-not-active' }],
+      })
+    }
+    const result = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11B'))
+    expect(result.status).toBe('done')
+  })
+
+  it('母馬沒有列入任務時阻止，阻止原因一次列全', async () => {
+    const db = await buildPhaseHerd()
+    await db.horses.add(horseRow('OLD', { sex: 'female', birthYear: 1965 }))
+    await db.mares.add(substituteMareRow('OLD', 2, 1))
+    expect(await registerBreeding(db, GAME, 'OLD', designatedTo(1, 2, 'Z1'))).toEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'mare-not-listed' },
+        {
+          kind: 'rule',
+          rule: { side: 'sire', expected: { line: 1, generation: 1 }, mismatches: ['generation'] },
+        },
+      ],
+    })
+  })
+
+  it('例外補入要確認，確認前什麼都不寫；原因沿用母馬登記時的，另外填時去掉前後空白後保存（BRD-22）', async () => {
+    const db = await buildPhaseHerd()
+    const warning = { kind: 'exception-entry', line: 2, generation: 2 }
+    expect(await registerBreeding(db, GAME, 'SUB11', designatedTo(2, 2, 'Z2'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    expect(await db.breedings.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+
+    const result = await registerBreeding(db, GAME, 'SUB11', designatedTo(2, 2, 'Z2'), {
+      confirmed: true,
+    })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.warnings).toEqual([warning])
+    expect(result.value.breeding).toMatchObject({
+      exceptionReason: '自家母駒不足',
+      confirmedWarnings: [warning],
+      rule: { dam: { kind: 'substitute', forLine: 1, forGeneration: 1 } },
+    })
+    expect((await db.events.toArray())[0]).toMatchObject({
+      breeding: { exceptionReason: '自家母駒不足' },
+      confirmedWarnings: [warning],
+    })
+
+    const corrected = await correctBreeding(
+      db,
+      GAME,
+      result.value.breeding.id,
+      designatedTo(2, 2, 'Z2', ' 市場母馬的血統較好 '),
+      { confirmed: true },
+    )
+    expect(corrected.status === 'done' && corrected.value.breeding.exceptionReason).toBe(
+      '市場母馬的血統較好',
+    )
+  })
+
+  it('補公系配對：用補入的零代種牡馬，規則快照記 restoration；母馬登記時沒有原因就要在配種時填（BRD-22）', async () => {
+    const db = await buildPhaseHerd()
+    // 第 1 系 1 代的種牡馬已引退，宣告補公系並補入零代市場種牡馬 ZR；
+    // 先前撤銷的宣告 R0 底下的任用留著，但不算這一格
+    await db.stallions.update('S11', { status: 'retired' })
+    await db.restorations.bulkAdd([
+      restorationRow('R0', 1, 1, 'sire', { revoked: true }),
+      restorationRow('R1', 1, 1, 'sire'),
+    ])
+    await db.horses.bulkAdd([horseRow('ZOLD', { sex: 'male' }), horseRow('ZR', { sex: 'male' })])
+    await db.stallions.bulkAdd([
+      stallionRow('ZOLD', 1, 0, { restorationId: 'R0' }),
+      stallionRow('ZR', 1, 0, { restorationId: 'R1' }),
+    ])
+
+    expect(await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'ZR'))).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'reason-required' }],
+    })
+    const reason = '第 1 系 1 代沒有種牡馬'
+    for (const sireId of ['Z1', 'ZOLD']) {
+      expect(await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, sireId, reason))).toEqual(
+        { status: 'blocked', blocks: [{ kind: 'sire-not-active' }] },
+      )
+    }
+    const result = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'ZR', reason), {
+      confirmed: true,
+    })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.warnings).toEqual([{ kind: 'exception-entry', line: 1, generation: 2 }])
+    expect(result.value.breeding).toMatchObject({
+      sireId: 'ZR',
+      exceptionReason: reason,
+      rule: {
+        distance: 1,
+        sire: { line: 1, generation: 0 },
+        dam: { kind: 'substitute', forLine: 2, forGeneration: 1 },
+        output: { line: 1, generation: 2 },
+        restoration: true,
+      },
+    })
+  })
+
+  it('替代母馬在配種時重做 8.3 親系統檢查：撞到時要確認；自身父系不明時只提示', async () => {
+    const db = await buildPhaseHerd()
+    await db.horses.update('SUB21', { sireSystem: 'マンノウォー' })
+    const warning = {
+      kind: 'substitute-parent-system',
+      line: 2,
+      generation: 1,
+      conflicts: [
+        { kind: 'line', parentSystem: 'マッチェム', lines: [1] },
+        { kind: 'substitute', parentSystem: 'マッチェム', lines: [1] },
+      ],
+    }
+    expect(await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    await db.horses.update('SUB21', { sireSystem: undefined })
+    const result = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11'))
+    expect(result).toEqual({
+      status: 'done',
+      value: { breeding: expect.any(Object), parentSystemUnknown: true },
+      warnings: [],
+    })
+  })
+})
+
+describe('correctBreeding：指定配種', () => {
+  it('指定與自由可以互換，檢查照登記重做；事件記原內容與新內容', async () => {
+    const db = await buildPhaseHerd()
+    const registered = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11'))
+    if (registered.status !== 'done') throw new Error(registered.status)
+    const { id } = registered.value.breeding
+
+    const free = await correctBreeding(db, GAME, id, {
+      kind: 'free',
+      sire: { name: 'ノーザンダンサー' },
+    })
+    if (free.status !== 'done') throw new Error(free.status)
+    expect(free.value.breeding).toStrictEqual({
+      id,
+      gameId: GAME,
+      mareId: 'SUB21',
+      year: 1990,
+      kind: 'free',
+      sireName: 'ノーザンダンサー',
+    })
+    expect(
+      (await db.events.toArray()).find((event) => event.kind === 'breeding-corrected'),
+    ).toMatchObject({
+      from: { kind: 'designated', sireId: 'S11', output: { line: 1, generation: 2 } },
+      to: { kind: 'free', sireName: 'ノーザンダンサー' },
+    })
+    expect(await correctBreeding(db, GAME, id, designatedTo(1, 2, 'Z1'))).toEqual({
+      status: 'blocked',
+      blocks: [
+        {
+          kind: 'rule',
+          rule: { side: 'sire', expected: { line: 1, generation: 1 }, mismatches: ['generation'] },
+        },
+      ],
+    })
   })
 })

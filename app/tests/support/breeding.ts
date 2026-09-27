@@ -1,0 +1,73 @@
+import type { LinePosition } from '../../src/core/lines'
+import type { DesignatedBreedingInput } from '../../src/storage/breeding-writes'
+import type { WPStudBookDatabase } from '../../src/storage/database'
+import { addTestGame, testDatabase } from './database'
+import { GAME, horseRow, lineRow, ownMareRow, stallionRow, substituteMareRow } from './rows'
+
+/**
+ * 測試用的建系期牧場，目前遊戲年 1990。第 1 系（マンノウォー，親系統 マッチェム）與
+ * 第 2 系（ハイペリオン，親系統 ハイペリオン）已開啟。種牡馬都在崗：Z1 第 1 系零代、S11 第 1 系 1 代、
+ * Z2 第 2 系零代。母馬都在圈、1985 年生：D11 第 1 系 1 代自家母駒（ハナカゴ，暫定保留，使該代成立）；
+ * SUB21 替代第 2 系 1 代（自身父系 ハイペリオン）；SUB11 替代第 1 系 1 代（自身父系 マンノウォー），
+ * 登記時例外補入，原因「自家母駒不足」。
+ * 任務看板上有「第 1 系 1 代 × 第 2 系 1 代母馬群 → 第 1 系 2 代」與
+ * 「第 2 系零代 × 第 1 系 1 代母馬群 → 第 2 系 2 代」
+ */
+export async function buildPhaseHerd(): Promise<WPStudBookDatabase> {
+  const db = testDatabase()
+  await addTestGame(db)
+  await db.lines.bulkAdd([lineRow(1, 'マンノウォー'), lineRow(2, 'ハイペリオン')])
+  await db.systems.bulkAdd([
+    { gameId: GAME, subsystem: 'マンノウォー', parentSystem: 'マッチェム' },
+    { gameId: GAME, subsystem: 'ハイペリオン', parentSystem: 'ハイペリオン' },
+  ])
+  await db.horses.bulkAdd([
+    horseRow('Z1', { sex: 'male', sireSystem: 'マンノウォー' }),
+    horseRow('S11', {
+      sex: 'male',
+      birthYear: 1985,
+      birth: { placement: { line: 1, generation: 1 } },
+    }),
+    horseRow('Z2', { sex: 'male', sireSystem: 'ハイペリオン' }),
+    horseRow('D11', {
+      sex: 'female',
+      baseName: 'ハナカゴ',
+      birthYear: 1985,
+      birth: { placement: { line: 1, generation: 1 } },
+    }),
+    horseRow('SUB21', { sex: 'female', birthYear: 1985, sireSystem: 'ハイペリオン' }),
+    horseRow('SUB11', { sex: 'female', birthYear: 1985, sireSystem: 'マンノウォー' }),
+  ])
+  await db.stallions.bulkAdd([
+    stallionRow('Z1', 1, 0),
+    stallionRow('S11', 1, 1),
+    stallionRow('Z2', 2, 0),
+  ])
+  await db.mares.bulkAdd([
+    ownMareRow('D11', 1, 1),
+    substituteMareRow('SUB21', 2, 1),
+    substituteMareRow('SUB11', 1, 1, {
+      source: { kind: 'market-founding' },
+      exceptionReason: '自家母駒不足',
+    }),
+  ])
+  return db
+}
+
+/** 指定配種的輸入：任務產出第 line 系第 generation 代，實際種牡馬 sireId */
+export function designatedTo(
+  line: LinePosition,
+  generation: number,
+  sireId: string,
+  exceptionReason?: string,
+): DesignatedBreedingInput {
+  return {
+    kind: 'designated',
+    output: { line, generation },
+    sireId,
+    ...(exceptionReason === undefined ? {} : { exceptionReason }),
+  }
+}
+
+/** 建系期（產出 4 代以內）的配種不計算活血（需求規格 10.1），規則快照存的血統檢查結果 */
+export const BUILD_PHASE_PEDIGREE = { estimate: null, duplicates: [], warnings: [] }
