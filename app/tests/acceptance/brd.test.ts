@@ -4,6 +4,7 @@ import { matchHorse } from '../../src/core/identity'
 import { verifySuccessor } from '../../src/core/successor'
 import { expectedFoaling, registerBreeding, setConception } from '../../src/storage/breeding-writes'
 import { addFoal, nameFoal, setFoalDisposition } from '../../src/storage/foal-writes'
+import { rateMating } from '../../src/storage/rating-writes'
 import { buildPhaseHerd, designatedTo, foalingHerd } from '../support/breeding'
 import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
 
@@ -250,5 +251,43 @@ describe('配種與產駒（BRD）', () => {
       disposition: 'sold',
     })
     expect(trackingName('ハナカゴ', foals[0].birthYear ?? 0)).toBe('ハナカゴ1990')
+  })
+
+  it('BRD-17 總合評價與爆發力 → 可隨時新增或編輯；同年直接更新，跨年舊值可查', async () => {
+    const db = await buildPhaseHerd()
+    await rateMating(db, GAME, 'D11', { sire: { horseId: 'S11' }, grade: 'B', burst: 8 })
+    await rateMating(db, GAME, 'D11', { sire: { horseId: 'S11' }, grade: 'A', burst: 10 })
+    await db.games.update(GAME, { currentYear: 1991 })
+    await rateMating(db, GAME, 'D11', { sire: { horseId: 'S11' }, grade: 'S', burst: 15 })
+    const rows = await db.matingRatings.where('[gameId+mareId]').equals([GAME, 'D11']).toArray()
+    expect(rows.map(({ year, grade, burst }) => ({ year, grade, burst }))).toEqual(
+      expect.arrayContaining([
+        { year: 1990, grade: 'A', burst: 10 },
+        { year: 1991, grade: 'S', burst: 15 },
+      ]),
+    )
+    expect(rows).toHaveLength(2)
+  })
+
+  it('BRD-18 總合評價選項 → S、A、B、C、D', async () => {
+    const db = await buildPhaseHerd()
+    for (const grade of ['S', 'A', 'B', 'C', 'D'] as const) {
+      const result = await rateMating(db, GAME, 'D11', { sire: { horseId: 'S11' }, grade })
+      expect(result.status === 'done' && result.value.grade).toBe(grade)
+    }
+    await expect(
+      rateMating(db, GAME, 'D11', { sire: { horseId: 'S11' }, grade: 'E' as 'S' }),
+    ).rejects.toThrow('總合評價不符：E')
+  })
+
+  it('BRD-23 爆發力輸入 0 以上的整數以外的值 → 不能保存', async () => {
+    const db = await buildPhaseHerd()
+    for (const burst of [-1, 2.5]) {
+      expect(await rateMating(db, GAME, 'D11', { sire: { horseId: 'S11' }, burst })).toEqual({
+        status: 'blocked',
+        blocks: [{ kind: 'burst' }],
+      })
+    }
+    expect(await db.matingRatings.count()).toBe(0)
   })
 })
