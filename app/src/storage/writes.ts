@@ -362,3 +362,35 @@ export async function resolveZeroStallion(
   }
   return { ok: true, value: { horse, isNew: false } }
 }
+
+/** 種牡馬的輸入：這一局的內部馬匹，或對應不到內部馬匹時的外部名稱（需求規格 11.1） */
+export type SireInput = { horseId: string } | { name: string }
+
+/** 解析後的種牡馬：內部識別或外部名稱（基本馬名），只有其中一項 */
+export type SireRef = { sireId: string } | { sireName: string }
+
+/** 種牡馬外部名稱的阻止原因：空白，或只有前綴、沒有馬名（需求規格 6.4） */
+export interface SireNameBlock {
+  kind: 'sire-name'
+}
+
+/**
+ * 解析種牡馬：內部馬匹要是這一局不是牝馬的馬；外部名稱去掉前後空白與 `(外)`、`[地]` 前綴後存基本馬名。
+ * 內部馬匹找不到、屬於其他局或是牝馬時丟出錯誤（畫面只列得出這一局的公馬）。
+ * 在 runWrite 的交易內呼叫，交易要包含 horses。
+ */
+export async function resolveSire(
+  context: WriteContext,
+  input: SireInput,
+): Promise<Prepared<SireRef, SireNameBlock>> {
+  if ('name' in input) {
+    const name = splitHorseName(input.name.trim())
+    return name
+      ? { ok: true, value: { sireName: name.baseName } }
+      : { ok: false, blocks: [{ kind: 'sire-name' }] }
+  }
+  const horse = await context.db.horses.get(input.horseId)
+  if (!horse || horse.gameId !== context.game.id) throw new Error(`找不到馬匹：${input.horseId}`)
+  if (horse.sex === 'female') throw new Error(`牝馬不能當種牡馬：${input.horseId}`)
+  return { ok: true, value: { sireId: horse.id } }
+}
