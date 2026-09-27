@@ -10,6 +10,8 @@ import { substituteWarnings } from './mare-assignment'
 import type {
   BreedingRow,
   BreedingValue,
+  Conception,
+  GameTiming,
   HorseRow,
   MareRow,
   StallionRow,
@@ -85,6 +87,12 @@ export type RegisterBreedingBlock =
  */
 export type CorrectBreedingBlock =
   BreedingCheckBlock | { kind: 'past-year' } | FoalExistsBlock | UnchangedBlock
+
+/** 受胎狀態的阻止原因：已有產駒卻要改成 `受胎` 以外（含清空）；和目前相同 */
+export type ConceptionBlock = FoalExistsBlock | UnchangedBlock
+
+/** 受胎狀態的四種文字（需求規格 9.1） */
+const CONCEPTIONS: readonly Conception[] = ['空胎', '受胎', '不受胎', '未確認']
 
 /** 登記或更正後的配種紀錄；parentSystemUnknown 為 true 時提示 8.3 無法判斷 */
 export interface SavedBreeding {
@@ -208,6 +216,60 @@ export async function correctBreeding(
     })
     return context.done({ breeding, parentSystemUnknown }, warnings)
   })
+}
+
+/**
+ * 登記或更正受胎狀態（需求規格 9.1、BRD-02、BRD-25）：四種狀態原樣保存，傳 null 清回沒有結果。
+ * 不限年份，母馬不必在圈（配種後賣出的母馬仍有這一年的紀錄）。和目前相同時阻止；
+ * 已有產駒的出生紀錄連到這一筆時，改成 `受胎` 以外（含清空）阻止。不建立產駒（BRD-01）。
+ * 事件 conception-set 記原狀態與新狀態。配種紀錄找不到、屬於其他局，或狀態不是四種之一時丟出錯誤。
+ */
+export async function setConception(
+  db: WPStudBookDatabase,
+  gameId: string,
+  breedingId: string,
+  conception: Conception | null,
+  options: WriteOptions = {},
+): Promise<WriteResult<BreedingRow, ConceptionBlock>> {
+  if (conception !== null && !CONCEPTIONS.includes(conception)) {
+    throw new Error(`受胎狀態不符：${conception}`)
+  }
+  return runWrite(db, gameId, [db.breedings, db.horses], options, async (context) => {
+    const current = await loadBreeding(context, breedingId)
+    const from = current.conception
+    const to = conception ?? undefined
+    const blocks: ConceptionBlock[] = []
+    if (from === to) blocks.push({ kind: 'unchanged' })
+    else if (to !== '受胎') {
+      const foal = await linkedFoal(context, current)
+      if (foal) blocks.push({ kind: 'foal-exists', horseId: foal.id })
+    }
+    if (blocks.length > 0) return { status: 'blocked', blocks }
+    const breeding: BreedingRow = { ...current }
+    if (to === undefined) delete breeding.conception
+    else breeding.conception = to
+    await db.breedings.put(breeding)
+    await context.addEvent({
+      kind: 'conception-set',
+      horseId: current.mareId,
+      breedingId,
+      ...(from === undefined ? {} : { from }),
+      ...(to === undefined ? {} : { to }),
+    })
+    return context.done(breeding)
+  })
+}
+
+/**
+ * 預定出生（需求規格 9.1、BRD-01）：受胎的配種在隔年 4 月 1 週預定出生；其他狀態與還沒有結果時為 null。
+ * 只是推導，不建立產駒；確認出生後才建立產駒
+ */
+export function expectedFoaling(
+  breeding: Pick<BreedingRow, 'year' | 'conception'>,
+): { year: number; timing: GameTiming } | null {
+  return breeding.conception === '受胎'
+    ? { year: breeding.year + 1, timing: { month: 4, week: 1 } }
+    : null
 }
 
 /** 驗證配種的內容，不寫入 */

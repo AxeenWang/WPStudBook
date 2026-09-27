@@ -15,7 +15,12 @@ import {
   substituteMareRow,
   ungroupedMareRow,
 } from '../../tests/support/rows'
-import { correctBreeding, registerBreeding } from './breeding-writes'
+import {
+  correctBreeding,
+  expectedFoaling,
+  registerBreeding,
+  setConception,
+} from './breeding-writes'
 import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
 import type { BreedingRow } from './records'
@@ -570,5 +575,104 @@ describe('registerBreeding：血統檢查（10.2）', () => {
       kind: 'breeding-registered',
       confirmedWarnings: [warning],
     })
+  })
+})
+
+describe('setConception', () => {
+  it('四種狀態原樣保存，也可以清回沒有結果；事件記原狀態與新狀態（BRD-02）', async () => {
+    const db = await herd()
+    await db.breedings.add(freeBreeding('B', 1990))
+    for (const conception of ['空胎', '受胎', '不受胎', '未確認'] as const) {
+      const result = await setConception(db, GAME, 'B', conception, { now })
+      expect(result.status === 'done' && result.value.conception).toBe(conception)
+      expect((await db.breedings.get('B'))?.conception).toBe(conception)
+    }
+    const cleared = await setConception(db, GAME, 'B', null, { now })
+    expect(cleared).toEqual({ status: 'done', value: freeBreeding('B', 1990), warnings: [] })
+    expect(await db.breedings.get('B')).toStrictEqual(freeBreeding('B', 1990))
+
+    const events = await db.events.toArray()
+    expect(events).toHaveLength(5)
+    expect(events).toContainEqual({
+      id: expect.any(String),
+      gameId: GAME,
+      year: 1990,
+      recordedAt: '2026-09-27T01:02:03.000Z',
+      source: { kind: 'manual' },
+      kind: 'conception-set',
+      horseId: 'M',
+      breedingId: 'B',
+      to: '空胎',
+    })
+    expect(events).toContainEqual(
+      expect.objectContaining({ kind: 'conception-set', from: '空胎', to: '受胎' }),
+    )
+    const clearing = events.find(
+      (event) => event.kind === 'conception-set' && event.from === '未確認',
+    )
+    expect(clearing).not.toHaveProperty('to')
+  })
+
+  it('和目前相同時阻止；原本沒有結果時清空也算相同', async () => {
+    const db = await herd()
+    await db.breedings.add(freeBreeding('B', 1990, { conception: '受胎' }))
+    await db.breedings.add(freeBreeding('B89', 1989))
+    expect(await setConception(db, GAME, 'B', '受胎')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    expect(await setConception(db, GAME, 'B89', null)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    expect(await db.events.count()).toBe(0)
+  })
+
+  it('已有產駒的出生紀錄連到這一筆時，不能改成受胎以外或清空（BRD-25）', async () => {
+    const db = await herd()
+    await db.breedings.add(freeBreeding('B89', 1989, { conception: '受胎' }))
+    await db.horses.add(horseRow('FOAL', { damId: 'M', birth: { breedingId: 'B89' } }))
+    for (const conception of ['不受胎', null] as const) {
+      expect(await setConception(db, GAME, 'B89', conception)).toEqual({
+        status: 'blocked',
+        blocks: [{ kind: 'foal-exists', horseId: 'FOAL' }],
+      })
+    }
+    expect((await db.breedings.get('B89'))?.conception).toBe('受胎')
+  })
+
+  it('不限年份，母馬不必在圈：可以補登往年、已賣出母馬的受胎狀態', async () => {
+    const db = await herd()
+    await db.mares.update('M', { herd: 'sold' })
+    await db.breedings.add(freeBreeding('B89', 1989))
+    const result = await setConception(db, GAME, 'B89', '不受胎')
+    expect(result.status === 'done' && result.value.conception).toBe('不受胎')
+    expect((await db.events.toArray())[0]).toMatchObject({ year: 1990, to: '不受胎' })
+  })
+
+  it('配種紀錄找不到、屬於其他局，或狀態不是四種之一時丟出錯誤', async () => {
+    const db = await herd()
+    await addTestGame(db, { id: 'G2' })
+    await db.breedings.bulkAdd([
+      freeBreeding('B', 1990),
+      freeBreeding('B2', 1990, { gameId: 'G2' }),
+    ])
+    await expect(setConception(db, GAME, 'X', '受胎')).rejects.toThrow('找不到配種紀錄：X')
+    await expect(setConception(db, GAME, 'B2', '受胎')).rejects.toThrow('找不到配種紀錄：B2')
+    await expect(setConception(db, GAME, 'B', '流產' as '受胎')).rejects.toThrow(
+      '受胎狀態不符：流產',
+    )
+  })
+})
+
+describe('expectedFoaling', () => {
+  it('受胎的配種在隔年 4 月 1 週預定出生；其他狀態與還沒有結果時沒有（BRD-01）', () => {
+    expect(expectedFoaling({ year: 1990, conception: '受胎' })).toEqual({
+      year: 1991,
+      timing: { month: 4, week: 1 },
+    })
+    for (const conception of ['空胎', '不受胎', '未確認', undefined] as const) {
+      expect(expectedFoaling({ year: 1990, conception })).toBeNull()
+    }
   })
 })

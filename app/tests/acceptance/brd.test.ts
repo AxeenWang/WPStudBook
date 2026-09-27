@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { checkSubAbilityTotal, foalDisplayName, trackingName } from '../../src/core/foal'
 import { matchHorse } from '../../src/core/identity'
 import { verifySuccessor } from '../../src/core/successor'
-import { registerBreeding } from '../../src/storage/breeding-writes'
+import { expectedFoaling, registerBreeding, setConception } from '../../src/storage/breeding-writes'
 import { buildPhaseHerd, designatedTo } from '../support/breeding'
 import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
 
@@ -88,5 +88,26 @@ describe('配種與產駒（BRD）', () => {
     expect(filled.status === 'done' && filled.value.breeding.exceptionReason).toBe(
       '第 1 系 1 代沒有種牡馬',
     )
+  })
+
+  it('BRD-01 遊戲年 Y 受胎 → 預定 Y+1 年 4 月 1 週出生；登記受胎不建立產駒', async () => {
+    const db = await buildPhaseHerd()
+    const registered = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11'))
+    if (registered.status !== 'done') throw new Error(registered.status)
+    const result = await setConception(db, GAME, registered.value.breeding.id, '受胎')
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(expectedFoaling(result.value)).toEqual({ year: 1991, timing: { month: 4, week: 1 } })
+    expect(await db.horses.where('[gameId+damId]').equals([GAME, 'SUB21']).count()).toBe(0)
+  })
+
+  it('BRD-02 四種受胎狀態 → 分別保存，空胎與不受胎不合併，未確認不是缺值', async () => {
+    const db = await buildPhaseHerd()
+    const registered = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11'))
+    if (registered.status !== 'done') throw new Error(registered.status)
+    const { id } = registered.value.breeding
+    for (const conception of ['空胎', '不受胎', '未確認', '受胎'] as const) {
+      await setConception(db, GAME, id, conception)
+      expect((await db.breedings.get(id))?.conception).toBe(conception)
+    }
   })
 })
