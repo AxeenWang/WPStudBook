@@ -386,7 +386,7 @@ interface EventBase {
  * - stallion-assigned：補入或替換零代市場種牡馬（7.6、7.7）；replacedHorseIds 是同一格原本的種牡馬
  * - stallion-status-changed：種牡馬標示退出生產行列、已引退，或更正回在崗（7.7）
  * - restoration-declared、restoration-revoked：斷血補系的宣告與撤銷（7.6）
- * - mare-added：新增市場母馬（8.4），記用途、母馬的來源與例外補入的原因
+ * - mare-added：新增市場母馬（8.4），記用途、母馬的來源、例外補入的原因與初次據點
  * - mare-usage-changed：修改市場母馬的用途（8.4）
  * - mare-departed：母馬離圈，reason 為售出或定年引退（8.5）
  * - mare-departure-corrected：更正離圈原因，或撤銷離圈回到生產中（8.5）
@@ -449,6 +449,8 @@ export type EventRow = EventBase &
         placement: MarePlacement
         mareSource: MareSource
         exceptionReason?: string
+        /** 初次據點；新增時還不知道就留空 */
+        location?: Base
       }
     | {
         kind: 'mare-usage-changed'

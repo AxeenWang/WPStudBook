@@ -17,6 +17,7 @@ import {
   runWrite,
   type NewHorseBlock,
   type NewHorseInput,
+  type UnchangedBlock,
   type WriteOptions,
   type WriteResult,
 } from './writes'
@@ -51,7 +52,7 @@ export interface AddedMare {
  * 新增市場母馬（需求規格 8.4、MARE-05、MARE-26、MARE-29、MARE-31）：馬匹照手動建立的馬，性別為牝；
  * 在圈，不使該代成立。用途與來源由 resolveAssignment 推出，待指定用途的來源由使用者選。
  * 已售出的母馬中，基本馬名相同、能力番号與出生年也不矛盾時，警告可能是買回（使用者確認不是買回才建立；
- * 是買回時畫面改用買回操作）。事件 mare-added。據點不是 32～35 時丟出錯誤。
+ * 是買回時畫面改用買回操作）。事件 mare-added，記初次據點。據點不是 32～35 時丟出錯誤。
  */
 export async function addMarketMare(
   db: WPStudBookDatabase,
@@ -105,6 +106,7 @@ export async function addMarketMare(
       placement,
       mareSource: mare.source,
       ...(exceptionReason === undefined ? {} : { exceptionReason }),
+      ...(input.location === undefined ? {} : { location: input.location }),
       ...confirmation(warnings),
     })
     return context.done({ horse, mare, parentSystemUnknown }, warnings)
@@ -141,7 +143,7 @@ export interface MareUsageInput {
 }
 
 /** 修改用途的阻止原因：用途不符，或和目前相同 */
-export type MareUsageBlock = AssignmentBlock | { kind: 'unchanged' }
+export type MareUsageBlock = AssignmentBlock | UnchangedBlock
 
 /** 修改用途後的母馬；parentSystemUnknown 為 true 時提示 8.3 無法判斷 */
 export interface ChangedMare {

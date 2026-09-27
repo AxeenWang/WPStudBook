@@ -18,7 +18,9 @@ import { ownSisterStatus } from './snapshot'
 import {
   confirmation,
   gate,
+  loadMare,
   runWrite,
+  type UnchangedBlock,
   type WriteContext,
   type WriteOptions,
   type WriteResult,
@@ -63,11 +65,6 @@ export async function sellMare(
   })
 }
 
-/** 和目前相同時的阻止原因 */
-export interface UnchangedBlock {
-  kind: 'unchanged'
-}
-
 /**
  * 更正離圈原因（需求規格 8.5「可人工更正」、11.5、MARE-32）：已離圈的母馬改為售出、定年引退，
  * 或撤銷回到生產中（誤登記時用，不建立回歸事件）；和目前相同時阻止。
@@ -105,13 +102,6 @@ export async function correctDeparture(
     })
     return context.done(mare)
   })
-}
-
-/** 這一局的母馬；找不到或屬於其他局時丟出錯誤 */
-async function loadMare(context: WriteContext, horseId: string): Promise<MareRow> {
-  const mare = await context.db.mares.get(horseId)
-  if (!mare || mare.gameId !== context.game.id) throw new Error(`找不到母馬：${horseId}`)
-  return mare
 }
 
 /**

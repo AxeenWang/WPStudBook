@@ -12,6 +12,7 @@ import {
   type HorseFields,
   type NewHorseBlock,
   type NewHorseInput,
+  type UnchangedBlock,
   type WriteContext,
   type WriteOptions,
   type WriteResult,
@@ -30,7 +31,7 @@ export interface HorseCorrectionInput {
 }
 
 /** 手動資料更正的阻止原因：輸入不符（同手動建立的馬），或什麼都沒改 */
-export type HorseCorrectionBlock = NewHorseBlock | { kind: 'unchanged' }
+export type HorseCorrectionBlock = NewHorseBlock | UnchangedBlock
 
 /** 更正後的馬匹；parentSystemUnknown 為 true 時提示 8.3 無法判斷 */
 export interface CorrectedHorse {

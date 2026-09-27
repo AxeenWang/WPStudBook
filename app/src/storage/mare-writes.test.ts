@@ -104,6 +104,7 @@ describe('addMarketMare', () => {
         horseId: horse.id,
         placement: { usage: 'substitute', groupLine: 2, groupGeneration: 1 },
         mareSource: { kind: 'market-founding', note: 'セリ購入' },
+        location: 33,
       },
     ])
     expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-26T01:02:03.000Z')

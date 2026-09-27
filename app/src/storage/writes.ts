@@ -13,6 +13,7 @@ import type {
   GameTiming,
   HorseRow,
   LineRow,
+  MareRow,
   Sex,
   SystemRow,
   WriteWarning,
@@ -139,6 +140,11 @@ export function confirmation(warnings: readonly WriteWarning[]): {
 
 /** 驗證通過時的值，或阻止的原因 */
 export type Prepared<T, B> = { ok: true; value: T } | { ok: false; blocks: B[] }
+
+/** 和目前相同時的阻止原因 */
+export interface UnchangedBlock {
+  kind: 'unchanged'
+}
 
 /** 手動建立一匹馬的輸入（技術設計 4.3「寫入操作」）；選填欄位留空或只有空白都當作沒有填 */
 export interface NewHorseInput {
@@ -290,6 +296,13 @@ export async function readLinesAndSystems(
     db.systems.where('gameId').equals(game.id).toArray(),
   ])
   return { lines, systems }
+}
+
+/** 在寫入交易內讀取這一局的母馬；找不到或屬於其他局時丟出錯誤。交易要包含 mares */
+export async function loadMare(context: WriteContext, horseId: string): Promise<MareRow> {
+  const mare = await context.db.mares.get(horseId)
+  if (!mare || mare.gameId !== context.game.id) throw new Error(`找不到母馬：${horseId}`)
+  return mare
 }
 
 /** 由資料列組出八系目前的系統（技術設計 4.3「規則輸入快照的彙整」的系統） */
