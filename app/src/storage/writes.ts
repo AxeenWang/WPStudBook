@@ -13,6 +13,7 @@ import type {
   GameTiming,
   HorseRow,
   LineRow,
+  MareRow,
   Sex,
   SystemRow,
   WriteWarning,
@@ -140,6 +141,11 @@ export function confirmation(warnings: readonly WriteWarning[]): {
 /** 驗證通過時的值，或阻止的原因 */
 export type Prepared<T, B> = { ok: true; value: T } | { ok: false; blocks: B[] }
 
+/** 和目前相同時的阻止原因 */
+export interface UnchangedBlock {
+  kind: 'unchanged'
+}
+
 /** 手動建立一匹馬的輸入（技術設計 4.3「寫入操作」）；選填欄位留空或只有空白都當作沒有填 */
 export interface NewHorseInput {
   /** 完整馬名（含 `(外)`、`[地]` 前綴） */
@@ -191,7 +197,7 @@ export async function checkHorseInput(
   input: NewHorseInput,
   exceptHorseId?: string,
 ): Promise<Prepared<HorseFields, NewHorseBlock>> {
-  const { db, game } = context
+  const { game } = context
   const blocks: NewHorseBlock[] = []
   const name = splitHorseName(input.fullName.trim())
   if (!name) blocks.push({ kind: 'horse-name' })
@@ -208,11 +214,7 @@ export async function checkHorseInput(
   if (damName === null) blocks.push({ kind: 'parent-name', parent: 'dam' })
   // 能力番号與出生年都有效時才查同一匹馬；馬名不符也照查，阻止原因一次列全
   if (typeof abilityNumber === 'string' && birthYear !== undefined && birthYearValid) {
-    const same = await db.horses
-      .where('[gameId+abilityNumber+birthYear]')
-      .equals([game.id, abilityNumber, birthYear])
-      .filter((horse) => horse.id !== exceptHorseId)
-      .first()
+    const same = await findSameHorse(context, abilityNumber, birthYear, exceptHorseId)
     if (same) blocks.push({ kind: 'same-horse', horseId: same.id })
   }
   if (!name || abilityNumber === null || sireName === null || damName === null) {
@@ -232,6 +234,23 @@ export async function checkHorseInput(
       ...(sireSystem === null ? {} : { sireSystem }),
     },
   }
+}
+
+/**
+ * 能力番号與出生年都相同的這一局既有馬匹（需求規格 6.2：同一匹馬）；exceptHorseId 是更正中的馬自己。
+ * 在 runWrite 的交易內呼叫，交易要包含 horses
+ */
+export async function findSameHorse(
+  context: WriteContext,
+  abilityNumber: string,
+  birthYear: number,
+  exceptHorseId?: string,
+): Promise<HorseRow | undefined> {
+  return context.db.horses
+    .where('[gameId+abilityNumber+birthYear]')
+    .equals([context.game.id, abilityNumber, birthYear])
+    .filter((horse) => horse.id !== exceptHorseId)
+    .first()
 }
 
 /** 選填的父母名：沒有填或只有空白時為 undefined；只有前綴、沒有馬名時為 null */
@@ -292,6 +311,13 @@ export async function readLinesAndSystems(
   return { lines, systems }
 }
 
+/** 在寫入交易內讀取這一局的母馬；找不到或屬於其他局時丟出錯誤。交易要包含 mares */
+export async function loadMare(context: WriteContext, horseId: string): Promise<MareRow> {
+  const mare = await context.db.mares.get(horseId)
+  if (!mare || mare.gameId !== context.game.id) throw new Error(`找不到母馬：${horseId}`)
+  return mare
+}
+
 /** 由資料列組出八系目前的系統（技術設計 4.3「規則輸入快照的彙整」的系統） */
 export function lineSystemsFromRows(
   lines: readonly LineRow[],
@@ -348,4 +374,41 @@ export async function resolveZeroStallion(
     return { ok: false, blocks: [{ kind: 'not-market-stallion' }] }
   }
   return { ok: true, value: { horse, isNew: false } }
+}
+
+/** 種牡馬的輸入：這一局的內部馬匹，或對應不到內部馬匹時的外部名稱（需求規格 11.1） */
+export type SireInput = { horseId: string } | { name: string }
+
+/** 解析後的種牡馬：內部識別或外部名稱（基本馬名），只有其中一項 */
+export type SireRef = { sireId: string } | { sireName: string }
+
+/** 種牡馬外部名稱的阻止原因：空白，或只有前綴、沒有馬名（需求規格 6.4） */
+export interface SireNameBlock {
+  kind: 'sire-name'
+}
+
+/**
+ * 解析種牡馬：內部馬匹要是這一局不是牝馬的馬；外部名稱去掉前後空白與 `(外)`、`[地]` 前綴後存基本馬名。
+ * 內部馬匹找不到、屬於其他局或是牝馬時丟出錯誤（畫面只列得出這一局的公馬）。
+ * 在 runWrite 的交易內呼叫，交易要包含 horses。
+ */
+export async function resolveSire(
+  context: WriteContext,
+  input: SireInput,
+): Promise<Prepared<SireRef, SireNameBlock>> {
+  if ('name' in input) {
+    const name = splitHorseName(input.name.trim())
+    return name
+      ? { ok: true, value: { sireName: name.baseName } }
+      : { ok: false, blocks: [{ kind: 'sire-name' }] }
+  }
+  const horse = await context.db.horses.get(input.horseId)
+  if (!horse || horse.gameId !== context.game.id) throw new Error(`找不到馬匹：${input.horseId}`)
+  if (horse.sex === 'female') throw new Error(`牝馬不能當種牡馬：${input.horseId}`)
+  return { ok: true, value: { sireId: horse.id } }
+}
+
+/** 資料列記的種牡馬是不是這一匹：內部識別相同，或外部名稱相同 */
+export function sameSire(row: { sireId?: string; sireName?: string }, sire: SireRef): boolean {
+  return 'sireId' in sire ? row.sireId === sire.sireId : row.sireName === sire.sireName
 }

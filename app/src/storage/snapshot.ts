@@ -101,7 +101,7 @@ export function buildEightLineSnapshot(
 ): EightLineSnapshot {
   const horses = new Map(rows.horses.map((horse) => [horse.id, horse]))
   const groups = groupMares(rows.mares)
-  const isListed = (mare: MareRow) => listed(mare, horses, year, settings)
+  const isListed = (mare: MareRow) => mareListed(mare, horses, year, settings)
   return {
     lines: LINE_POSITIONS.map((line) => ({
       line,
@@ -162,8 +162,11 @@ function mareGroupSlots(
     })
 }
 
-/** 母馬是否列入任務（需求規格 8.5、8.9）；不在圈的母馬不必查馬匹資料 */
-function listed(
+/**
+ * 母馬是否列入任務（需求規格 8.5、8.9）：在圈、未達定年，自家母駒還要是暫定保留、候選或正式保留。
+ * year 是目前遊戲年；不在圈的母馬不必查馬匹資料，在圈的找不到馬匹資料時丟出錯誤
+ */
+export function mareListed(
   mare: MareRow,
   horses: ReadonlyMap<string, HorseRow>,
   year: number,

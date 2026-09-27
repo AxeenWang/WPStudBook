@@ -14,6 +14,7 @@ describe('createDatabase', () => {
       'lines',
       'mareYears',
       'mares',
+      'matingRatings',
       'meta',
       'restorations',
       'settings',
@@ -44,5 +45,16 @@ describe('createDatabase', () => {
       plan: 'resting',
     })
     expect(await db.mareYears.where('[gameId+year]').equals(['G', 1971]).count()).toBe(1)
+  })
+
+  it('總合評價與爆發力可以依母馬查詢（技術設計 4.3）', async () => {
+    const db = testDatabase()
+    await db.matingRatings.bulkAdd([
+      { id: 'R1', gameId: 'G', mareId: 'M', sireId: 'S', year: 1970, grade: 'A' },
+      { id: 'R2', gameId: 'G', mareId: 'M', sireName: 'ノーザンダンサー', year: 1971, burst: 12 },
+      { id: 'R3', gameId: 'G', mareId: 'N', sireId: 'S', year: 1970, grade: 'B' },
+    ])
+    const rows = await db.matingRatings.where('[gameId+mareId]').equals(['G', 'M']).toArray()
+    expect(rows.map((row) => row.id).sort()).toEqual(['R1', 'R2'])
   })
 })

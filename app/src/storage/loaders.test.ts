@@ -232,6 +232,7 @@ describe('loadSuccessorCandidate', () => {
         sire: { line: 1, generation: 4 },
         dam: { kind: 'own', line: 2, generation: 4 },
         output: { line: 1, generation: 5 },
+        pedigree: { estimate: null, duplicates: [], warnings: [] },
       },
     })
     expect(await loadSuccessorCandidate(db, GAME, 'F')).toEqual({

@@ -13,6 +13,7 @@ import {
   readLinesAndSystems,
   resolveZeroStallion,
   runWrite,
+  type UnchangedBlock,
   type WriteContext,
   type WriteOptions,
   type WriteResult,
@@ -140,7 +141,7 @@ export interface LineSubsystemInput {
  * - unchanged：新名稱與目前相同
  */
 export type LineSubsystemBlock =
-  { kind: 'blank'; field: 'subsystem' | 'parentSystem' } | { kind: 'unchanged' }
+  { kind: 'blank'; field: 'subsystem' | 'parentSystem' } | UnchangedBlock
 
 /**
  * 變更已開啟的系目前的子系統名稱（需求規格 7.1、7.2、LINE-06）：位置、任用、配種與代數不變。

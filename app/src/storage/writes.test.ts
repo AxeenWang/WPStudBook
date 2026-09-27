@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
-import { GAME, horseRow } from '../../tests/support/rows'
+import { GAME, horseRow, ungroupedMareRow } from '../../tests/support/rows'
 import { lineSystemsOf } from '../../tests/support/systems'
 import type { WPStudBookDatabase } from './database'
 import type { GameTiming, WriteWarning } from './records'
 import {
   confirmation,
   gate,
+  loadMare,
   parentDuplicateWarnings,
   prepareNewHorse,
   runWrite,
@@ -344,5 +345,25 @@ describe('prepareNewHorse 的父母名（需求規格 6.4）', () => {
         { kind: 'parent-name', parent: 'dam' },
       ],
     })
+  })
+})
+
+describe('loadMare', () => {
+  it('在寫入交易內讀取這一局的母馬；找不到或屬於其他局時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.mares.bulkAdd([
+      ungroupedMareRow('M', 'unassigned'),
+      ungroupedMareRow('M2', 'unassigned', { gameId: 'G2' }),
+    ])
+    const read = (horseId: string) =>
+      runWrite(db, GAME, [db.mares], {}, async (context) =>
+        context.done(await loadMare(context, horseId)),
+      )
+    const found = await read('M')
+    expect(found.status === 'done' && found.value.horseId).toBe('M')
+    await expect(read('M2')).rejects.toThrow('找不到母馬：M2')
+    await expect(read('X')).rejects.toThrow('找不到母馬：X')
   })
 })

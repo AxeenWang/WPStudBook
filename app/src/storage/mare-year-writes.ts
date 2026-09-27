@@ -1,13 +1,15 @@
 import type { WPStudBookDatabase } from './database'
-import type { MarePlan, MareRow, MareYearRow, Vigor, VigorMonth } from './records'
-import { runWrite, type WriteContext, type WriteOptions, type WriteResult } from './writes'
+import type { MarePlan, MareYearRow, Vigor, VigorMonth } from './records'
+import {
+  loadMare,
+  runWrite,
+  type UnchangedBlock,
+  type WriteContext,
+  type WriteOptions,
+  type WriteResult,
+} from './writes'
 
 // 母馬年度資料的寫入操作：今年計畫與活力的人工更正（需求規格 8.7；技術設計 4.3「寫入操作」）
-
-/** 和目前相同時的阻止原因 */
-export interface UnchangedYearBlock {
-  kind: 'unchanged'
-}
 
 /**
  * 設定今年計畫（需求規格 8.7、MARE-22）：年份為目前遊戲年，那一年的資料列不存在時新增；
@@ -20,7 +22,7 @@ export async function setMarePlan(
   horseId: string,
   plan: MarePlan,
   options: WriteOptions = {},
-): Promise<WriteResult<MareYearRow, UnchangedYearBlock>> {
+): Promise<WriteResult<MareYearRow, UnchangedBlock>> {
   return runWrite(db, gameId, [db.mares, db.mareYears], options, async (context) => {
     const mare = await loadMare(context, horseId)
     if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬沒有今年計畫：${horseId}`)
@@ -53,7 +55,7 @@ export interface VigorCorrection {
  * - year：年份不是整數，或晚於目前遊戲年
  * - unchanged：和目前相同
  */
-export type VigorBlock = { kind: 'vigor-range' } | { kind: 'year' } | { kind: 'unchanged' }
+export type VigorBlock = { kind: 'vigor-range' } | { kind: 'year' } | UnchangedBlock
 
 /**
  * 活力快照的人工更正（需求規格 8.7、MARE-13、MARE-14）：數值是 0～100 的整數，是否増強另外指定
@@ -100,13 +102,6 @@ export async function correctVigor(
     })
     return context.done(next)
   })
-}
-
-/** 這一局的母馬；找不到或屬於其他局時丟出錯誤 */
-async function loadMare(context: WriteContext, horseId: string): Promise<MareRow> {
-  const mare = await context.db.mares.get(horseId)
-  if (!mare || mare.gameId !== context.game.id) throw new Error(`找不到母馬：${horseId}`)
-  return mare
 }
 
 /** 母馬某一年的資料列；還沒有時是只有鍵的新列 */
