@@ -132,7 +132,22 @@ describe('addFoal', () => {
       ...filly('D11'),
       sire: { name: '(外)ノーザンダンサー' },
     })
-    expect(same.status).toBe('done')
+    if (same.status !== 'done') throw new Error(same.status)
+    // 和其他阻止原因一起時一次列全，sire-mismatch 排在最後
+    expect(
+      await addFoal(db, GAME, {
+        ...filly('D11'),
+        ability: { speed: -1 },
+        sire: { name: 'トサミドリ' },
+      }),
+    ).toEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'foal-exists', horseId: same.value.id },
+        { kind: 'ability', field: 'speed' },
+        { kind: 'sire-mismatch', breedingId: 'F89' },
+      ],
+    })
     const byId = await addFoal(db, GAME, { ...filly('SUB21'), sire: { horseId: 'S11' } })
     expect(byId.status).toBe('done')
   })
@@ -211,7 +226,8 @@ describe('addFoal', () => {
   it('能力都沒有填時不存 ability；邊界值可以保存', async () => {
     const db = await foalingHerd()
     const empty = await addFoal(db, GAME, { ...filly('SUB21'), ability: { distance: '  ' } })
-    expect(empty.status === 'done' && empty.value).not.toHaveProperty('ability')
+    if (empty.status !== 'done') throw new Error(empty.status)
+    expect(empty.value).not.toHaveProperty('ability')
     const edge = await addFoal(db, GAME, {
       ...filly('D11'),
       ability: { speed: 0, subTotal: 105, offspringQuality: 15 },

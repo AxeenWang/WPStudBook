@@ -4,6 +4,7 @@ import { matchHorse } from '../../src/core/identity'
 import { verifySuccessor } from '../../src/core/successor'
 import { expectedFoaling, registerBreeding, setConception } from '../../src/storage/breeding-writes'
 import { addFoal, nameFoal, setFoalDisposition } from '../../src/storage/foal-writes'
+import { buildSuccessorCandidate } from '../../src/storage/inputs'
 import { rateMating } from '../../src/storage/rating-writes'
 import { buildPhaseHerd, designatedTo, foalingHerd } from '../support/breeding'
 import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
@@ -169,23 +170,30 @@ describe('配種與產駒（BRD）', () => {
 
   it('BRD-24 手動建立產駒，母馬前一年沒有受胎紀錄 → 警告並確認；確認後比照自由配種產駒，待售、不能選為八系後繼', async () => {
     const db = await foalingHerd()
-    // SUB11 在 1989 年不受胎
-    const warning = { kind: 'no-conception-record', breedingId: 'N89', conception: '不受胎' }
     const input = {
       damId: 'SUB11',
       sex: 'female',
       birthYear: 1990,
       sire: { horseId: 'S11' },
     } as const
-    expect(await addFoal(db, GAME, input)).toEqual({ status: 'unconfirmed', warnings: [warning] })
+    // SUB11 在 1989 年的配種紀錄 N89：受胎以外的狀態都警告，附那一筆的識別與狀態
+    for (const conception of ['空胎', '未確認', '不受胎'] as const) {
+      await db.breedings.update('N89', { conception })
+      expect(await addFoal(db, GAME, input)).toEqual({
+        status: 'unconfirmed',
+        warnings: [{ kind: 'no-conception-record', breedingId: 'N89', conception }],
+      })
+    }
     const result = await addFoal(db, GAME, input, { confirmed: true })
     if (result.status !== 'done') throw new Error(result.status)
-    expect(result.value).toMatchObject({ sireId: 'S11', birth: {}, disposition: 'for-sale' })
+    expect(result.value).toMatchObject({ sireId: 'S11', disposition: 'for-sale' })
+    expect(result.value.birth).toStrictEqual({})
+    // 從建立的產駒組出後繼候選：出生紀錄沒有連結配種，比照自由配種所生
     expect(
-      verifySuccessor(
-        { sireId: 'S11', damId: 'SUB11', origin: { kind: 'free' } },
-        { line: 1, generation: 2 },
-      ),
+      verifySuccessor(buildSuccessorCandidate(result.value, undefined), {
+        line: 1,
+        generation: 2,
+      }),
     ).toEqual([{ mismatch: 'free-breeding' }])
   })
 

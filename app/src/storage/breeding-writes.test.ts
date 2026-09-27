@@ -246,14 +246,24 @@ describe('correctBreeding：自由配種', () => {
     })
   })
 
-  it('配種紀錄找不到或屬於其他局時丟出錯誤', async () => {
+  it('配種紀錄找不到或屬於其他局，或母馬已不在圈內時丟出錯誤', async () => {
     const db = await herd()
     await addTestGame(db, { id: 'G2' })
-    await db.breedings.add(freeBreeding('B2', 1990, { gameId: 'G2' }))
+    await db.breedings.bulkAdd([
+      freeBreeding('B', 1990),
+      freeBreeding('B2', 1990, { gameId: 'G2' }),
+    ])
     await expect(correctBreeding(db, GAME, 'X', freeWith('S'))).rejects.toThrow('找不到配種紀錄：X')
     await expect(correctBreeding(db, GAME, 'B2', freeWith('S'))).rejects.toThrow(
       '找不到配種紀錄：B2',
     )
+    // 更正照登記重做檢查：登記後賣出的母馬不能更正今年的配種
+    await db.mares.update('M', { herd: 'sold' })
+    await expect(correctBreeding(db, GAME, 'B', freeNamed('ノーザンダンサー'))).rejects.toThrow(
+      '不在繁殖圈內的母馬不能更正配種：M',
+    )
+    expect(await db.breedings.get('B')).toStrictEqual(freeBreeding('B', 1990))
+    expect(await db.events.count()).toBe(0)
   })
 })
 

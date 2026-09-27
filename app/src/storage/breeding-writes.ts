@@ -120,7 +120,8 @@ function breedingTables(db: WPStudBookDatabase) {
  * 警告並確認，只提示的不要求確認。規則快照記配對、母馬當時的身分與血統檢查的結果。
  * 自由配種（7.8）：種牡馬是內部馬匹或外部名稱，不做規則與血統檢查，母馬只要在圈，不看用途與馬齡。
  * 登記不改今年計畫。事件 breeding-registered。
- * 母馬找不到、屬於其他局或不在圈內，或種牡馬找不到、屬於其他局或是牝馬時丟出錯誤。
+ * 母馬找不到、屬於其他局或不在圈內，或種牡馬找不到、屬於其他局，或自由配種的種牡馬是牝馬時丟出錯誤
+ * （指定配種的種牡馬是牝馬時由 10.3 阻止，見 checkDesignated）。
  */
 export async function registerBreeding(
   db: WPStudBookDatabase,
@@ -130,7 +131,7 @@ export async function registerBreeding(
   options: WriteOptions = {},
 ): Promise<WriteResult<SavedBreeding, RegisterBreedingBlock>> {
   return runWrite(db, gameId, breedingTables(db), options, async (context) => {
-    const mare = await mareInHerd(context, mareId)
+    const mare = await mareInHerd(context, mareId, '登記配種')
     const year = context.game.currentYear
     const existing = await db.breedings
       .where('[gameId+mareId+year]')
@@ -183,7 +184,7 @@ export async function correctBreeding(
     if (current.year !== context.game.currentYear) {
       return { status: 'blocked', blocks: [{ kind: 'past-year' }] }
     }
-    const mare = await mareInHerd(context, current.mareId)
+    const mare = await mareInHerd(context, current.mareId, '更正配種')
     const blocks: CorrectBreedingBlock[] = []
     const foal = await linkedFoal(context, current)
     if (foal) blocks.push({ kind: 'foal-exists', horseId: foal.id })
@@ -290,7 +291,9 @@ async function checkBreeding(
 /**
  * 八系指定配種的檢查（需求規格 7.3、8.3、10.2、10.3；技術設計 4.3「配種的登記：指定配種」）：
  * 交易內重新組出八系快照，從任務看板的任務找配對，再比對母馬、種牡馬與例外補入；
- * 都通過後做 8.3 與血統檢查，組出規則快照
+ * 都通過後做 8.3 與血統檢查，組出規則快照。
+ * 種牡馬是牝馬時不丟出錯誤：牝馬不會有任用，比對時是八系以外，由 10.3 阻止
+ * （自由配種、建立產駒與總合評價經 resolveSire，牝馬時丟出錯誤）
  */
 async function checkDesignated(
   context: WriteContext,
@@ -332,6 +335,7 @@ async function checkDesignated(
   const exception = check.warnings.length > 0
   const reason = (input.exceptionReason ?? mare.exceptionReason ?? '').trim()
   if (exception && reason === '') blocks.push({ kind: 'reason-required' })
+  // 用途是待指定或自由配種（role 為 null）時 core 已經對母馬一方阻止；role === null 只為了讓型別收窄
   if (blocks.length > 0 || role === null) return { ok: false, blocks }
 
   const substitute =
@@ -410,10 +414,14 @@ function sirePlacement(stallions: readonly StallionRow[], horseId: string): Line
   return post ? { line: post.line, generation: post.generation } : null
 }
 
-/** 在圈的母馬；找不到、屬於其他局或不在圈內時丟出錯誤 */
-async function mareInHerd(context: WriteContext, mareId: string): Promise<MareRow> {
+/** 在圈的母馬；找不到、屬於其他局或不在圈內時丟出錯誤，action 是錯誤訊息裡的操作 */
+async function mareInHerd(
+  context: WriteContext,
+  mareId: string,
+  action: '登記配種' | '更正配種',
+): Promise<MareRow> {
   const mare = await loadMare(context, mareId)
-  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能登記配種：${mareId}`)
+  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能${action}：${mareId}`)
   return mare
 }
 
