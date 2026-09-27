@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
-import { BUILD_PHASE_PEDIGREE, buildPhaseHerd, designatedTo } from '../../tests/support/breeding'
+import {
+  BUILD_PHASE_PEDIGREE,
+  buildPhaseHerd,
+  cyclePhaseHerd,
+  designatedTo,
+} from '../../tests/support/breeding'
 import {
   GAME,
   horseRow,
@@ -527,6 +532,43 @@ describe('correctBreeding：指定配種', () => {
           rule: { side: 'sire', expected: { line: 1, generation: 1 }, mismatches: ['generation'] },
         },
       ],
+    })
+  })
+})
+
+describe('registerBreeding：血統檢查（10.2）', () => {
+  it('循環期有要確認的血統警告時警告並確認，確認前什麼都不寫；規則快照存檢查的完整結果', async () => {
+    const db = await cyclePhaseHerd()
+    const warning = { kind: 'pedigree', warnings: ['insufficient-data'] }
+    expect(await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    expect(await db.breedings.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+
+    const result = await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'), {
+      confirmed: true,
+    })
+    if (result.status !== 'done') throw new Error(result.status)
+    const { breeding } = result.value
+    expect(result.warnings).toEqual([warning])
+    expect(breeding.confirmedWarnings).toEqual([warning])
+    expect(breeding.rule?.pedigree).toMatchObject({
+      estimate: {
+        count: 0,
+        status: 'insufficient',
+        established: false,
+        missingLines: [1, 2, 3, 4, 5, 6, 7, 8],
+        unknownSlots: [0, 1, 2, 3, 4, 5, 6, 7],
+      },
+      duplicates: [],
+      warnings: [{ kind: 'insufficient-data', hintOnly: false }],
+    })
+    expect(breeding.rule?.pedigree.estimate?.slots).toHaveLength(8)
+    expect((await db.events.toArray())[0]).toMatchObject({
+      kind: 'breeding-registered',
+      confirmedWarnings: [warning],
     })
   })
 })

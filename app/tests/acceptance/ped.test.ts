@@ -8,7 +8,12 @@ import { checkPedigree, estimateVitality } from '../../src/core/vitality'
 import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
 import { buildEightLinePlan } from '../support/eight-line-plan'
 import { registerBreeding } from '../../src/storage/breeding-writes'
-import { buildPhaseHerd, designatedTo } from '../support/breeding'
+import {
+  BUILD_PHASE_PEDIGREE,
+  buildPhaseHerd,
+  cyclePhaseHerd,
+  designatedTo,
+} from '../support/breeding'
 import {
   GAME,
   horseRow,
@@ -365,5 +370,111 @@ describe('血統檢查（PED）：配種紀錄的寫入', () => {
       })
       expect(result.status).toBe('done')
     }
+  })
+
+  it('PED-01 建系期的指定配種 → 不計算活血、不警告，規則快照記建系期的結果', async () => {
+    const db = await buildPhaseHerd()
+    const result = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11'))
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.warnings).toEqual([])
+    expect(result.value.breeding.rule?.pedigree).toEqual(BUILD_PHASE_PEDIGREE)
+  })
+
+  it('PED-03 循環期母馬的血統中有親系統與其他系重複的市場母馬 → 預估低於 8 種，警告並確認，確認紀錄存入配種紀錄', async () => {
+    // 3 代前的 8 個位置：G0～G3 的父親由他們的父系推定，母親 GD0～GD3 有紀錄；GD3 的父系與 G0 同一個親系統
+    const db = await cyclePhaseHerd({
+      sire: { sireId: 'G0', damId: 'G1' },
+      dam: { sireId: 'G2', damId: 'G3' },
+      ancestors: [
+        horseRow('G0', { sireSystem: '系1子', damId: 'GD0' }),
+        horseRow('GD0', { sireSystem: '系5子' }),
+        horseRow('G1', { sireSystem: '系3子', damId: 'GD1' }),
+        horseRow('GD1', { sireSystem: '系7子' }),
+        horseRow('G2', { sireSystem: '系2子', damId: 'GD2' }),
+        horseRow('GD2', { sireSystem: '系6子' }),
+        horseRow('G3', { sireSystem: '系4子', damId: 'GD3' }),
+        horseRow('GD3', { sireSystem: '系1子' }),
+      ],
+    })
+    const warning = { kind: 'pedigree', warnings: ['vitality-below-max'] }
+    expect(await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    const result = await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'), {
+      confirmed: true,
+    })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.breeding).toMatchObject({
+      confirmedWarnings: [warning],
+      rule: { pedigree: { estimate: { count: 7, status: 'exact', missingLines: [8] } } },
+    })
+  })
+
+  it('PED-04 循環期父母有同一個父親（4 代內重複的馬）→ 警告並確認，重複的馬存在規則快照', async () => {
+    const db = await cyclePhaseHerd({
+      sire: { sireId: 'X' },
+      dam: { sireId: 'X' },
+      ancestors: [horseRow('X', { sex: 'male', sireSystem: '系1子' })],
+    })
+    const warning = { kind: 'pedigree', warnings: ['insufficient-data', 'close-inbreeding'] }
+    expect(await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    const result = await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'), {
+      confirmed: true,
+    })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.breeding.rule?.pedigree.duplicates).toMatchObject([
+      { horse: { id: 'X' }, generations: [2], count: 2 },
+    ])
+  })
+
+  it('PED-05 循環期的血統資料不足 → 警告並確認，確認後可以登記，不阻止', async () => {
+    const db = await cyclePhaseHerd()
+    expect(await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [{ kind: 'pedigree', warnings: ['insufficient-data'] }],
+    })
+    const result = await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'), {
+      confirmed: true,
+    })
+    expect(result.status).toBe('done')
+  })
+
+  it('PED-11 產出 5 代的循環配種，資料不足只因含建系期市場馬 → 只提示、不要求確認；含其他未連結的馬 → 仍需確認', async () => {
+    // S14 是第 1 系零代 Z1 × 替代第 2 系 3 代 M1 所生，D24 是第 2 系零代 Z2 × 替代第 1 系 3 代 M2 所生
+    const pedigree = {
+      sire: { sireId: 'Z1', damId: 'M1' },
+      dam: { sireId: 'Z2', damId: 'M2' },
+      ancestors: [
+        horseRow('Z1', { sex: 'male', sireSystem: '系1子' }),
+        horseRow('M1', { sex: 'female', sireSystem: '系3子' }),
+        horseRow('Z2', { sex: 'male', sireSystem: '系2子' }),
+        horseRow('M2', { sex: 'female', sireSystem: '系4子' }),
+      ],
+    }
+    const db = await cyclePhaseHerd(pedigree)
+    await db.stallions.bulkAdd([stallionRow('Z1', 1, 0), stallionRow('Z2', 2, 0)])
+    await db.mares.bulkAdd([
+      substituteMareRow('M1', 2, 3, { herd: 'sold' }),
+      substituteMareRow('M2', 1, 3, { herd: 'sold' }),
+    ])
+    const hinted = await registerBreeding(db, GAME, 'D24', designatedTo(1, 5, 'S14'))
+    if (hinted.status !== 'done') throw new Error(hinted.status)
+    expect(hinted.warnings).toEqual([])
+    expect(hinted.value.breeding.rule?.pedigree.warnings).toEqual([
+      { kind: 'insufficient-data', hintOnly: true },
+    ])
+
+    // M2 不是建系期的市場馬（沒有母馬資料）：她沒有紀錄的母親不在例外內
+    const other = await cyclePhaseHerd(pedigree)
+    await other.stallions.bulkAdd([stallionRow('Z1', 1, 0), stallionRow('Z2', 2, 0)])
+    await other.mares.add(substituteMareRow('M1', 2, 3, { herd: 'sold' }))
+    expect(await registerBreeding(other, GAME, 'D24', designatedTo(1, 5, 'S14'))).toEqual({
+      status: 'unconfirmed',
+      warnings: [{ kind: 'pedigree', warnings: ['insufficient-data'] }],
+    })
   })
 })

@@ -1,8 +1,10 @@
-import type { LinePosition } from '../../src/core/lines'
+import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
 import type { DesignatedBreedingInput } from '../../src/storage/breeding-writes'
 import type { WPStudBookDatabase } from '../../src/storage/database'
+import type { HorseRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from './database'
 import { GAME, horseRow, lineRow, ownMareRow, stallionRow, substituteMareRow } from './rows'
+import { eightLineSystems, subsystemOfLine } from './systems'
 
 /**
  * 測試用的建系期牧場，目前遊戲年 1990。第 1 系（マンノウォー，親系統 マッチェム）與
@@ -71,3 +73,39 @@ export function designatedTo(
 
 /** 建系期（產出 4 代以內）的配種不計算活血（需求規格 10.1），規則快照存的血統檢查結果 */
 export const BUILD_PHASE_PEDIGREE = { estimate: null, duplicates: [], warnings: [] }
+
+/** 循環期牧場的血統：覆寫 S14、D24 的欄位（例如父母），以及血統上其他的馬 */
+export interface CyclePedigree {
+  sire?: Partial<HorseRow>
+  dam?: Partial<HorseRow>
+  ancestors?: readonly HorseRow[]
+}
+
+/**
+ * 測試用的循環期牧場，目前遊戲年 1990：八系都已開啟（系1子～系8子，親系統 系1親～系8親）。
+ * 第 1 系 4 代種牡馬 S14 在崗，第 2 系 4 代自家母駒 D24（1985 年生）在圈並使該代成立；
+ * 任務看板上有「第 1 系 4 代 × 第 2 系 4 代母馬群 → 第 1 系 5 代」。省略 pedigree 時兩匹都沒有父母紀錄
+ */
+export async function cyclePhaseHerd(pedigree: CyclePedigree = {}): Promise<WPStudBookDatabase> {
+  const db = testDatabase()
+  await addTestGame(db)
+  await db.lines.bulkAdd(LINE_POSITIONS.map((line) => lineRow(line, subsystemOfLine(line))))
+  await db.systems.bulkAdd(eightLineSystems().table.map((entry) => ({ gameId: GAME, ...entry })))
+  await db.horses.bulkAdd([
+    horseRow('S14', {
+      sex: 'male',
+      birth: { placement: { line: 1, generation: 4 } },
+      ...pedigree.sire,
+    }),
+    horseRow('D24', {
+      sex: 'female',
+      birthYear: 1985,
+      birth: { placement: { line: 2, generation: 4 } },
+      ...pedigree.dam,
+    }),
+    ...(pedigree.ancestors ?? []),
+  ])
+  await db.stallions.add(stallionRow('S14', 1, 4))
+  await db.mares.add(ownMareRow('D24', 2, 4))
+  return db
+}

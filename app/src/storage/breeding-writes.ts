@@ -108,7 +108,8 @@ function breedingTables(db: WPStudBookDatabase) {
  * 登記目前遊戲年的配種（需求規格 9.1）：一匹母馬一年一筆，已有時阻止並指出那一筆（改用更正）。
  * 八系指定配種（7.4、10.3）：配對要在任務看板的任務上，母馬要列入任務，種牡馬要是那一格在崗的一匹，
  * 系、代數與身分以 checkDesignatedBreeding 比對；例外補入警告並確認、原因必填（沒有傳時沿用母馬登記時的），
- * 替代母馬重做 8.3 親系統檢查；規則快照記配對、母馬當時的身分與血統檢查的結果。
+ * 替代母馬重做 8.3 親系統檢查；10.2 血統檢查要確認的警告（活血少於 8 種、4 代內重複、資料不足）
+ * 警告並確認，只提示的不要求確認。規則快照記配對、母馬當時的身分與血統檢查的結果。
  * 自由配種（7.8）：種牡馬是內部馬匹或外部名稱，不做規則與血統檢查，母馬只要在圈，不看用途與馬齡。
  * 登記不改今年計畫。事件 breeding-registered。
  * 母馬找不到、屬於其他局或不在圈內，或種牡馬找不到、屬於其他局或是牝馬時丟出錯誤。
@@ -285,9 +286,14 @@ async function checkDesignated(
     snapshot.systemTable,
     snapshot.lineSystems,
   )
+  // 10.2：只提示的（未知位置只來自建系期的市場馬）不要求確認，留在規則快照的血統檢查結果裡
+  const pedigreeKinds = pedigree.warnings
+    .filter((warning) => !warning.hintOnly)
+    .map((warning) => warning.kind)
   const warnings: WriteWarning[] = [
     ...(exception ? [{ kind: 'exception-entry' as const, ...pairing.output }] : []),
     ...substitute.warnings,
+    ...(pedigreeKinds.length > 0 ? [{ kind: 'pedigree' as const, warnings: pedigreeKinds }] : []),
   ]
   return {
     ok: true,
