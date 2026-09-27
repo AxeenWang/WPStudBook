@@ -1,7 +1,7 @@
 import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
 import type { DesignatedBreedingInput } from '../../src/storage/breeding-writes'
 import type { WPStudBookDatabase } from '../../src/storage/database'
-import type { HorseRow } from '../../src/storage/records'
+import type { BreedingRow, HorseRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from './database'
 import { GAME, horseRow, lineRow, ownMareRow, stallionRow, substituteMareRow } from './rows'
 import { eightLineSystems, subsystemOfLine } from './systems'
@@ -107,5 +107,52 @@ export async function cyclePhaseHerd(pedigree: CyclePedigree = {}): Promise<WPSt
   ])
   await db.stallions.add(stallionRow('S14', 1, 4))
   await db.mares.add(ownMareRow('D24', 2, 4))
+  return db
+}
+
+/** SUB21 在 1989 年的八系指定配種：第 1 系 1 代 S11 × 替代第 2 系 1 代 → 第 1 系 2 代，受胎 */
+export const DESIGNATED_1989: BreedingRow = {
+  id: 'B89',
+  gameId: GAME,
+  mareId: 'SUB21',
+  year: 1989,
+  kind: 'designated',
+  sireId: 'S11',
+  conception: '受胎',
+  rule: {
+    distance: 1,
+    sire: { line: 1, generation: 1 },
+    dam: { kind: 'substitute', forLine: 2, forGeneration: 1 },
+    output: { line: 1, generation: 2 },
+    pedigree: BUILD_PHASE_PEDIGREE,
+  },
+}
+
+/** D11 在 1989 年的自由配種：種牡馬只有外部名稱 ノーザンダンサー，受胎 */
+export const FREE_1989: BreedingRow = {
+  id: 'F89',
+  gameId: GAME,
+  mareId: 'D11',
+  year: 1989,
+  kind: 'free',
+  sireName: 'ノーザンダンサー',
+  conception: '受胎',
+}
+
+/** SUB11 在 1989 年的自由配種：種牡馬 S11，不受胎 */
+export const BARREN_1989: BreedingRow = {
+  id: 'N89',
+  gameId: GAME,
+  mareId: 'SUB11',
+  year: 1989,
+  kind: 'free',
+  sireId: 'S11',
+  conception: '不受胎',
+}
+
+/** 測試用：建系期牧場（buildPhaseHerd）加上 1989 年的三筆配種紀錄，1990 年四月產駒出生 */
+export async function foalingHerd(): Promise<WPStudBookDatabase> {
+  const db = await buildPhaseHerd()
+  await db.breedings.bulkAdd([DESIGNATED_1989, FREE_1989, BARREN_1989])
   return db
 }

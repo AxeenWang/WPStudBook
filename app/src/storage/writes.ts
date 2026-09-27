@@ -197,7 +197,7 @@ export async function checkHorseInput(
   input: NewHorseInput,
   exceptHorseId?: string,
 ): Promise<Prepared<HorseFields, NewHorseBlock>> {
-  const { db, game } = context
+  const { game } = context
   const blocks: NewHorseBlock[] = []
   const name = splitHorseName(input.fullName.trim())
   if (!name) blocks.push({ kind: 'horse-name' })
@@ -212,13 +212,9 @@ export async function checkHorseInput(
   if (sireName === null) blocks.push({ kind: 'parent-name', parent: 'sire' })
   const damName = parentName(input.damName)
   if (damName === null) blocks.push({ kind: 'parent-name', parent: 'dam' })
-  // 能力番号與出生年都有效時才查同一匹馬；馬名不符也照查，阻止原因一次列全
+  // 能力番號與出生年都有效時才查同一匹馬；馬名不符也照查，阻止原因一次列全
   if (typeof abilityNumber === 'string' && birthYear !== undefined && birthYearValid) {
-    const same = await db.horses
-      .where('[gameId+abilityNumber+birthYear]')
-      .equals([game.id, abilityNumber, birthYear])
-      .filter((horse) => horse.id !== exceptHorseId)
-      .first()
+    const same = await findSameHorse(context, abilityNumber, birthYear, exceptHorseId)
     if (same) blocks.push({ kind: 'same-horse', horseId: same.id })
   }
   if (!name || abilityNumber === null || sireName === null || damName === null) {
@@ -393,4 +389,26 @@ export async function resolveSire(
   if (!horse || horse.gameId !== context.game.id) throw new Error(`找不到馬匹：${input.horseId}`)
   if (horse.sex === 'female') throw new Error(`牝馬不能當種牡馬：${input.horseId}`)
   return { ok: true, value: { sireId: horse.id } }
+}
+
+/**
+ * 能力番號與出生年都相同的這一局既有馬匹（需求規格 6.2：同一匹馬）；exceptHorseId 是更正中的馬自己。
+ * 在 runWrite 的交易內呼叫，交易要包含 horses
+ */
+export async function findSameHorse(
+  context: WriteContext,
+  abilityNumber: string,
+  birthYear: number,
+  exceptHorseId?: string,
+): Promise<HorseRow | undefined> {
+  return context.db.horses
+    .where('[gameId+abilityNumber+birthYear]')
+    .equals([context.game.id, abilityNumber, birthYear])
+    .filter((horse) => horse.id !== exceptHorseId)
+    .first()
+}
+
+/** 資料列記的種牡馬是不是這一匹：內部識別相同，或外部名稱相同 */
+export function sameSire(row: { sireId?: string; sireName?: string }, sire: SireRef): boolean {
+  return 'sireId' in sire ? row.sireId === sire.sireId : row.sireName === sire.sireName
 }

@@ -3,7 +3,8 @@ import { checkSubAbilityTotal, foalDisplayName, trackingName } from '../../src/c
 import { matchHorse } from '../../src/core/identity'
 import { verifySuccessor } from '../../src/core/successor'
 import { expectedFoaling, registerBreeding, setConception } from '../../src/storage/breeding-writes'
-import { buildPhaseHerd, designatedTo } from '../support/breeding'
+import { addFoal } from '../../src/storage/foal-writes'
+import { buildPhaseHerd, designatedTo, foalingHerd } from '../support/breeding'
 import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
 
 // 需求規格第 15 章「配種與產駒（BRD）」中由 core 與儲存層負責的部分；匯入與畫面由後續計畫補上
@@ -109,5 +110,81 @@ describe('配種與產駒（BRD）', () => {
       await setConception(db, GAME, id, conception)
       expect((await db.breedings.get(id))?.conception).toBe(conception)
     }
+  })
+
+  it('BRD-06 同一母馬同一出生年新增第二匹產駒 → 阻止並指出既有產駒', async () => {
+    const db = await foalingHerd()
+    const first = await addFoal(db, GAME, { damId: 'SUB21', sex: 'female', birthYear: 1990 })
+    if (first.status !== 'done') throw new Error(first.status)
+    expect(await addFoal(db, GAME, { damId: 'SUB21', sex: 'male', birthYear: 1990 })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'foal-exists', horseId: first.value.id }],
+    })
+    // 同一匹母馬其他年份的產駒不受影響
+    await db.games.update(GAME, { currentYear: 1991 })
+    const next = await addFoal(
+      db,
+      GAME,
+      { damId: 'SUB21', sex: 'male', birthYear: 1991 },
+      {
+        confirmed: true,
+      },
+    )
+    expect(next.status).toBe('done')
+  })
+
+  it('BRD-11 七項副能力算出的 サ 與匯入值不符 → 警告並確認，兩個值都看得到', async () => {
+    const db = await foalingHerd()
+    const ability = {
+      subAbilities: {
+        power: 'A',
+        burst: 'A',
+        guts: 'A',
+        flexibility: 'A',
+        spirit: 'A',
+        wisdom: 'A',
+        health: 'A',
+      },
+      subTotal: 80,
+    } as const
+    const input = { damId: 'SUB21', sex: 'female', birthYear: 1990, ability } as const
+    const warning = { kind: 'sub-ability-total', total: 84, imported: 80 }
+    expect(await addFoal(db, GAME, input)).toEqual({ status: 'unconfirmed', warnings: [warning] })
+    const result = await addFoal(db, GAME, input, { confirmed: true })
+    expect(result.status === 'done' && result.value.ability?.subTotal).toBe(80)
+  })
+
+  it('BRD-13、BRD-14 芝與ダート分開保存；距離適性保存範圍文字', async () => {
+    const db = await foalingHerd()
+    const result = await addFoal(db, GAME, {
+      damId: 'SUB21',
+      sex: 'male',
+      birthYear: 1990,
+      ability: { turf: '○', dirt: '◎', distance: '1700～3100m' },
+    })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.ability).toStrictEqual({ turf: '○', dirt: '◎', distance: '1700～3100m' })
+  })
+
+  it('BRD-24 手動建立產駒，母馬前一年沒有受胎紀錄 → 警告並確認；確認後比照自由配種產駒，待售、不能選為八系後繼', async () => {
+    const db = await foalingHerd()
+    // SUB11 在 1989 年不受胎
+    const warning = { kind: 'no-conception-record', breedingId: 'N89', conception: '不受胎' }
+    const input = {
+      damId: 'SUB11',
+      sex: 'female',
+      birthYear: 1990,
+      sire: { horseId: 'S11' },
+    } as const
+    expect(await addFoal(db, GAME, input)).toEqual({ status: 'unconfirmed', warnings: [warning] })
+    const result = await addFoal(db, GAME, input, { confirmed: true })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value).toMatchObject({ sireId: 'S11', birth: {}, disposition: 'for-sale' })
+    expect(
+      verifySuccessor(
+        { sireId: 'S11', damId: 'SUB11', origin: { kind: 'free' } },
+        { line: 1, generation: 2 },
+      ),
+    ).toEqual([{ mismatch: 'free-breeding' }])
   })
 })
