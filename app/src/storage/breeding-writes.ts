@@ -109,6 +109,9 @@ function breedingTables(db: WPStudBookDatabase) {
  * 八系指定配種（7.4、10.3）：配對要在任務看板的任務上，母馬要列入任務，種牡馬要是那一格在崗的一匹，
  * 系、代數與身分以 checkDesignatedBreeding 比對；例外補入警告並確認、原因必填（沒有傳時沿用母馬登記時的），
  * 替代母馬重做 8.3 親系統檢查；規則快照記配對、母馬當時的身分與血統檢查的結果。
+ * 自由配種（7.8）：種牡馬是內部馬匹或外部名稱，不做規則與血統檢查，母馬只要在圈，不看用途與馬齡。
+ * 登記不改今年計畫。事件 breeding-registered。
+ * 母馬找不到、屬於其他局或不在圈內，或種牡馬找不到、屬於其他局或是牝馬時丟出錯誤。
  */
 export async function registerBreeding(
   db: WPStudBookDatabase,
@@ -219,34 +222,6 @@ async function checkBreeding(
     ok: true,
     value: { fields: { kind: 'free', ...sire.value }, warnings: [], parentSystemUnknown: false },
   }
-}
-
-/** 在圈的母馬；找不到、屬於其他局或不在圈內時丟出錯誤 */
-async function mareInHerd(context: WriteContext, mareId: string): Promise<MareRow> {
-  const mare = await loadMare(context, mareId)
-  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能登記配種：${mareId}`)
-  return mare
-}
-
-/** 這一局的配種紀錄；找不到或屬於其他局時丟出錯誤 */
-async function loadBreeding(context: WriteContext, breedingId: string): Promise<BreedingRow> {
-  const breeding = await context.db.breedings.get(breedingId)
-  if (!breeding || breeding.gameId !== context.game.id) {
-    throw new Error(`找不到配種紀錄：${breedingId}`)
-  }
-  return breeding
-}
-
-/** 出生紀錄連到這筆配種紀錄的產駒；交易要包含 horses */
-async function linkedFoal(
-  context: WriteContext,
-  breeding: BreedingRow,
-): Promise<HorseRow | undefined> {
-  return context.db.horses
-    .where('[gameId+damId]')
-    .equals([context.game.id, breeding.mareId])
-    .filter((horse) => horse.birth?.breedingId === breeding.id)
-    .first()
 }
 
 /**
@@ -365,6 +340,34 @@ function sirePlacement(stallions: readonly StallionRow[], horseId: string): Line
   const posts = stallions.filter((row) => row.horseId === horseId)
   const post = posts.find((row) => row.status === 'active') ?? posts[0]
   return post ? { line: post.line, generation: post.generation } : null
+}
+
+/** 在圈的母馬；找不到、屬於其他局或不在圈內時丟出錯誤 */
+async function mareInHerd(context: WriteContext, mareId: string): Promise<MareRow> {
+  const mare = await loadMare(context, mareId)
+  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能登記配種：${mareId}`)
+  return mare
+}
+
+/** 這一局的配種紀錄；找不到或屬於其他局時丟出錯誤 */
+async function loadBreeding(context: WriteContext, breedingId: string): Promise<BreedingRow> {
+  const breeding = await context.db.breedings.get(breedingId)
+  if (!breeding || breeding.gameId !== context.game.id) {
+    throw new Error(`找不到配種紀錄：${breedingId}`)
+  }
+  return breeding
+}
+
+/** 出生紀錄連到這筆配種紀錄的產駒；交易要包含 horses */
+async function linkedFoal(
+  context: WriteContext,
+  breeding: BreedingRow,
+): Promise<HorseRow | undefined> {
+  return context.db.horses
+    .where('[gameId+damId]')
+    .equals([context.game.id, breeding.mareId])
+    .filter((horse) => horse.birth?.breedingId === breeding.id)
+    .first()
 }
 
 /** 事件記的配種內容：類型、實際種牡馬、指定配種的預計產出與例外補入的原因 */
