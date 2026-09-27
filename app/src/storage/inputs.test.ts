@@ -88,6 +88,7 @@ describe('buildSuccessorCandidate', () => {
       dam: { kind: 'own', line: 1, generation: 12 },
       output: { line: 5, generation: 13 },
       restoration: true,
+      pedigree: { estimate: null, duplicates: [], warnings: [] },
     },
     ...fields,
   })

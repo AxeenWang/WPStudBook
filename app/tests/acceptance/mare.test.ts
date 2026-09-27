@@ -294,6 +294,7 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
         sire: { line: 1, generation: 1 },
         dam: { kind: 'substitute', forLine: 2, forGeneration: 1 },
         output: { line: 1, generation: 2 },
+        pedigree: { estimate: null, duplicates: [], warnings: [] },
       },
     }
     await db.breedings.add(breeding)

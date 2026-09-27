@@ -1,9 +1,11 @@
 import type { RestorationSlot } from '../core/board'
+import type { SubAbilities } from '../core/foal'
 import type { DamRole } from '../core/generation'
 import type { LineGeneration, LinePosition, PairingDistance } from '../core/lines'
 import type { SisterStatus } from '../core/sisters'
 import type { MarketStallionSystemCheck, StallionStatus } from '../core/stallions'
 import type { SubstituteConflict } from '../core/substitute'
+import type { PedigreeCheck, PedigreeWarningKind } from '../core/vitality'
 
 // 資料表的一列（技術設計 4.3）。除了全域的 MetaRow，每一列都以 gameId 歸屬某一局；
 // 識別一律是 crypto.randomUUID() 產生的字串（需求規格 12.2）。
@@ -40,7 +42,33 @@ export interface MetaRow {
 
 export type Sex = 'male' | 'female'
 
-/** 自家產駒的出生紀錄（需求規格 8.2、9.3） */
+/** 芝、ダート適性（需求規格 4.7）：◎ > ○ > △ > × */
+export type SurfaceAptitude = '◎' | '○' | '△' | '×'
+
+/** 馬匹的能力（需求規格 4.7、9.3）；每一項都可以留空，空白是還沒取得，不是 0 */
+export interface HorseAbility {
+  /** `SP`：速度，越高越好 */
+  speed?: number
+  /** `ST`：距離定位，不是強弱 */
+  stamina?: number
+  /** 七項副能力 */
+  subAbilities?: SubAbilities
+  /** 匯入的 `サ`；七項齊全時另外算出並比對（9.3） */
+  subTotal?: number
+  /** 芝適性 */
+  turf?: SurfaceAptitude
+  /** ダート適性 */
+  dirt?: SurfaceAptitude
+  /** 距離適性：原樣保存匯入的文字，例如 `1700～3100m` */
+  distance?: string
+  /** 出生時的仔出：0～15 的整數；母馬每年的仔出另存在母馬年度資料（8.8） */
+  offspringQuality?: number
+}
+
+/** 自家產駒的牧場處置（需求規格 9.3）：保留、待售、已售出 */
+export type FoalDisposition = 'keep' | 'for-sale' | 'sold'
+
+/** 自家產駒的出生紀錄（需求規格 8.2、9.3）；自家產駒一定有，沒有連結配種紀錄時是空的 */
 export interface BirthRecord {
   /** 連結的年度繁殖紀錄；沒有配種紀錄的產駒（例如購入時已受胎）留空 */
   breedingId?: string
@@ -79,6 +107,14 @@ export interface HorseRow {
   pedigreeSource?: 'import' | 'manual'
   /** 自家產駒的出生紀錄；市場馬沒有 */
   birth?: BirthRecord
+  /** 能力（9.3）；目前只有自家產駒有 */
+  ability?: HorseAbility
+  /** 牝系的名稱（8.8、9.3）；沒有時留空 */
+  femaleLine?: string
+  /** 自家產駒的牧場處置（9.3）；市場馬沒有 */
+  disposition?: FoalDisposition
+  /** 備註 */
+  note?: string
 }
 
 /** 已開啟的系（需求規格 7.1）；親系統不在這裡保存，一律查系統對照表（技術設計 4.3） */
@@ -253,6 +289,8 @@ export interface BreedingRule {
   output: LineGeneration
   /** 補公系配對（7.6）；其他配種留空 */
   restoration?: true
+  /** 血統檢查（10.1、10.2）的結果：登記當時的快照，之後對照表變更不回頭更新；建系期不計算活血 */
+  pedigree: PedigreeCheck
 }
 
 /** 年度繁殖紀錄：一匹母馬一年一筆（需求規格 9.1） */
@@ -273,7 +311,45 @@ export interface BreedingRow {
   conception?: Conception
   /** 規則快照；八系指定配種才有 */
   rule?: BreedingRule
+  /** 例外補入的原因（10.3）：零代市場種牡馬的指定配種配替代母馬時填寫 */
+  exceptionReason?: string
+  /** 使用者確認過的警告（5.2）；沒有警告時留空 */
+  confirmedWarnings?: WriteWarning[]
 }
+
+/** 配種的內容（事件記原內容與新內容）：類型、實際種牡馬、指定配種的預計產出與例外補入的原因 */
+export interface BreedingValue {
+  kind: BreedingRow['kind']
+  sireId?: string
+  sireName?: string
+  /** 指定配種的預計產出 */
+  output?: LineGeneration
+  exceptionReason?: string
+}
+
+/** 總合評價（需求規格 4.7、9.2）：S > A > B > C > D */
+export type MatingGrade = 'S' | 'A' | 'B' | 'C' | 'D'
+
+/** 一組種牡馬＋繁殖牝馬在一年裡的評價（需求規格 9.2）；評價與爆發力至少有一項 */
+export interface MatingRatingRow {
+  id: string
+  gameId: string
+  /** 母馬的內部識別 */
+  mareId: string
+  /** 種牡馬的內部識別；只有外部名稱時留空 */
+  sireId?: string
+  /** 種牡馬的外部名稱（基本馬名）；有內部識別時留空 */
+  sireName?: string
+  /** 評價的遊戲年 */
+  year: number
+  /** 總合評價 */
+  grade?: MatingGrade
+  /** 爆發力：0 以上的整數 */
+  burst?: number
+}
+
+/** 評價的內容：總合評價與爆發力 */
+export type MatingRatingValue = Pick<MatingRatingRow, 'grade' | 'burst'>
 
 /**
  * 更換現任的原因（需求規格 7.7）：弟弟較優、前任引退、無法供用、斷血補系、遊戲依史實引退、其他
@@ -298,8 +374,12 @@ export interface StallionChangeReason {
  * - stallion-system：補入或替換的零代市場種牡馬，父系與第 line 系目前的子系統不同；
  *   親系統也不同時一併列出，提示影響活血（7.6、7.7）
  * - substitute-parent-system：替代第 line 系第 generation 代的市場母馬，親系統會讓後代 3 代前撞系（8.3）
- * - exception-entry：在產出第 line 系第 generation 代的零代市場種牡馬配對底下例外補入市場母馬（7.3、MARE-31）
+ * - exception-entry：在產出第 line 系第 generation 代的零代市場種牡馬配對底下例外補入市場母馬（7.3、MARE-31），
+ *   或以她登記這條配對的指定配種（10.3、BRD-22）
  * - possible-buyback：手動新增的母馬與已售出的母馬 horseIds 同名，可能是買回（8.4、MARE-29）
+ * - pedigree：指定配種的血統檢查（10.2）要確認的項目：活血少於 8 種、4 代內重複、資料不足
+ * - sub-ability-total：七項副能力算出的 `サ` total 與匯入值 imported 不同（9.3、BRD-11）
+ * - no-conception-record：產駒的母馬前一年沒有 `受胎` 的配種紀錄（9.3、11.4）；有紀錄時附識別與狀態
  */
 export type WriteWarning =
   | {
@@ -322,6 +402,9 @@ export type WriteWarning =
     }
   | { kind: 'exception-entry'; line: LinePosition; generation: number }
   | { kind: 'possible-buyback'; horseIds: string[] }
+  | { kind: 'pedigree'; warnings: PedigreeWarningKind[] }
+  | { kind: 'sub-ability-total'; total: number; imported: number }
+  | { kind: 'no-conception-record'; breedingId?: string; conception?: Conception }
 
 /** 系統對照表一筆的內容：親系統與分出來源 */
 export type SystemValue = Pick<SystemRow, 'parentSystem' | 'origin'>
@@ -395,7 +478,14 @@ interface EventBase {
  * - horse-corrected：手動資料的更正（6.4），只記有改的欄位
  * - mare-plan-changed：今年計畫（8.7）；年份是事件的年份
  * - vigor-corrected：活力快照的人工更正（8.7），snapshotYear 是快照的年份
- * 母馬的事件只填對象 horseId：替代母馬不屬於她替代的系（8.3）
+ * - breeding-registered：登記一年的配種（9.1）
+ * - breeding-corrected：更正今年的配種（9.1），記原內容與新內容
+ * - conception-set：受胎狀態（9.1）；原本沒有結果時沒有 from，清空時沒有 to
+ * - foal-added：建立產駒（9.3），記連結的配種紀錄與牧場處置
+ * - foal-named：自家產駒正式馬名的填入、更正與清空（9.4）；原本沒有馬名時沒有 from，清空時沒有 to
+ * - foal-disposition-changed：牧場處置（9.3）
+ * - mating-rated：總合評價與爆發力（9.2）；同一組同一年第一次登記時沒有 from
+ * 母馬的事件只填對象 horseId：替代母馬不屬於她替代的系（8.3）；配種、受胎與評價的事件也是母馬的事件
  */
 export type EventRow = EventBase &
   (
@@ -486,6 +576,36 @@ export type EventRow = EventBase &
         month: VigorMonth
         from?: Vigor
         to: Vigor
+      }
+    | { kind: 'breeding-registered'; horseId: string; breedingId: string; breeding: BreedingValue }
+    | {
+        kind: 'breeding-corrected'
+        horseId: string
+        breedingId: string
+        from: BreedingValue
+        to: BreedingValue
+      }
+    | {
+        kind: 'conception-set'
+        horseId: string
+        breedingId: string
+        from?: Conception
+        to?: Conception
+      }
+    | { kind: 'foal-added'; horseId: string; breedingId?: string; disposition: FoalDisposition }
+    | { kind: 'foal-named'; horseId: string; from?: string; to?: string }
+    | {
+        kind: 'foal-disposition-changed'
+        horseId: string
+        from: FoalDisposition
+        to: FoalDisposition
+      }
+    | {
+        kind: 'mating-rated'
+        horseId: string
+        ratingId: string
+        from?: MatingRatingValue
+        to: MatingRatingValue
       }
   )
 
