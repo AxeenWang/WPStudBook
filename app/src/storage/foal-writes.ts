@@ -1,5 +1,5 @@
 import { checkSubAbilityTotal, isSubAbilityGrade } from '../core/foal'
-import { normalizeAbilityNumber } from '../core/identity'
+import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
 import { normalizeSystemName } from '../core/systems'
 import type { FoalExistsBlock } from './breeding-writes'
 import type { WPStudBookDatabase } from './database'
@@ -23,6 +23,8 @@ import {
   type SireInput,
   type SireNameBlock,
   type SireRef,
+  type UnchangedBlock,
+  type WriteContext,
   type WriteOptions,
   type WriteResult,
 } from './writes'
@@ -78,6 +80,20 @@ export type FoalBlock =
 
 /** 芝、ダート適性的四種符號 */
 const SURFACES: readonly SurfaceAptitude[] = ['◎', '○', '△', '×']
+
+/**
+ * 正式馬名的阻止原因：
+ * - name-confirmed：馬名經匯入確認（一月總表填入），不能再手動修改或清空（9.4）
+ * - horse-name：只有前綴、沒有馬名（6.4）
+ * - unchanged：和目前相同
+ */
+export type FoalNameBlock = { kind: 'name-confirmed' } | { kind: 'horse-name' } | UnchangedBlock
+
+/** 牧場處置的阻止原因：free-foal 是出生紀錄沒有系與代數的產駒不能改為保留（9.5）；和目前相同 */
+export type DispositionBlock = { kind: 'free-foal' } | UnchangedBlock
+
+/** 牧場處置的三種值 */
+const DISPOSITIONS: readonly FoalDisposition[] = ['keep', 'for-sale', 'sold']
 
 /**
  * 建立產駒（需求規格 9.3、9.5、11.4、BRD-06）；手動建立與之後的四月匯入共用。
@@ -190,6 +206,89 @@ export async function addFoal(
     })
     return context.done(foal, warnings)
   })
+}
+
+/**
+ * 填入、更正或清空自家產駒的正式馬名（需求規格 9.4、BRD-08、BRD-10）：只限自家產駒（有出生紀錄）；
+ * 市場馬的手動馬名用 correctHorse。馬名經匯入確認時阻止；fullName 是 null 或只有空白時清空，
+ * 清空後沒有馬名，顯示回退追蹤名。基本馬名跟著完整馬名，馬名來源為手動輸入；牧場處置不變。
+ * 事件 foal-named 記原名與新名；一月總表取代手動名時的別名由 CE 匯入計畫處理。
+ * 馬匹找不到、屬於其他局或不是自家產駒時丟出錯誤。
+ */
+export async function nameFoal(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  fullName: string | null,
+  options: WriteOptions = {},
+): Promise<WriteResult<HorseRow, FoalNameBlock>> {
+  return runWrite(db, gameId, [db.horses], options, async (context) => {
+    const current = await loadFoal(context, horseId)
+    const text = fullName?.trim() ?? ''
+    const name = text === '' ? undefined : splitHorseName(text)
+    const blocks: FoalNameBlock[] = []
+    if (current.nameSource === 'import') blocks.push({ kind: 'name-confirmed' })
+    else if (name === null) blocks.push({ kind: 'horse-name' })
+    else if (name?.fullName === current.fullName) blocks.push({ kind: 'unchanged' })
+    if (name === null || blocks.length > 0) return { status: 'blocked', blocks }
+    const foal: HorseRow = { ...current }
+    if (name) {
+      foal.fullName = name.fullName
+      foal.baseName = name.baseName
+      foal.nameSource = 'manual'
+    } else {
+      delete foal.fullName
+      delete foal.baseName
+      delete foal.nameSource
+    }
+    await db.horses.put(foal)
+    await context.addEvent({
+      kind: 'foal-named',
+      horseId,
+      ...(current.fullName === undefined ? {} : { from: current.fullName }),
+      ...(name ? { to: name.fullName } : {}),
+    })
+    return context.done(foal)
+  })
+}
+
+/**
+ * 牧場處置（需求規格 9.3、9.5、BRD-15、BRD-26）：保留、待售、已售出。只限自家產駒；
+ * 出生紀錄沒有系與代數的產駒（自由配種所生或比照自由配種）不能改為保留；和目前相同時阻止。
+ * 事件 foal-disposition-changed 記原處置與新處置。馬匹找不到、屬於其他局或不是自家產駒、
+ * 處置不是三種之一時丟出錯誤；自家產駒缺少牧場處置時丟出 RangeError。
+ */
+export async function setFoalDisposition(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  disposition: FoalDisposition,
+  options: WriteOptions = {},
+): Promise<WriteResult<HorseRow, DispositionBlock>> {
+  if (!DISPOSITIONS.includes(disposition)) throw new Error(`牧場處置不符：${disposition}`)
+  return runWrite(db, gameId, [db.horses], options, async (context) => {
+    const current = await loadFoal(context, horseId)
+    const from = current.disposition
+    if (from === undefined) throw new RangeError(`自家產駒缺少牧場處置：${horseId}`)
+    const blocks: DispositionBlock[] = []
+    if (disposition === from) blocks.push({ kind: 'unchanged' })
+    else if (disposition === 'keep' && current.birth?.placement === undefined) {
+      blocks.push({ kind: 'free-foal' })
+    }
+    if (blocks.length > 0) return { status: 'blocked', blocks }
+    const foal: HorseRow = { ...current, disposition }
+    await db.horses.put(foal)
+    await context.addEvent({ kind: 'foal-disposition-changed', horseId, from, to: disposition })
+    return context.done(foal)
+  })
+}
+
+/** 這一局的自家產駒（有出生紀錄）；找不到、屬於其他局或不是自家產駒時丟出錯誤 */
+async function loadFoal(context: WriteContext, horseId: string): Promise<HorseRow> {
+  const horse = await context.db.horses.get(horseId)
+  if (!horse || horse.gameId !== context.game.id) throw new Error(`找不到馬匹：${horseId}`)
+  if (horse.birth === undefined) throw new Error(`不是自家產駒：${horseId}`)
+  return horse
 }
 
 /** 連結的配種紀錄記的父馬：內部識別或外部名稱 */

@@ -3,7 +3,7 @@ import { checkSubAbilityTotal, foalDisplayName, trackingName } from '../../src/c
 import { matchHorse } from '../../src/core/identity'
 import { verifySuccessor } from '../../src/core/successor'
 import { expectedFoaling, registerBreeding, setConception } from '../../src/storage/breeding-writes'
-import { addFoal } from '../../src/storage/foal-writes'
+import { addFoal, nameFoal, setFoalDisposition } from '../../src/storage/foal-writes'
 import { buildPhaseHerd, designatedTo, foalingHerd } from '../support/breeding'
 import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
 
@@ -186,5 +186,69 @@ describe('配種與產駒（BRD）', () => {
         { line: 1, generation: 2 },
       ),
     ).toEqual([{ mismatch: 'free-breeding' }])
+  })
+
+  it('BRD-08 補登正式馬名 → 主要顯示正式馬名，識別、母馬、出生年、能力不變；清空後回退追蹤名', async () => {
+    const db = await foalingHerd()
+    const added = await addFoal(db, GAME, {
+      damId: 'D11',
+      sex: 'male',
+      birthYear: 1990,
+      ability: { speed: 72 },
+    })
+    if (added.status !== 'done') throw new Error(added.status)
+    const foal = added.value
+    const named = await nameFoal(db, GAME, foal.id, 'ハイセイコー')
+    if (named.status !== 'done') throw new Error(named.status)
+    expect(named.value).toMatchObject({
+      id: foal.id,
+      damId: 'D11',
+      birthYear: 1990,
+      ability: { speed: 72 },
+    })
+    expect(foalDisplayName(named.value.fullName, 'ハナカゴ', 1990)).toBe('ハイセイコー')
+    const cleared = await nameFoal(db, GAME, foal.id, null)
+    if (cleared.status !== 'done') throw new Error(cleared.status)
+    expect(foalDisplayName(cleared.value.fullName, 'ハナカゴ', 1990)).toBe('ハナカゴ1990')
+  })
+
+  it('BRD-10 已售出產駒補名 → 售出狀態不變', async () => {
+    const db = await foalingHerd()
+    const added = await addFoal(db, GAME, { damId: 'SUB21', sex: 'male', birthYear: 1990 })
+    if (added.status !== 'done') throw new Error(added.status)
+    await setFoalDisposition(db, GAME, added.value.id, 'sold')
+    const named = await nameFoal(db, GAME, added.value.id, 'ハイセイコー')
+    expect(named.status === 'done' && named.value.disposition).toBe('sold')
+  })
+
+  it('BRD-15、BRD-26 八系指定配種所生預設保留；自由配種所生待售，不能改為保留', async () => {
+    const db = await foalingHerd()
+    const designated = await addFoal(db, GAME, { damId: 'SUB21', sex: 'male', birthYear: 1990 })
+    expect(designated.status === 'done' && designated.value.disposition).toBe('keep')
+    const free = await addFoal(db, GAME, { damId: 'D11', sex: 'male', birthYear: 1990 })
+    if (free.status !== 'done') throw new Error(free.status)
+    expect(free.value.disposition).toBe('for-sale')
+    expect(await setFoalDisposition(db, GAME, free.value.id, 'keep')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'free-foal' }],
+    })
+  })
+
+  it('BRD-16 自由配種產駒售出後 → 仍可從母馬查到父母、出生年、追蹤名與正式馬名', async () => {
+    const db = await foalingHerd()
+    const free = await addFoal(db, GAME, { damId: 'D11', sex: 'female', birthYear: 1990 })
+    if (free.status !== 'done') throw new Error(free.status)
+    await nameFoal(db, GAME, free.value.id, 'ダンサーズイメージ')
+    await setFoalDisposition(db, GAME, free.value.id, 'sold')
+    const foals = await db.horses.where('[gameId+damId]').equals([GAME, 'D11']).toArray()
+    expect(foals).toHaveLength(1)
+    expect(foals[0]).toMatchObject({
+      sireName: 'ノーザンダンサー',
+      damId: 'D11',
+      birthYear: 1990,
+      fullName: 'ダンサーズイメージ',
+      disposition: 'sold',
+    })
+    expect(trackingName('ハナカゴ', foals[0].birthYear ?? 0)).toBe('ハナカゴ1990')
   })
 })

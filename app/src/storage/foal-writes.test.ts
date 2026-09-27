@@ -3,7 +3,8 @@ import { foalingHerd } from '../../tests/support/breeding'
 import { addTestGame } from '../../tests/support/database'
 import { GAME, horseRow, substituteMareRow } from '../../tests/support/rows'
 import { loadGame } from './games'
-import { addFoal } from './foal-writes'
+import { addFoal, nameFoal, setFoalDisposition } from './foal-writes'
+import type { HorseRow } from './records'
 
 const now = new Date('2026-09-27T01:02:03.000Z')
 
@@ -232,5 +233,155 @@ describe('addFoal', () => {
     await expect(
       addFoal(db, GAME, { ...filly('SUB21'), sire: { horseId: 'D11' } }),
     ).rejects.toThrow('牝馬不能當種牡馬：D11')
+  })
+})
+
+/** 在 foalingHerd 建立一匹 1990 年出生的牝駒：SUB21 的產駒為八系指定配種所生，D11 的為自由配種所生 */
+async function foalOf(
+  db: Awaited<ReturnType<typeof foalingHerd>>,
+  damId: string,
+): Promise<HorseRow> {
+  const result = await addFoal(db, GAME, filly(damId))
+  if (result.status !== 'done') throw new Error(result.status)
+  return result.value
+}
+
+describe('nameFoal', () => {
+  it('填入、更正與清空正式馬名：基本馬名跟著完整馬名，來源為手動；其他欄位不變，事件記原名與新名（BRD-08）', async () => {
+    const db = await foalingHerd()
+    const foal = await foalOf(db, 'SUB21')
+    const named = await nameFoal(db, GAME, foal.id, ' (外)ハイセイコー ', { now })
+    if (named.status !== 'done') throw new Error(named.status)
+    expect(named.value).toStrictEqual({
+      ...foal,
+      fullName: '(外)ハイセイコー',
+      baseName: 'ハイセイコー',
+      nameSource: 'manual',
+    })
+    expect(await db.horses.get(foal.id)).toStrictEqual(named.value)
+
+    const corrected = await nameFoal(db, GAME, foal.id, 'ハイセイコー')
+    expect(corrected.status === 'done' && corrected.value.baseName).toBe('ハイセイコー')
+    const cleared = await nameFoal(db, GAME, foal.id, null)
+    expect(cleared).toEqual({ status: 'done', value: foal, warnings: [] })
+    expect(await db.horses.get(foal.id)).toStrictEqual(foal)
+
+    const events = (await db.events.toArray()).filter((event) => event.kind === 'foal-named')
+    expect(events).toHaveLength(3)
+    expect(events).toContainEqual({
+      id: expect.any(String),
+      gameId: GAME,
+      year: 1990,
+      recordedAt: '2026-09-27T01:02:03.000Z',
+      source: { kind: 'manual' },
+      kind: 'foal-named',
+      horseId: foal.id,
+      to: '(外)ハイセイコー',
+    })
+    expect(events).toContainEqual(
+      expect.objectContaining({ from: '(外)ハイセイコー', to: 'ハイセイコー' }),
+    )
+    const clearing = events.find(
+      (event) => event.kind === 'foal-named' && event.from === 'ハイセイコー',
+    )
+    expect(clearing).not.toHaveProperty('to')
+  })
+
+  it('只有前綴、和目前相同，或原本沒有馬名時清空，都阻止', async () => {
+    const db = await foalingHerd()
+    const foal = await foalOf(db, 'SUB21')
+    expect(await nameFoal(db, GAME, foal.id, '[地]')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'horse-name' }],
+    })
+    expect(await nameFoal(db, GAME, foal.id, '  ')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    await nameFoal(db, GAME, foal.id, 'ハイセイコー')
+    expect(await nameFoal(db, GAME, foal.id, ' ハイセイコー ')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+  })
+
+  it('馬名經匯入確認後不能手動修改或清空（9.4）', async () => {
+    const db = await foalingHerd()
+    const foal = await foalOf(db, 'SUB21')
+    await db.horses.update(foal.id, {
+      fullName: 'ハイセイコー',
+      baseName: 'ハイセイコー',
+      nameSource: 'import',
+    })
+    for (const fullName of ['ハイセイコ', null]) {
+      expect(await nameFoal(db, GAME, foal.id, fullName)).toEqual({
+        status: 'blocked',
+        blocks: [{ kind: 'name-confirmed' }],
+      })
+    }
+  })
+
+  it('馬匹找不到、屬於其他局或不是自家產駒時丟出錯誤', async () => {
+    const db = await foalingHerd()
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.add(horseRow('F2', { gameId: 'G2', birth: {} }))
+    await expect(nameFoal(db, GAME, 'X', 'A')).rejects.toThrow('找不到馬匹：X')
+    await expect(nameFoal(db, GAME, 'F2', 'A')).rejects.toThrow('找不到馬匹：F2')
+    await expect(nameFoal(db, GAME, 'SUB21', 'A')).rejects.toThrow('不是自家產駒：SUB21')
+  })
+})
+
+describe('setFoalDisposition', () => {
+  it('保留、待售、已售出可以互改；事件記原處置與新處置', async () => {
+    const db = await foalingHerd()
+    const foal = await foalOf(db, 'SUB21')
+    const sold = await setFoalDisposition(db, GAME, foal.id, 'sold', { now })
+    expect(sold).toEqual({ status: 'done', value: { ...foal, disposition: 'sold' }, warnings: [] })
+    expect((await db.horses.get(foal.id))?.disposition).toBe('sold')
+    const kept = await setFoalDisposition(db, GAME, foal.id, 'keep')
+    expect(kept.status === 'done' && kept.value.disposition).toBe('keep')
+    expect(
+      (await db.events.toArray()).filter((event) => event.kind === 'foal-disposition-changed'),
+    ).toContainEqual({
+      id: expect.any(String),
+      gameId: GAME,
+      year: 1990,
+      recordedAt: '2026-09-27T01:02:03.000Z',
+      source: { kind: 'manual' },
+      kind: 'foal-disposition-changed',
+      horseId: foal.id,
+      from: 'keep',
+      to: 'sold',
+    })
+  })
+
+  it('出生紀錄沒有系與代數的產駒不能改為保留；和目前相同時阻止', async () => {
+    const db = await foalingHerd()
+    const free = await foalOf(db, 'D11')
+    expect(await setFoalDisposition(db, GAME, free.id, 'keep')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'free-foal' }],
+    })
+    expect(await setFoalDisposition(db, GAME, free.id, 'for-sale')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    const sold = await setFoalDisposition(db, GAME, free.id, 'sold')
+    expect(sold.status === 'done' && sold.value.disposition).toBe('sold')
+  })
+
+  it('馬匹不是自家產駒、處置不是三種之一，或自家產駒缺少處置時丟出錯誤', async () => {
+    const db = await foalingHerd()
+    const foal = await foalOf(db, 'SUB21')
+    await expect(setFoalDisposition(db, GAME, 'SUB21', 'sold')).rejects.toThrow(
+      '不是自家產駒：SUB21',
+    )
+    await expect(setFoalDisposition(db, GAME, foal.id, 'gone' as 'sold')).rejects.toThrow(
+      '牧場處置不符：gone',
+    )
+    await db.horses.update(foal.id, { disposition: undefined })
+    await expect(setFoalDisposition(db, GAME, foal.id, 'sold')).rejects.toThrow(
+      `自家產駒缺少牧場處置：${foal.id}`,
+    )
   })
 })
