@@ -20,7 +20,7 @@ import { correctHorse } from '../../src/storage/horse-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare, changeMareUsage } from '../../src/storage/mare-writes'
 import { correctVigor, setMarePlan } from '../../src/storage/mare-year-writes'
-import { transferFilly } from '../../src/storage/own-mare-writes'
+import { keepSister, transferFilly } from '../../src/storage/own-mare-writes'
 import type { BreedingRow, MareRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from '../support/database'
 import { successorHerd } from '../support/successor'
@@ -488,5 +488,29 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     await expect(
       changeMareUsage(db, GAME, 'F88', { assignment: { kind: 'unassigned' } }),
     ).rejects.toThrow('不能修改用途')
+  })
+
+  it('MARE-12 同父同母姊妹先後轉入 → 第二匹不被阻止；選定後只有一匹正式保留，被取代者保留紀錄', async () => {
+    const db = await successorHerd()
+    expect((await transferFilly(db, GAME, 'F88')).status).toBe('done')
+    expect((await transferFilly(db, GAME, 'F90')).status).toBe('done')
+    expect((await keepSister(db, GAME, 'F88')).status).toBe('done')
+    expect(await db.mares.get('F88')).toMatchObject({ herd: 'in-herd', sisterStatus: 'kept' })
+    expect(await db.mares.get('F90')).toMatchObject({ herd: 'in-herd', sisterStatus: 'replaced' })
+    const history = await db.events.where('[gameId+horseId]').equals([GAME, 'F90']).toArray()
+    expect(history.map((event) => event.kind).sort()).toEqual([
+      'mare-transferred',
+      'sister-status-changed',
+    ])
+  })
+
+  it('MARE-24 姊妹一匹暫定保留、一匹候選 → 兩匹都列入任務；選定其中一匹後，被取代的不再列入', async () => {
+    const db = await successorHerd()
+    await transferFilly(db, GAME, 'F88')
+    await transferFilly(db, GAME, 'F90')
+    const group = async () => (await loadRuleSnapshot(db, GAME)).eightLines.lines[0]!.mareGroups[0]
+    expect(await group()).toEqual({ generation: 5, established: true, activeMares: 2, ownMares: 2 })
+    await keepSister(db, GAME, 'F90')
+    expect(await group()).toEqual({ generation: 5, established: true, activeMares: 1, ownMares: 1 })
   })
 })

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame } from '../../tests/support/database'
-import { GAME, horseRow } from '../../tests/support/rows'
+import { GAME, horseRow, ownFoalRow, ownMareRow, substituteMareRow } from '../../tests/support/rows'
 import { successorHerd } from '../../tests/support/successor'
 import { loadGame } from './games'
-import { transferFilly } from './own-mare-writes'
+import { keepSister, transferFilly } from './own-mare-writes'
 import type { Base, MareRow } from './records'
 
 const now = new Date('2026-09-28T01:02:03.000Z')
@@ -162,5 +162,111 @@ describe('transferFilly', () => {
     )
     expect(await db.mares.get('F88')).toBeUndefined()
     expect(await db.events.count()).toBe(0)
+  })
+})
+
+describe('keepSister', () => {
+  /** 後繼牧場，姊妹 F88（暫定保留）與 F90（候選）都已轉入 */
+  async function sistersHerd() {
+    const db = await successorHerd()
+    await transferFilly(db, GAME, 'F88')
+    await transferFilly(db, GAME, 'F90')
+    await db.events.clear()
+    return db
+  }
+
+  it('選定正式保留：她改為正式保留並使該代成立，在圈而且列入任務的姊妹改為已被取代；每匹各寫一筆事件', async () => {
+    const db = await sistersHerd()
+    const result = await keepSister(db, GAME, 'F90', { now })
+    const f90 = ownMareRow('F90', 1, 5, { sisterStatus: 'kept' })
+    const f88 = ownMareRow('F88', 1, 5, { sisterStatus: 'replaced' })
+    expect(result).toEqual({ status: 'done', value: [f90, f88], warnings: [] })
+    expect(await db.mares.get('F90')).toEqual(f90)
+    expect(await db.mares.get('F88')).toEqual(f88)
+    const events = await db.events.toArray()
+    expect(events).toHaveLength(2)
+    const common = {
+      id: expect.any(String),
+      gameId: GAME,
+      year: 1990,
+      recordedAt: '2026-09-28T01:02:03.000Z',
+      source: { kind: 'manual' },
+      kind: 'sister-status-changed',
+      keptHorseId: 'F90',
+    }
+    expect(events).toContainEqual({ ...common, horseId: 'F90', from: 'candidate', to: 'kept' })
+    expect(events).toContainEqual({
+      ...common,
+      horseId: 'F88',
+      from: 'provisional',
+      to: 'replaced',
+    })
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-28T01:02:03.000Z')
+  })
+
+  it('之後改保留另一匹：對她再做一次，原本正式保留的改為已被取代', async () => {
+    const db = await sistersHerd()
+    await keepSister(db, GAME, 'F90')
+    const result = await keepSister(db, GAME, 'F88')
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.map((mare) => [mare.horseId, mare.sisterStatus])).toEqual([
+      ['F88', 'kept'],
+      ['F90', 'replaced'],
+    ])
+  })
+
+  it('已售出或不在圈的姊妹不變；沒有姊妹時也可以選，暫定保留改為正式保留', async () => {
+    const db = await sistersHerd()
+    await db.horses.add(ownFoalRow('F85', 1, 5, { sireId: 'S14', damId: 'D24' }))
+    await db.mares.add(ownMareRow('F85', 1, 5, { herd: 'sold', sisterStatus: 'kept' }))
+    const result = await keepSister(db, GAME, 'F88')
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.map((mare) => mare.horseId)).toEqual(['F88', 'F90'])
+    // 被取代的候選不會因此使該代成立
+    expect(await db.mares.get('F90')).toEqual(
+      ownMareRow('F90', 1, 5, { sisterStatus: 'replaced', establishedGeneration: false }),
+    )
+    expect(await db.mares.get('F85')).toMatchObject({ herd: 'sold', sisterStatus: 'kept' })
+
+    // D24 沒有父母紀錄，沒有姊妹
+    const alone = await keepSister(db, GAME, 'D24')
+    if (alone.status !== 'done') throw new Error(alone.status)
+    expect(alone.value).toEqual([ownMareRow('D24', 2, 4, { sisterStatus: 'kept' })])
+  })
+
+  it('候選選為正式保留時使該代成立；已是正式保留而沒有姊妹要取代時阻止，什麼都不寫', async () => {
+    const db = await sistersHerd()
+    await db.mares.update('F88', { herd: 'sold' })
+    const result = await keepSister(db, GAME, 'F90')
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value).toEqual([
+      ownMareRow('F90', 1, 5, { sisterStatus: 'kept', establishedGeneration: true }),
+    ])
+    const before = await db.events.count()
+    expect(await keepSister(db, GAME, 'F90')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    expect(await db.events.count()).toBe(before)
+  })
+
+  it('母馬找不到、屬於其他局、不在圈內（core 的 RangeError），或不是自家母駒時丟出錯誤', async () => {
+    const db = await sistersHerd()
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.add(horseRow('M', { sex: 'female' }))
+    await db.mares.bulkAdd([
+      substituteMareRow('M', 2, 4),
+      ownMareRow('OTHER', 1, 5, { gameId: 'G2' }),
+    ])
+    await transferFilly(db, GAME, 'FREE90')
+    await db.mares.update('F88', { herd: 'sold' })
+    await expect(keepSister(db, GAME, 'X')).rejects.toThrow('找不到母馬：X')
+    await expect(keepSister(db, GAME, 'OTHER')).rejects.toThrow('找不到母馬：OTHER')
+    await expect(keepSister(db, GAME, 'F88')).rejects.toThrow(RangeError)
+    await expect(keepSister(db, GAME, 'F88')).rejects.toThrow(
+      '不在繁殖圈內的母馬不能選為正式保留：F88',
+    )
+    await expect(keepSister(db, GAME, 'M')).rejects.toThrow('只有自家母駒有接替狀態：M')
+    await expect(keepSister(db, GAME, 'FREE90')).rejects.toThrow('只有自家母駒有接替狀態：FREE90')
   })
 })

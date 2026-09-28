@@ -1,13 +1,16 @@
-import { entrySisterStatus } from '../core/sisters'
+import { chooseKeptSister, entrySisterStatus } from '../core/sisters'
 import type { WPStudBookDatabase } from './database'
+import { buildOwnMares } from './inputs'
 import { loadSisters, loadSuccessorCandidate } from './loaders'
 import { assertBase, placementOf } from './mare-assignment'
 import type { Base, MareRow } from './records'
 import {
   checkOwnSuccessor,
   loadFoal,
+  loadMare,
   runWrite,
   type SuccessorCheckBlock,
+  type UnchangedBlock,
   type WriteOptions,
   type WriteResult,
 } from './writes'
@@ -87,5 +90,51 @@ export async function transferFilly(
       ...(mare.location === undefined ? {} : { location: mare.location }),
     })
     return context.done(mare)
+  })
+}
+
+/**
+ * 選定正式保留（需求規格 8.9、MARE-12、MARE-24）：以 chooseKeptSister 套用，她改為正式保留，
+ * 同父同母、在圈而且列入任務的姊妹改為已被取代；已被取代、已售出與不在圈內的姊妹不變。沒有姊妹時也可以選。
+ * 選為正式保留時該代成立（establishedGeneration 設為 true，不改回，8.2）。沒有任何變化時阻止。
+ * 狀態有變的每匹母馬各寫一筆事件 sister-status-changed，記原狀態、新狀態與選定的母馬；
+ * 回傳狀態有變的母馬，選定的那一匹在前。之後改保留另一匹，對她再做一次。
+ * 母馬或她的馬匹找不到、屬於其他局，或不是自家母駒時丟出錯誤；不在圈內時 chooseKeptSister 丟出 RangeError
+ * （畫面只列出在圈的姊妹）。
+ */
+export async function keepSister(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  options: WriteOptions = {},
+): Promise<WriteResult<MareRow[], UnchangedBlock>> {
+  return runWrite(db, gameId, [db.horses, db.mares], options, async (context) => {
+    const mare = await loadMare(context, horseId)
+    if (mare.usage !== 'own') throw new Error(`只有自家母駒有接替狀態：${horseId}`)
+    const horse = await db.horses.get(horseId)
+    if (!horse) throw new Error(`找不到馬匹：${horseId}`)
+    // 父母任一方不明時 loadSisters 讀不到她自己，所以另外放進去；讀到兩次不影響結果（同一匹不算姊妹）
+    const sisters = await loadSisters(db, gameId, horse.sireId, horse.damId)
+    const changes = chooseKeptSister(horseId, [...buildOwnMares([mare], [horse]), ...sisters])
+    if (changes.length === 0) return { status: 'blocked', blocks: [{ kind: 'unchanged' }] }
+    const saved: MareRow[] = []
+    for (const change of changes) {
+      const current = await loadMare(context, change.id)
+      const next: MareRow = {
+        ...current,
+        sisterStatus: change.to,
+        ...(change.to === 'kept' ? { establishedGeneration: true } : {}),
+      }
+      await db.mares.put(next)
+      await context.addEvent({
+        kind: 'sister-status-changed',
+        horseId: change.id,
+        from: change.from,
+        to: change.to,
+        keptHorseId: horseId,
+      })
+      saved.push(next)
+    }
+    return context.done(saved)
   })
 }
