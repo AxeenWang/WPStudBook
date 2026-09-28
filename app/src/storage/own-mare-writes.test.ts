@@ -148,7 +148,7 @@ describe('transferFilly', () => {
     await addTestGame(db, { id: 'G2' })
     await db.horses.bulkAdd([
       horseRow('OTHER', { gameId: 'G2', sex: 'female', birth: {} }),
-      horseRow('MARKET', { sex: 'female', birth: {} }),
+      horseRow('MARKET', { sex: 'female' }),
     ])
     await expect(transferFilly(db, GAME, 'X')).rejects.toThrow('找不到馬匹：X')
     await expect(transferFilly(db, GAME, 'OTHER')).rejects.toThrow('找不到馬匹：OTHER')

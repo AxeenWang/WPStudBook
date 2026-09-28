@@ -1,12 +1,12 @@
 import type { Table } from 'dexie'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
 import type { LineGeneration } from '../core/lines'
+import { verifySuccessor, type SuccessorBlock, type SuccessorCandidate } from '../core/successor'
 import {
   findParentSystemConflict,
   normalizeSystemName,
   type LineSystemSnapshot,
 } from '../core/systems'
-import { verifySuccessor, type SuccessorBlock, type SuccessorCandidate } from '../core/successor'
 import type { WPStudBookDatabase } from './database'
 import type {
   EventContent,

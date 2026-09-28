@@ -14,9 +14,9 @@ import {
   type OwnMare,
   type SisterStatusChange,
 } from '../../src/core/sisters'
-import { correctHorse } from '../../src/storage/horse-writes'
 import { updateSettings } from '../../src/storage/games'
 import { correctDeparture, moveMare, returnMare, sellMare } from '../../src/storage/herd-writes'
+import { correctHorse } from '../../src/storage/horse-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare, changeMareUsage } from '../../src/storage/mare-writes'
 import { correctVigor, setMarePlan } from '../../src/storage/mare-year-writes'

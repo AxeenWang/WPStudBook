@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { DesignatedOrigin, SuccessorCandidate } from '../core/successor'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { GAME, horseRow, ungroupedMareRow } from '../../tests/support/rows'
 import { lineSystemsOf } from '../../tests/support/systems'
+import type { DesignatedOrigin, SuccessorCandidate } from '../core/successor'
 import type { WPStudBookDatabase } from './database'
 import type { GameTiming, WriteWarning } from './records'
 import {

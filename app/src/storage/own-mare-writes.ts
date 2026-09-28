@@ -49,7 +49,6 @@ export async function transferFilly(
     const horse = await loadFoal(context, horseId)
     if (horse.sex !== 'female') throw new Error(`只有牝駒可以轉入繁殖圈：${horseId}`)
     if (await db.mares.get(horseId)) throw new Error(`已經進過繁殖圈的母馬要用買回：${horseId}`)
-    if (!horse.damId) throw new Error(`不是自家產駒：${horseId}`)
     const candidate = await loadSuccessorCandidate(db, gameId, horseId)
     let group: EntryGroup
     if (candidate.origin.kind === 'free') {

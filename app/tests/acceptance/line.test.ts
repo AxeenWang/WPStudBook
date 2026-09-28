@@ -28,6 +28,7 @@ import { declareRestoration } from '../../src/storage/restoration-writes'
 import { assignZeroStallion } from '../../src/storage/stallion-writes'
 import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
+import { successorHerd } from '../support/successor'
 import {
   describePairing,
   pairingOf,
@@ -35,7 +36,6 @@ import {
   snapshotOf,
   type LineSpec,
 } from '../support/eight-line'
-import { successorHerd } from '../support/successor'
 import { GAME, lineRow, ownFoalRow, ownMareRow, stallionRow } from '../support/rows'
 import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
