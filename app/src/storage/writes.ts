@@ -1,10 +1,12 @@
 import type { Table } from 'dexie'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
+import type { LineGeneration } from '../core/lines'
 import {
   findParentSystemConflict,
   normalizeSystemName,
   type LineSystemSnapshot,
 } from '../core/systems'
+import { verifySuccessor, type SuccessorBlock, type SuccessorCandidate } from '../core/successor'
 import type { WPStudBookDatabase } from './database'
 import type {
   EventContent,
@@ -448,4 +450,32 @@ export async function resolveSire(
 /** 資料列記的種牡馬是不是這一匹：內部識別相同，或外部名稱相同 */
 export function sameSire(row: { sireId?: string; sireName?: string }, sire: SireRef): boolean {
   return 'sireId' in sire ? row.sireId === sire.sireId : row.sireName === sire.sireName
+}
+
+/** 進入母馬群或接任前的核對不符（需求規格 9.6、PED-08）；mismatches 是 core 的核對結果 */
+export interface SuccessorCheckBlock {
+  kind: 'successor'
+  mismatches: SuccessorBlock[]
+}
+
+/**
+ * 進入母馬群、指定為預定後繼或接任前，再次核對自家產駒（需求規格 9.6）：通過時回傳出生紀錄的系與代數。
+ * target 是要進入或接任的系與代數，省略時為出生紀錄本身（系與代數不由畫面選）。
+ * 自由配種所生或比照自由配種沒有出生紀錄的系與代數，一律阻止（9.5：不可成為八系後繼）
+ */
+export function checkOwnSuccessor(
+  candidate: SuccessorCandidate,
+  target?: LineGeneration,
+): Prepared<LineGeneration, SuccessorCheckBlock> {
+  const { origin } = candidate
+  if (origin.kind === 'free') {
+    // core 對自由配種所生只回傳 free-breeding，不看目標
+    return {
+      ok: false,
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'free-breeding' }] }],
+    }
+  }
+  const mismatches = verifySuccessor(candidate, target ?? origin.recorded)
+  if (mismatches.length > 0) return { ok: false, blocks: [{ kind: 'successor', mismatches }] }
+  return { ok: true, value: origin.recorded }
 }

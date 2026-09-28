@@ -23,6 +23,7 @@ import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor
 import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare } from '../../src/storage/mare-writes'
+import { transferFilly } from '../../src/storage/own-mare-writes'
 import { declareRestoration } from '../../src/storage/restoration-writes'
 import { assignZeroStallion } from '../../src/storage/stallion-writes'
 import { changeSystem } from '../../src/storage/system-writes'
@@ -34,6 +35,7 @@ import {
   snapshotOf,
   type LineSpec,
 } from '../support/eight-line'
+import { successorHerd } from '../support/successor'
 import { GAME, lineRow, ownFoalRow, ownMareRow, stallionRow } from '../support/rows'
 import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
@@ -932,5 +934,15 @@ describe('八系管理（LINE）：儲存層寫入', () => {
       groupGeneration: 12,
       source: { kind: 'market-restoration' },
     })
+  })
+
+  it('LINE-17 第一匹自家母駒以暫定保留轉入 → 該代立即成立，不必 5 匹或種牡馬就緒', async () => {
+    const db = await successorHerd()
+    const groups = async () => (await loadRuleSnapshot(db, GAME)).eightLines.lines[0]!.mareGroups
+    expect(await groups()).toEqual([])
+    expect((await transferFilly(db, GAME, 'F88')).status).toBe('done')
+    expect(await groups()).toEqual([
+      { generation: 5, established: true, activeMares: 1, ownMares: 1 },
+    ])
   })
 })

@@ -7,7 +7,9 @@ import { systemTableOf, eightLineSystems, subsystemOfLine } from '../support/sys
 import { checkPedigree, estimateVitality } from '../../src/core/vitality'
 import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
 import { buildEightLinePlan } from '../support/eight-line-plan'
+import { successorHerd } from '../support/successor'
 import { registerBreeding } from '../../src/storage/breeding-writes'
+import { transferFilly } from '../../src/storage/own-mare-writes'
 import {
   BUILD_PHASE_PEDIGREE,
   buildPhaseHerd,
@@ -477,5 +479,24 @@ describe('血統檢查（PED）：配種紀錄的寫入', () => {
       status: 'unconfirmed',
       warnings: [{ kind: 'pedigree', warnings: ['insufficient-data'] }],
     })
+  })
+})
+
+describe('血統檢查（PED）：後繼與接替的寫入', () => {
+  it('PED-08 自家母駒進入母馬群前 → 再次核對父母、系與代數，不符時阻止', async () => {
+    const db = await successorHerd()
+    await db.horses.update('F88', {
+      birth: { breedingId: 'B87', placement: { line: 1, generation: 6 } },
+    })
+    expect(await transferFilly(db, GAME, 'F88')).toEqual({
+      status: 'blocked',
+      blocks: [
+        {
+          kind: 'successor',
+          mismatches: [{ mismatch: 'placement', expected: { line: 1, generation: 5 } }],
+        },
+      ],
+    })
+    expect(await db.mares.get('F88')).toBeUndefined()
   })
 })

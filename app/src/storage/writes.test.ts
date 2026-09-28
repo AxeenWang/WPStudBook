@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import type { DesignatedOrigin, SuccessorCandidate } from '../core/successor'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { GAME, horseRow, ungroupedMareRow } from '../../tests/support/rows'
 import { lineSystemsOf } from '../../tests/support/systems'
 import type { WPStudBookDatabase } from './database'
 import type { GameTiming, WriteWarning } from './records'
 import {
+  checkOwnSuccessor,
   confirmation,
   gate,
   loadFoal,
@@ -434,5 +436,50 @@ describe('loadFoal', () => {
     await expect(read('M')).rejects.toThrow('不是自家產駒：M')
     await expect(read('F2')).rejects.toThrow('找不到馬匹：F2')
     await expect(read('X')).rejects.toThrow('找不到馬匹：X')
+  })
+})
+
+describe('checkOwnSuccessor', () => {
+  /** 第 1 系 4 代 S14 × 第 2 系 4 代自家母駒 D24 所生的第 1 系 5 代 */
+  const origin: DesignatedOrigin = {
+    kind: 'designated',
+    breedingSireId: 'S14',
+    breedingDamId: 'D24',
+    sire: { line: 1, generation: 4 },
+    dam: { kind: 'own', line: 2, generation: 4 },
+    recorded: { line: 1, generation: 5 },
+  }
+  const candidate: SuccessorCandidate = { sireId: 'S14', damId: 'D24', origin }
+
+  it('八系指定配種所生：核對通過時回傳出生紀錄的系與代數；目標省略時就是出生紀錄', () => {
+    const passed = { ok: true, value: { line: 1, generation: 5 } }
+    expect(checkOwnSuccessor(candidate)).toEqual(passed)
+    expect(checkOwnSuccessor(candidate, { line: 1, generation: 5 })).toEqual(passed)
+  })
+
+  it('目標與出生紀錄不同、父母不符時阻止，並列出 core 的核對結果', () => {
+    expect(checkOwnSuccessor(candidate, { line: 1, generation: 6 })).toEqual({
+      ok: false,
+      blocks: [
+        {
+          kind: 'successor',
+          mismatches: [{ mismatch: 'target', expected: { line: 1, generation: 5 } }],
+        },
+      ],
+    })
+    expect(checkOwnSuccessor({ ...candidate, damId: 'X' })).toEqual({
+      ok: false,
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'parents' }] }],
+    })
+  })
+
+  it('自由配種所生或比照自由配種一律阻止（9.5）', () => {
+    const free: SuccessorCandidate = { sireId: 'S14', damId: 'D24', origin: { kind: 'free' } }
+    const blocked = {
+      ok: false,
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'free-breeding' }] }],
+    }
+    expect(checkOwnSuccessor(free)).toEqual(blocked)
+    expect(checkOwnSuccessor(free, { line: 1, generation: 5 })).toEqual(blocked)
   })
 })

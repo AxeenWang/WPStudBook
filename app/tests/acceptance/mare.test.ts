@@ -14,13 +14,16 @@ import {
   type OwnMare,
   type SisterStatusChange,
 } from '../../src/core/sisters'
+import { correctHorse } from '../../src/storage/horse-writes'
 import { updateSettings } from '../../src/storage/games'
 import { correctDeparture, moveMare, returnMare, sellMare } from '../../src/storage/herd-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare, changeMareUsage } from '../../src/storage/mare-writes'
 import { correctVigor, setMarePlan } from '../../src/storage/mare-year-writes'
+import { transferFilly } from '../../src/storage/own-mare-writes'
 import type { BreedingRow, MareRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from '../support/database'
+import { successorHerd } from '../support/successor'
 import {
   GAME,
   horseRow,
@@ -469,5 +472,21 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     expect(thisYear.filter((row) => row.plan === 'resting').map((row) => row.horseId)).toEqual([
       'B',
     ])
+  })
+
+  it('MARE-07 自家產駒轉入的母馬 → 系與代數由出生紀錄決定，自身父系不能手動更正，也不能修改用途', async () => {
+    const db = await successorHerd()
+    expect((await transferFilly(db, GAME, 'F88')).status).toBe('done')
+    expect(await db.mares.get('F88')).toMatchObject({
+      usage: 'own',
+      groupLine: 1,
+      groupGeneration: 5,
+    })
+    await expect(correctHorse(db, GAME, 'F88', { sireSystem: '系3子' })).rejects.toThrow(
+      '只有手動輸入、尚未經匯入確認的市場馬可以更正',
+    )
+    await expect(
+      changeMareUsage(db, GAME, 'F88', { assignment: { kind: 'unassigned' } }),
+    ).rejects.toThrow('不能修改用途')
   })
 })
