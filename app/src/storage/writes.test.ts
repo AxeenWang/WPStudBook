@@ -14,6 +14,7 @@ import {
   prepareNewHorse,
   runWrite,
   type NewHorseInput,
+  type WriteOptions,
 } from './writes'
 
 const NOW = new Date('2026-09-26T01:02:03.000Z')
@@ -287,6 +288,29 @@ describe('runWrite 的來源與時點（技術設計 4.3）', () => {
       source,
       timing: { month: 5, week: 1 },
     })
+  })
+
+  it('寫入操作可以從上下文取得這次的來源與時點；沒有時點時不帶這個欄位', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const source = { kind: 'import' as const, importType: 'july-conception' as const }
+    const read = (options: WriteOptions) =>
+      runWrite(db, GAME, [], options, async (context) =>
+        context.done({
+          source: context.source,
+          timing: context.timing,
+          keys: Object.keys(context),
+        }),
+      )
+    const imported = await read({ source, timing: { month: 7, week: 1 } })
+    expect(imported.status === 'done' && imported.value).toMatchObject({
+      source,
+      timing: { month: 7, week: 1 },
+    })
+    const manual = await read({})
+    if (manual.status !== 'done') throw new Error(manual.status)
+    expect(manual.value.source).toEqual({ kind: 'manual' })
+    expect(manual.value.keys).not.toContain('timing')
   })
 
   it('時點不是 1～12 月、1～4 週時丟出錯誤，什麼都不寫', async () => {

@@ -4,6 +4,7 @@ import type {
   BreedingRow,
   EventRow,
   GameRow,
+  HorseNumberRow,
   HorseRow,
   LineRow,
   MareRow,
@@ -35,6 +36,7 @@ export type WPStudBookDatabase = Dexie & {
   matingRatings: EntityTable<MatingRatingRow, 'id'>
   /** 事件是各種類的聯合型別；EntityTable 的新增型別會把聯合攤平，所以用 Table */
   events: Table<EventRow, string>
+  horseNumbers: EntityTable<HorseNumberRow, 'id'>
 }
 
 /** 測試時改用 fake-indexeddb；瀏覽器裡留空，使用內建的 IndexedDB */
@@ -48,7 +50,7 @@ export interface DatabaseDependencies {
  * 結構版本：正式發布前維持 1，直接修改版本 1 的結構；第一次發布後才以版本升級變更（技術設計 4.3）。
  * 索引照需求規格 12.5；除了全域的 meta，每張表都能以 gameId 查詢。
  * 事件依對象（馬匹、系位置、系統對照表的子系統）與年份查詢；母馬年度資料依年份篩選今年計畫；
- * 總合評價與爆發力依母馬查詢（技術設計 4.3）。
+ * 總合評價與爆發力依母馬查詢；階段馬番号依馬匹查詢（技術設計 4.3）。
  */
 export function createDatabase(
   name: string = DATABASE_NAME,
@@ -70,6 +72,7 @@ export function createDatabase(
     breedings: 'id, gameId, &[gameId+mareId+year]',
     matingRatings: 'id, gameId, [gameId+mareId]',
     events: 'id, gameId, [gameId+year], [gameId+horseId], [gameId+line], [gameId+system]',
+    horseNumbers: 'id, gameId, [gameId+horseId]',
   })
   return db
 }

@@ -53,6 +53,10 @@ export interface WriteContext {
   confirmed: boolean
   /** 寫入時間（ISO 8601） */
   now: string
+  /** 這次操作的來源：手動，或哪一種匯入；事件與階段馬番号都記這個來源 */
+  source: EventSource
+  /** 這次操作的遊戲內時點；沒有時留空 */
+  timing?: GameTiming
   /** 寫一筆事件：年份為目前遊戲年，寫入時間為 now，來源與時點取自 WriteOptions */
   addEvent(content: EventContent): Promise<void>
   /** 把遊戲局的更新時間設為 now，回傳 done */
@@ -89,6 +93,8 @@ export async function runWrite<T, B>(
       game,
       confirmed: options.confirmed ?? false,
       now,
+      source,
+      ...(timing === undefined ? {} : { timing }),
       async addEvent(content) {
         await db.events.add({
           ...content,

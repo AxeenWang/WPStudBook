@@ -10,6 +10,7 @@ describe('createDatabase', () => {
       'breedings',
       'events',
       'games',
+      'horseNumbers',
       'horses',
       'lines',
       'mareYears',
@@ -56,5 +57,17 @@ describe('createDatabase', () => {
     ])
     const rows = await db.matingRatings.where('[gameId+mareId]').equals(['G', 'M']).toArray()
     expect(rows.map((row) => row.id).sort()).toEqual(['R1', 'R2'])
+  })
+
+  it('階段馬番号可以依馬匹查詢（技術設計 4.3）', async () => {
+    const db = testDatabase()
+    const row = { gameId: 'G', year: 1970, source: { kind: 'manual' as const } }
+    await db.horseNumbers.bulkAdd([
+      { ...row, id: 'N1', horseId: 'M', stage: 'foal', number: '0x0001' },
+      { ...row, id: 'N2', horseId: 'M', stage: 'broodmare', number: '0x0002' },
+      { ...row, id: 'N3', horseId: 'S', stage: 'stallion', number: '0x0003' },
+    ])
+    const rows = await db.horseNumbers.where('[gameId+horseId]').equals(['G', 'M']).toArray()
+    expect(rows.map((entry) => entry.id).sort()).toEqual(['N1', 'N2'])
   })
 })

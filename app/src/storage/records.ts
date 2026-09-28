@@ -351,6 +351,28 @@ export interface MatingRatingRow {
 /** 評價的內容：總合評價與爆發力 */
 export type MatingRatingValue = Pick<MatingRatingRow, 'grade' | 'burst'>
 
+/** 馬番号的生命階段（需求規格 6.4）：幼駒、競走馬、繁殖牝馬、種牡馬 */
+export type HorseStage = 'foal' | 'racehorse' | 'broodmare' | 'stallion'
+
+/**
+ * 一匹馬在一個生命階段取得的馬番号（需求規格 6.4）；這張表本身就是階段馬番号的歷程，不另寫事件。
+ * 同一匹馬同一階段已有相同馬番号時不再新增（技術設計 4.3）
+ */
+export interface HorseNumberRow {
+  id: string
+  gameId: string
+  horseId: string
+  stage: HorseStage
+  /** 馬番号：`0x` 加 4 位大寫十六進位（寫法同能力番号） */
+  number: string
+  /** 取得時的目前遊戲年 */
+  year: number
+  /** 來源：手動，或哪一種匯入 */
+  source: EventSource
+  /** 遊戲內的時點；手動沒有選時留空 */
+  timing?: GameTiming
+}
+
 /**
  * 更換現任的原因（需求規格 7.7）：弟弟較優、前任引退、無法供用、斷血補系、遊戲依史實引退、其他
  */
@@ -485,6 +507,14 @@ interface EventBase {
  * - foal-named：自家產駒正式馬名的填入、更正與清空（9.4）；原本沒有馬名時沒有 from，清空時沒有 to
  * - foal-disposition-changed：牧場處置（9.3）
  * - mating-rated：總合評價與爆發力（9.2）；同一組同一年第一次登記時沒有 from
+ * - mare-transferred：自家母駒轉入繁殖圈（8.4、8.9、9.6），記用途與母馬群、接替狀態與據點
+ * - sister-status-changed：選定正式保留時接替狀態的變更（8.9），狀態有變的每匹各一筆；keptHorseId 是選定的母馬
+ * - successor-designated：指定預定後繼（7.7）；尚未出生時記受胎的配種紀錄，沒有 horseId
+ * - successor-born：預定後繼的產駒出生後由使用者確認（7.7）
+ * - successor-readiness-changed：預定後繼的就緒狀態（7.7）
+ * - successor-cancelled：取消預定後繼（7.7），任用列同時刪除
+ * - stallion-appointed：自家種牡馬正式接任或更換現任（7.7）；replacedHorseIds 是同一格改為已被取代的種牡馬
+ * - foal-linked：產駒建立後重新連結出生紀錄（9.3）；牧場處置有變時記原處置與新處置
  * 母馬的事件只填對象 horseId：替代母馬不屬於她替代的系（8.3）；配種、受胎與評價的事件也是母馬的事件
  */
 export type EventRow = EventBase &
@@ -606,6 +636,67 @@ export type EventRow = EventBase &
         ratingId: string
         from?: MatingRatingValue
         to: MatingRatingValue
+      }
+    | {
+        kind: 'mare-transferred'
+        horseId: string
+        placement: MarePlacement
+        sisterStatus?: SisterStatus
+        location?: Base
+      }
+    | {
+        kind: 'sister-status-changed'
+        horseId: string
+        from: SisterStatus
+        to: SisterStatus
+        keptHorseId: string
+      }
+    | {
+        kind: 'successor-designated'
+        line: LinePosition
+        horseId?: string
+        stallionId: string
+        generation: number
+        breedingId?: string
+        readiness?: StallionReadiness
+      }
+    | {
+        kind: 'successor-born'
+        line: LinePosition
+        horseId: string
+        stallionId: string
+        breedingId: string
+      }
+    | {
+        kind: 'successor-readiness-changed'
+        line: LinePosition
+        horseId: string
+        stallionId: string
+        from: StallionReadiness
+        to: StallionReadiness
+      }
+    | {
+        kind: 'successor-cancelled'
+        line: LinePosition
+        horseId?: string
+        stallionId: string
+        generation: number
+        breedingId?: string
+      }
+    | {
+        kind: 'stallion-appointed'
+        line: LinePosition
+        horseId: string
+        stallionId: string
+        generation: number
+        reason?: StallionChangeReason
+        replacedHorseIds: string[]
+      }
+    | {
+        kind: 'foal-linked'
+        horseId: string
+        breedingId: string
+        disposition?: { from: FoalDisposition; to: FoalDisposition }
       }
   )
 
