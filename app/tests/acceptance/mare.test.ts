@@ -25,6 +25,7 @@ import {
   GAME,
   horseRow,
   lineRow,
+  ownFoalRow,
   ownMareRow,
   stallionRow,
   substituteMareRow,
@@ -118,11 +119,17 @@ describe('繁殖牝馬（MARE）', () => {
 })
 
 describe('繁殖牝馬（MARE）：儲存層彙整', () => {
-  /** 寫入母馬與她們的馬匹資料（1990 年 5 歲），回傳第 line 系的母馬群快照 */
+  /** 寫入母馬與她們的馬匹資料（1990 年 5 歲；自家母駒帶出生紀錄），回傳第 line 系的母馬群快照 */
   async function mareGroupsAfter(mares: MareRow[], line: LinePosition) {
     const db = testDatabase()
     await addTestGame(db)
-    await db.horses.bulkAdd(mares.map((mare) => horseRow(mare.horseId, { birthYear: 1985 })))
+    await db.horses.bulkAdd(
+      mares.map((mare) =>
+        mare.usage === 'own'
+          ? ownFoalRow(mare.horseId, mare.groupLine!, mare.groupGeneration!, { birthYear: 1985 })
+          : horseRow(mare.horseId, { birthYear: 1985 }),
+      ),
+    )
     await db.mares.bulkAdd(mares)
     const groups = async () =>
       (await loadRuleSnapshot(db, GAME)).eightLines.lines[line - 1]!.mareGroups
@@ -187,7 +194,7 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     await addTestGame(db)
     await db.lines.bulkAdd([lineRow(3, '系3子'), lineRow(6, '系6子')])
     await db.stallions.add(stallionRow('S66', 6, 6))
-    await db.horses.add(horseRow('F', { birthYear: 1985 }))
+    await db.horses.add(ownFoalRow('F', 3, 6, { birthYear: 1985 }))
     await db.mares.add(ownMareRow('F', 3, 6))
     const result = await addMarketMare(db, GAME, {
       horse: { fullName: '補血の母', sireSystem: 'ハイペリオン' },

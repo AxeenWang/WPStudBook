@@ -24,6 +24,16 @@ export function lineRow(
   return { gameId: GAME, line, subsystem, color: '#1f77b4', openedYear: 1968, ...fields }
 }
 
+/** 自家母駒的馬匹：出生紀錄的系與代數為第 line 系 generation 代，與 ownMareRow 的母馬群相同 */
+export function ownFoalRow(
+  id: string,
+  line: LinePosition,
+  generation: number,
+  fields: Partial<HorseRow> = {},
+): HorseRow {
+  return horseRow(id, { sex: 'female', birth: { placement: { line, generation } }, ...fields })
+}
+
 /** 自家母駒：第 line 系 generation 代，預設在圈、暫定保留並使該代成立 */
 export function ownMareRow(
   horseId: string,

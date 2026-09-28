@@ -17,6 +17,7 @@ import {
 import {
   GAME,
   horseRow,
+  ownFoalRow,
   ownMareRow,
   restorationRow,
   stallionRow,
@@ -349,7 +350,7 @@ describe('血統檢查（PED）：配種紀錄的寫入', () => {
     const db = await buildPhaseHerd()
     await db.horses.bulkAdd([
       horseRow('OLD', { sex: 'female', birthYear: 1965 }),
-      horseRow('R', { sex: 'female', birthYear: 1985 }),
+      ownFoalRow('R', 1, 1, { birthYear: 1985 }),
     ])
     await db.mares.bulkAdd([
       substituteMareRow('OLD', 2, 1),

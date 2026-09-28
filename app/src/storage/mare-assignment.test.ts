@@ -4,6 +4,7 @@ import {
   GAME,
   horseRow,
   lineRow,
+  ownFoalRow,
   ownMareRow,
   restorationRow,
   stallionRow,
@@ -130,7 +131,7 @@ describe('resolveAssignment', () => {
 
   it('循環任務為市場補血；配對的母馬群已宣告補母系時為市場補系，已撤銷、別代、別系或補公系的宣告不算', async () => {
     const db = await cycleThirteen()
-    await db.horses.add(horseRow('F', { birthYear: 1985 }))
+    await db.horses.add(ownFoalRow('F', 5, 12, { birthYear: 1985 }))
     await db.mares.add(ownMareRow('F', 5, 12))
     const sourceOf = async () => {
       const resolved = resolveAssignment(await rowsOf(db), pairing(1, 13), {}, undefined)

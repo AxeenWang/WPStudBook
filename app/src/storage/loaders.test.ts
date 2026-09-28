@@ -4,6 +4,7 @@ import {
   GAME,
   horseRow,
   lineRow,
+  ownFoalRow,
   ownMareRow,
   restorationRow,
   stallionRow,
@@ -34,7 +35,7 @@ describe('loadRuleSnapshot', () => {
       stallionRow('Z2', 2, 0, { status: 'retired' }),
     ])
     await db.horses.bulkAdd([
-      horseRow('M1', { birthYear: 1985 }),
+      ownFoalRow('M1', 1, 1, { birthYear: 1985 }),
       horseRow('M2', { birthYear: 1987 }),
     ])
     await db.mares.bulkAdd([ownMareRow('M1', 1, 1), substituteMareRow('M2', 2, 1)])
@@ -71,7 +72,7 @@ describe('loadRuleSnapshot', () => {
   it('馬齡以目前遊戲年計算，定年取這一局的設定', async () => {
     const db = testDatabase()
     await addTestGame(db, { currentYear: 1990 })
-    await db.horses.add(horseRow('M1', { birthYear: 1965 }))
+    await db.horses.add(ownFoalRow('M1', 1, 1, { birthYear: 1965 }))
     await db.mares.add(ownMareRow('M1', 1, 1))
     const activeMares = async () =>
       (await loadRuleSnapshot(db, GAME)).eightLines.lines[0]!.mareGroups[0]!.activeMares

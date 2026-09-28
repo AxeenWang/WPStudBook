@@ -92,7 +92,8 @@ export interface EightLineRows {
 /**
  * 規則輸入快照（技術設計 4.2「規則輸入快照」、4.3「規則輸入快照的彙整」）。
  * year 是目前遊戲年，用來算馬齡；settings 是這一局的母馬年齡設定。
- * 有分群的在圈母馬找不到馬匹資料、自家母駒缺少接替狀態、同一格有兩匹以上在崗的種牡馬時丟出錯誤。
+ * 有分群的在圈母馬或在圈的自由配種所生找不到馬匹資料、在圈的自家母駒或自由配種所生與出生紀錄不一致、
+ * 自家母駒缺少接替狀態、同一格有兩匹以上在崗的種牡馬時丟出錯誤。
  */
 export function buildEightLineSnapshot(
   rows: EightLineRows,
@@ -100,6 +101,7 @@ export function buildEightLineSnapshot(
   settings: MareAgeSettings,
 ): EightLineSnapshot {
   const horses = new Map(rows.horses.map((horse) => [horse.id, horse]))
+  for (const mare of rows.mares) assertBirthPlacement(mare, horses)
   const groups = groupMares(rows.mares)
   const isListed = (mare: MareRow) => mareListed(mare, horses, year, settings)
   return {
@@ -182,6 +184,27 @@ export function mareListed(
 /** 接替狀態：自家母駒才有，市場母馬留空 */
 function sisterStatusOf(mare: MareRow): SisterStatus | undefined {
   return mare.usage === 'own' ? ownSisterStatus(mare) : undefined
+}
+
+/**
+ * 在圈的自家母駒，母馬群的系與代數要等於出生紀錄的系與代數；在圈的自由配種所生要有出生紀錄，
+ * 而且沒有系與代數（技術設計 4.3「自家母駒與出生紀錄的一致性」）。不符時丟出 RangeError。
+ * 其他用途與不在圈的母馬不查；在圈的找不到馬匹資料時丟出錯誤
+ */
+function assertBirthPlacement(mare: MareRow, horses: ReadonlyMap<string, HorseRow>): void {
+  if (mare.herd !== 'in-herd' || (mare.usage !== 'own' && mare.usage !== 'free')) return
+  const horse = horses.get(mare.horseId)
+  if (!horse) throw new Error(`找不到母馬的馬匹資料：${mare.horseId}`)
+  const placement = horse.birth?.placement
+  const consistent =
+    mare.usage === 'own'
+      ? placement !== undefined &&
+        placement.line === mare.groupLine &&
+        placement.generation === mare.groupGeneration
+      : horse.birth !== undefined && placement === undefined
+  if (!consistent) {
+    throw new RangeError(`母馬的用途與出生紀錄的系與代數不一致：${mare.horseId}`)
+  }
 }
 
 /** 自家母駒的接替狀態（需求規格 8.9）；沒有接替狀態時丟出 RangeError */

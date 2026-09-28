@@ -4,6 +4,7 @@ import {
   GAME,
   horseRow,
   lineRow,
+  ownFoalRow,
   ownMareRow,
   restorationRow,
   stallionRow,
@@ -100,7 +101,9 @@ describe('declareRestoration', () => {
       const db = testDatabase()
       await addTestGame(db)
       await db.lines.add(lineRow(5, 'ハイペリオン'))
-      await db.horses.add(horseRow('M', { birthYear: 1985 }))
+      await db.horses.add(
+        own ? ownFoalRow('M', 5, 12, { birthYear: 1985 }) : horseRow('M', { birthYear: 1985 }),
+      )
       await db.mares.add(own ? ownMareRow('M', 5, 12) : substituteMareRow('M', 5, 12))
       return db
     }

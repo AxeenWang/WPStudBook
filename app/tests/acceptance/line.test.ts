@@ -34,7 +34,7 @@ import {
   snapshotOf,
   type LineSpec,
 } from '../support/eight-line'
-import { GAME, horseRow, lineRow, ownMareRow, stallionRow } from '../support/rows'
+import { GAME, lineRow, ownFoalRow, ownMareRow, stallionRow } from '../support/rows'
 import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
 // 需求規格第 15 章「八系管理（LINE）」中由 core 與儲存層（彙整與寫入）負責的部分；畫面、匯入與其他寫入由後續計畫補上
@@ -632,7 +632,7 @@ describe('八系管理（LINE）：儲存層彙整', () => {
     await addTestGame(db)
     await db.lines.bulkAdd([lineRow(1, subsystemOfLine(1)), lineRow(3, subsystemOfLine(3))])
     await db.stallions.add(stallionRow('S15', 1, 5))
-    await db.horses.add(horseRow('F1', { birthYear: 1987 }))
+    await db.horses.add(ownFoalRow('F1', 3, 5, { birthYear: 1987 }))
     await db.mares.add(ownMareRow('F1', 3, 5))
 
     const { eightLines } = await loadRuleSnapshot(db, GAME)
@@ -798,7 +798,7 @@ describe('八系管理（LINE）：儲存層寫入', () => {
       '第 1 系 12 代 × 第 5 系 12 代母馬群 → 第 1 系 13 代',
     )
 
-    await db.horses.add(horseRow('F', { birthYear: 1987 }))
+    await db.horses.add(ownFoalRow('F', 5, 11, { birthYear: 1987 }))
     await db.mares.add(ownMareRow('F', 5, 11))
     expect(await declareRestoration(db, GAME, { ...input, generation: 11 })).toEqual({
       status: 'blocked',
@@ -858,7 +858,7 @@ describe('八系管理（LINE）：儲存層寫入', () => {
       { gameId: GAME, subsystem: 'ハイペリオン', parentSystem: 'ハイペリオン' },
     ])
     await db.stallions.add(stallionRow('S14', 1, 4))
-    await db.horses.add(horseRow('F', { birthYear: 1985 }))
+    await db.horses.add(ownFoalRow('F', 2, 4, { birthYear: 1985 }))
     await db.mares.add(ownMareRow('F', 2, 4))
     const substitute = (fullName: string, sireSystem: string) => ({
       horse: { fullName, sireSystem },

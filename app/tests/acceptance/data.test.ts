@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createGame, loadGame, loadSettings, setCurrentYear } from '../../src/storage/games'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addTestGame, testDatabase } from '../support/database'
-import { GAME, horseRow, lineRow, ownMareRow } from '../support/rows'
+import { GAME, lineRow, ownFoalRow, ownMareRow } from '../support/rows'
 
 // 需求規格第 15 章「資料保存（DATA）」中由儲存層負責的部分；備份、封存與危險區由後續計畫補上
 
@@ -13,7 +13,7 @@ describe('資料保存（DATA）', () => {
       await addTestGame(db, { id: gameId })
       await db.lines.add(lineRow(1, 'マンノウォー', { gameId }))
       await db.horses.add(
-        horseRow(`${gameId}-M`, {
+        ownFoalRow(`${gameId}-M`, 1, 1, {
           gameId,
           baseName: '同名の馬',
           birthYear: 1985,
