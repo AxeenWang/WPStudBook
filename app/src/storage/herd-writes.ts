@@ -19,6 +19,7 @@ import {
   confirmation,
   gate,
   loadMare,
+  loadMareInHerd,
   runWrite,
   type UnchangedBlock,
   type WriteContext,
@@ -46,8 +47,7 @@ export async function sellMare(
   options: WriteOptions = {},
 ): Promise<WriteResult<MareRow, SellBlock>> {
   return runWrite(db, gameId, [db.mares, db.horses, db.settings], options, async (context) => {
-    const current = await loadMare(context, horseId)
-    if (current.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能賣出：${horseId}`)
+    const current = await loadMareInHerd(context, horseId, '不能賣出')
     const horse = await db.horses.get(horseId)
     if (!horse) throw new Error(`找不到馬匹：${horseId}`)
     const { retirementAge } = await loadSettings(db, gameId)
@@ -253,8 +253,7 @@ export async function moveMare(
 ): Promise<WriteResult<MareRow, UnchangedBlock>> {
   assertBase(location)
   return runWrite(db, gameId, [db.mares], options, async (context) => {
-    const current = await loadMare(context, horseId)
-    if (current.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能轉場：${horseId}`)
+    const current = await loadMareInHerd(context, horseId, '不能轉場')
     const change = locationChange(current.location, location)
     if (!change) return { status: 'blocked', blocks: [{ kind: 'unchanged' }] }
     const mare: MareRow = { ...current, location }

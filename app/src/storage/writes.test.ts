@@ -7,7 +7,9 @@ import type { GameTiming, WriteWarning } from './records'
 import {
   confirmation,
   gate,
+  loadFoal,
   loadMare,
+  loadMareInHerd,
   parentDuplicateWarnings,
   prepareNewHorse,
   runWrite,
@@ -365,5 +367,48 @@ describe('loadMare', () => {
     expect(found.status === 'done' && found.value.horseId).toBe('M')
     await expect(read('M2')).rejects.toThrow('找不到母馬：M2')
     await expect(read('X')).rejects.toThrow('找不到母馬：X')
+  })
+})
+
+describe('loadMareInHerd', () => {
+  it('在寫入交易內讀取這一局在圈的母馬；不在圈內時丟出錯誤，訊息接上呼叫端的原因', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.mares.bulkAdd([
+      ungroupedMareRow('M', 'unassigned'),
+      ungroupedMareRow('S', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('R', 'unassigned', { herd: 'retired' }),
+    ])
+    const read = (horseId: string) =>
+      runWrite(db, GAME, [db.mares], {}, async (context) =>
+        context.done(await loadMareInHerd(context, horseId, '不能賣出')),
+      )
+    const found = await read('M')
+    expect(found.status === 'done' && found.value.horseId).toBe('M')
+    await expect(read('S')).rejects.toThrow('不在繁殖圈內的母馬不能賣出：S')
+    await expect(read('R')).rejects.toThrow('不在繁殖圈內的母馬不能賣出：R')
+    await expect(read('X')).rejects.toThrow('找不到母馬：X')
+  })
+})
+
+describe('loadFoal', () => {
+  it('在寫入交易內讀取這一局的自家產駒；找不到、屬於其他局或沒有出生紀錄時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('F', { birth: {} }),
+      horseRow('M'),
+      horseRow('F2', { gameId: 'G2', birth: {} }),
+    ])
+    const read = (horseId: string) =>
+      runWrite(db, GAME, [db.horses], {}, async (context) =>
+        context.done(await loadFoal(context, horseId)),
+      )
+    const found = await read('F')
+    expect(found.status === 'done' && found.value.id).toBe('F')
+    await expect(read('M')).rejects.toThrow('不是自家產駒：M')
+    await expect(read('F2')).rejects.toThrow('找不到馬匹：F2')
+    await expect(read('X')).rejects.toThrow('找不到馬匹：X')
   })
 })

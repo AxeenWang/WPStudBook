@@ -2,6 +2,7 @@ import type { WPStudBookDatabase } from './database'
 import type { MarePlan, MareYearRow, Vigor, VigorMonth } from './records'
 import {
   loadMare,
+  loadMareInHerd,
   runWrite,
   type UnchangedBlock,
   type WriteContext,
@@ -24,8 +25,7 @@ export async function setMarePlan(
   options: WriteOptions = {},
 ): Promise<WriteResult<MareYearRow, UnchangedBlock>> {
   return runWrite(db, gameId, [db.mares, db.mareYears], options, async (context) => {
-    const mare = await loadMare(context, horseId)
-    if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬沒有今年計畫：${horseId}`)
+    await loadMareInHerd(context, horseId, '沒有今年計畫')
     const current = await loadYear(context, horseId, context.game.currentYear)
     if ((current.plan ?? 'pending') === plan) {
       return { status: 'blocked', blocks: [{ kind: 'unchanged' }] }

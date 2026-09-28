@@ -318,6 +318,37 @@ export async function loadMare(context: WriteContext, horseId: string): Promise<
   return mare
 }
 
+/**
+ * 在寫入交易內讀取這一局在圈的母馬；找不到、屬於其他局或不在圈內時丟出錯誤。
+ * reason 接在錯誤訊息「不在繁殖圈內的母馬」之後，例如「不能賣出」。交易要包含 mares
+ */
+export async function loadMareInHerd(
+  context: WriteContext,
+  horseId: string,
+  reason: string,
+): Promise<MareRow> {
+  const mare = await loadMare(context, horseId)
+  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬${reason}：${horseId}`)
+  return mare
+}
+
+/**
+ * 在寫入交易內讀取這一局的自家產駒（有出生紀錄）；找不到、屬於其他局或不是自家產駒時丟出錯誤。
+ * 交易要包含 horses
+ */
+export async function loadFoal(context: WriteContext, horseId: string): Promise<HorseRow> {
+  const horse = await context.db.horses.get(horseId)
+  if (!horse || horse.gameId !== context.game.id) throw new Error(`找不到馬匹：${horseId}`)
+  if (horse.birth === undefined) throw new Error(`不是自家產駒：${horseId}`)
+  return horse
+}
+
+/** 已有產駒的出生紀錄連到這筆配種紀錄（需求規格 9.1、BRD-25）；horseId 是那匹產駒 */
+export interface FoalExistsBlock {
+  kind: 'foal-exists'
+  horseId: string
+}
+
 /** 由資料列組出八系目前的系統（技術設計 4.3「規則輸入快照的彙整」的系統） */
 export function lineSystemsFromRows(
   lines: readonly LineRow[],

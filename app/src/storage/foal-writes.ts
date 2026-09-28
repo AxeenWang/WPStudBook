@@ -1,7 +1,6 @@
 import { checkSubAbilityTotal, isSubAbilityGrade } from '../core/foal'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
 import { normalizeSystemName } from '../core/systems'
-import type { FoalExistsBlock } from './breeding-writes'
 import type { WPStudBookDatabase } from './database'
 import type {
   FoalDisposition,
@@ -15,16 +14,17 @@ import {
   confirmation,
   findSameHorse,
   gate,
+  loadFoal,
   loadMare,
   resolveSire,
   runWrite,
   sameSire,
+  type FoalExistsBlock,
   type Prepared,
   type SireInput,
   type SireNameBlock,
   type SireRef,
   type UnchangedBlock,
-  type WriteContext,
   type WriteOptions,
   type WriteResult,
 } from './writes'
@@ -281,14 +281,6 @@ export async function setFoalDisposition(
     await context.addEvent({ kind: 'foal-disposition-changed', horseId, from, to: disposition })
     return context.done(foal)
   })
-}
-
-/** 這一局的自家產駒（有出生紀錄）；找不到、屬於其他局或不是自家產駒時丟出錯誤 */
-async function loadFoal(context: WriteContext, horseId: string): Promise<HorseRow> {
-  const horse = await context.db.horses.get(horseId)
-  if (!horse || horse.gameId !== context.game.id) throw new Error(`找不到馬匹：${horseId}`)
-  if (horse.birth === undefined) throw new Error(`不是自家產駒：${horseId}`)
-  return horse
 }
 
 /** 連結的配種紀錄記的父馬：內部識別或外部名稱 */

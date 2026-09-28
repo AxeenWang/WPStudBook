@@ -21,9 +21,10 @@ import { damRoleOf, mareListed } from './snapshot'
 import {
   confirmation,
   gate,
-  loadMare,
+  loadMareInHerd,
   resolveSire,
   runWrite,
+  type FoalExistsBlock,
   type Prepared,
   type SireInput,
   type SireNameBlock,
@@ -71,12 +72,6 @@ export type BreedingCheckBlock =
   | { kind: 'sire-not-active' }
   | { kind: 'reason-required' }
   | SireNameBlock
-
-/** 已有產駒的出生紀錄連到這筆配種紀錄（需求規格 9.1、BRD-25）；horseId 是那匹產駒 */
-export interface FoalExistsBlock {
-  kind: 'foal-exists'
-  horseId: string
-}
 
 /** 登記配種的阻止原因：內容不符，或這匹母馬今年已有配種紀錄（改用更正），breedingId 是那一筆 */
 export type RegisterBreedingBlock =
@@ -131,7 +126,7 @@ export async function registerBreeding(
   options: WriteOptions = {},
 ): Promise<WriteResult<SavedBreeding, RegisterBreedingBlock>> {
   return runWrite(db, gameId, breedingTables(db), options, async (context) => {
-    const mare = await mareInHerd(context, mareId, '登記配種')
+    const mare = await loadMareInHerd(context, mareId, '不能登記配種')
     const year = context.game.currentYear
     const existing = await db.breedings
       .where('[gameId+mareId+year]')
@@ -184,7 +179,7 @@ export async function correctBreeding(
     if (current.year !== context.game.currentYear) {
       return { status: 'blocked', blocks: [{ kind: 'past-year' }] }
     }
-    const mare = await mareInHerd(context, current.mareId, '更正配種')
+    const mare = await loadMareInHerd(context, current.mareId, '不能更正配種')
     const blocks: CorrectBreedingBlock[] = []
     const foal = await linkedFoal(context, current)
     if (foal) blocks.push({ kind: 'foal-exists', horseId: foal.id })
@@ -412,17 +407,6 @@ function sirePlacement(stallions: readonly StallionRow[], horseId: string): Line
   const posts = stallions.filter((row) => row.horseId === horseId)
   const post = posts.find((row) => row.status === 'active') ?? posts[0]
   return post ? { line: post.line, generation: post.generation } : null
-}
-
-/** 在圈的母馬；找不到、屬於其他局或不在圈內時丟出錯誤，action 是錯誤訊息裡的操作 */
-async function mareInHerd(
-  context: WriteContext,
-  mareId: string,
-  action: '登記配種' | '更正配種',
-): Promise<MareRow> {
-  const mare = await loadMare(context, mareId)
-  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能${action}：${mareId}`)
-  return mare
 }
 
 /** 這一局的配種紀錄；找不到或屬於其他局時丟出錯誤 */
