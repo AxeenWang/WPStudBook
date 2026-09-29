@@ -173,7 +173,7 @@ describe('setCurrentYear', () => {
 
   it('應用版本改為目前版本', async () => {
     const db = testDatabase()
-    await addTestGame(db, { appVersion: '0.0.1' })
+    await addTestGame(db, { appVersion: '0.0.0-old' })
     const result = await setCurrentYear(db, GAME, 1995, { now })
     if (result.status !== 'done') throw new Error(result.status)
     expect(result.value.appVersion).toBe(APP_VERSION)
@@ -315,7 +315,7 @@ describe('updateSettings', () => {
 describe('recordBackup', () => {
   it('最近備份時間設為匯出時間，不改更新時間與應用版本（需求規格 12.2）', async () => {
     const db = testDatabase()
-    const game = await addTestGame(db, { appVersion: '0.0.1' })
+    const game = await addTestGame(db, { appVersion: '0.0.0-old' })
     const expected = { ...game, lastBackupAt: '2026-09-29T01:02:03.000Z' }
     expect(await recordBackup(db, GAME, '2026-09-29T01:02:03.000Z')).toEqual(expected)
     expect(await loadGame(db, GAME)).toEqual(expected)

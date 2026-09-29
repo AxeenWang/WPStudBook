@@ -5,6 +5,7 @@ import { addSampleGame } from '../../tests/support/game-data'
 import { GAME } from '../../tests/support/rows'
 import {
   BACKUP_FORMAT,
+  PRIMARY_KEYS,
   backupFileName,
   exportBackup,
   readBackup,
@@ -15,7 +16,7 @@ import {
   type ReadBackupOptions,
 } from './backup'
 import { SCHEMA_VERSION } from './database'
-import { countRows, readGameData } from './game-data'
+import { GAME_TABLES, countRows, readGameData } from './game-data'
 import { currentGameId, listGames, loadGame, setCurrentGame } from './games'
 import { APP_VERSION } from './version'
 
@@ -114,6 +115,14 @@ describe('backupFileName', () => {
     const name = ['a', '/', 'b', ':', '*', '?', '"', '<', '>', '|', String.fromCharCode(92, 9), 'c']
     expect(backupFileName(name.join(''), 1970, at, true)).toBe(
       'WPStudBook_a_b_________c_1970年_20261231-235958.json.gz',
+    )
+  })
+
+  it('局名超過 60 字時只取前 60 字，不拆開代理對', () => {
+    const at = new Date(2026, 8, 29, 1, 2, 3)
+    const name = '馬'.repeat(59) + '🐎🐎'
+    expect(backupFileName(name, 1990, at, true)).toBe(
+      `WPStudBook_${'馬'.repeat(59)}🐎_1990年_20260929-010203.json.gz`,
     )
   })
 })
@@ -223,6 +232,13 @@ describe('readBackup', () => {
     const unsigned: Record<string, unknown> = { ...file }
     delete unsigned.sha256
     expect(await rejection(encode(unsigned))).toEqual({ kind: 'hash' })
+  })
+
+  it('雜湊的重算失敗時也回傳雜湊不符，不丟例外：極深的巢狀', async () => {
+    const depth = 100000
+    const nested = '['.repeat(depth) + ']'.repeat(depth)
+    const text = `{"format":"${BACKUP_FORMAT}","schemaVersion":1,"x":${nested}}`
+    expect(await rejection(new TextEncoder().encode(text))).toEqual({ kind: 'hash' })
   })
 
   it('較舊的結構版本逐版遷移，預覽保留檔案原本的版本（DATA-05）', async () => {
@@ -336,6 +352,22 @@ describe('readBackup：集合的內容', () => {
     }
   })
 
+  it('games 那一列儲存層會取用的欄位型別不對時拒絕：局名、建立與更新時間、起始年與目前遊戲年', async () => {
+    const cases: [(file: BackupFile) => void, string][] = [
+      [(file) => (loose(file.collections.games[0]!).name = 123), 'name'],
+      [(file) => delete loose(file.collections.games[0]!).createdAt, 'createdAt'],
+      [(file) => (loose(file.collections.games[0]!).updatedAt = null), 'updatedAt'],
+      [(file) => (loose(file.collections.games[0]!).startYear = '1968'), 'startYear'],
+      [(file) => (file.collections.games[0]!.currentYear = 1990.5), 'currentYear'],
+    ]
+    for (const [change, field] of cases) {
+      expect(await rejectionOf(change)).toEqual({
+        kind: 'field',
+        path: `collections.games[0].${field}`,
+      })
+    }
+  })
+
   it('同一集合的主鍵重複，或 id 跨集合重複時拒絕（DATA-04）', async () => {
     expect(
       await rejectionOf((file) => file.collections.horses.push({ ...file.collections.horses[0]! })),
@@ -441,6 +473,18 @@ describe('readBackup：集合的內容', () => {
       collection: 'games',
     })
   })
+
+  it('筆數多出的鍵是繼承的屬性名稱（例如 constructor）時也拒絕', async () => {
+    for (const [key, value] of [
+      ['constructor', 1],
+      ['toString', 0],
+    ] as const) {
+      expect(await rejectionOf((file) => (loose(file.counts)[key] = value))).toEqual({
+        kind: 'count',
+        collection: key,
+      })
+    }
+  })
 })
 
 describe('restoreBackup', () => {
@@ -455,9 +499,11 @@ describe('restoreBackup', () => {
   }
 
   it('還原成新遊戲局：原局還在也不相撞，識別全部重新產生，筆數相同（需求規格 12.2）', async () => {
-    const { db, bytes } = await sampleBackup({ name: '第一局', appVersion: '0.0.1' })
+    const { db, file } = await sampleBackup({ name: '第一局', appVersion: '0.0.0-old' })
     const original = await readGameData(db, GAME)
-    const game = await restoreBackup(db, await verified(bytes), {
+    // 檔頭的應用版本與遊戲局那一列、目前版本都不同，才分得出還原來源記的是檔頭的版本
+    const exported = await signedBytes({ ...file, appVersion: '0.0.0-exported' })
+    const game = await restoreBackup(db, await verified(exported), {
       fileName: 'WPStudBook_第一局.json.gz',
       now: RESTORED_AT,
     })
@@ -471,7 +517,7 @@ describe('restoreBackup', () => {
         fileName: 'WPStudBook_第一局.json.gz',
         exportedAt: '2026-09-29T01:02:03.000Z',
         gameName: '第一局',
-        appVersion: APP_VERSION,
+        appVersion: '0.0.0-exported',
         schemaVersion: SCHEMA_VERSION,
       },
     })
@@ -553,5 +599,15 @@ describe('restoreBackup', () => {
     await expect(restoreBackup(db, broken, { fileName: 'b.json.gz' })).rejects.toThrow()
     expect(await db.games.count()).toBe(1)
     expect(await db.settings.count()).toBe(1)
+  })
+})
+
+describe('PRIMARY_KEYS', () => {
+  it('與資料庫的主鍵相同（database.ts）：加表或改主鍵時要一起改', () => {
+    const db = testDatabase()
+    for (const name of GAME_TABLES) {
+      const keyPath = db.table(name).schema.primKey.keyPath
+      expect([keyPath].flat(), name).toEqual(PRIMARY_KEYS[name].map(([field]) => field))
+    }
   })
 })

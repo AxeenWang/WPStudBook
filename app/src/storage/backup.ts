@@ -110,12 +110,16 @@ export async function exportBackup(
   }
 }
 
+/** 檔名裡的局名最多取幾個字 */
+const MAX_NAME_CHARS = 60
+
 /** Windows 檔名不允許的字元（另外還有控制字元） */
 const UNSAFE_FILE_CHARS = '\\/:*?"<>|'
 
 /**
  * 備份檔名（技術設計 4.3）：WPStudBook_<局名>_<目前遊戲年>年_<YYYYMMDD-HHmmss>，加 .json.gz 或 .json；
- * 時間用本機時間，局名裡 Windows 檔名不允許的字元與控制字元換成 _
+ * 時間用本機時間，局名裡 Windows 檔名不允許的字元與控制字元換成 _；
+ * 局名超過 60 字時只取前 60 字（依字元，不拆開代理對）
  */
 export function backupFileName(
   gameName: string,
@@ -128,7 +132,9 @@ export function backupFileName(
   const time = `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`
   const name = Array.from(gameName, (char) =>
     char < ' ' || UNSAFE_FILE_CHARS.includes(char) ? '_' : char,
-  ).join('')
+  )
+    .slice(0, MAX_NAME_CHARS)
+    .join('')
   return `WPStudBook_${name}_${currentYear}年_${date}-${time}${compressed ? '.json.gz' : '.json'}`
 }
 
@@ -245,7 +251,14 @@ export async function readBackup(
   }
   if (version > currentVersion) return reject({ kind: 'future-version', version })
   const { sha256, ...body } = parsed
-  if (sha256 !== (await sha256Hex(JSON.stringify(body)))) return reject({ kind: 'hash' })
+  let text: string
+  try {
+    text = JSON.stringify(body)
+  } catch {
+    // 例如極深的巢狀：JSON.parse 讀得進來，JSON.stringify 卻會丟 RangeError
+    return reject({ kind: 'hash' })
+  }
+  if (sha256 !== (await sha256Hex(text))) return reject({ kind: 'hash' })
   let file = parsed as unknown as BackupFile
   for (let from = version; from < currentVersion; from++) {
     const migrate = migrations[from]
@@ -257,8 +270,11 @@ export async function readBackup(
   return { status: 'ok', backup: { file, preview: previewOf(file, version) } }
 }
 
-/** 各表的主鍵欄位與型別，與資料庫的結構相同（database.ts） */
-const PRIMARY_KEYS: Record<GameTableName, readonly (readonly [string, 'string' | 'number'])[]> = {
+/** 各表的主鍵欄位與型別，與資料庫的結構相同（database.ts，測試會對照） */
+export const PRIMARY_KEYS: Record<
+  GameTableName,
+  readonly (readonly [string, 'string' | 'number'])[]
+> = {
   games: [['id', 'string']],
   settings: [['gameId', 'string']],
   horses: [['id', 'string']],
@@ -338,6 +354,17 @@ function checkCollections(file: BackupFile): BackupRejection | undefined {
       }
     }
   }
+  // games 那一列另外驗證儲存層會取用的欄位
+  for (const field of ['name', 'createdAt', 'updatedAt']) {
+    if (typeof game[field] !== 'string') {
+      return { kind: 'field', path: `collections.games[0].${field}` }
+    }
+  }
+  for (const field of ['startYear', 'currentYear']) {
+    if (!Number.isInteger(game[field])) {
+      return { kind: 'field', path: `collections.games[0].${field}` }
+    }
+  }
   const summary: unknown = file.game
   const fields = ['id', 'name', 'startYear', 'currentYear'] as const
   if (!isObject(summary) || fields.some((field) => summary[field] !== game[field])) {
@@ -370,11 +397,12 @@ function checkCollections(file: BackupFile): BackupRejection | undefined {
       }
     }
   }
-  // 筆數：counts 的鍵與各集合的筆數相符
+  // 筆數：counts 的鍵與各集合的筆數相符；只看集合自己的鍵，不讀到繼承的屬性（例如 constructor）
   const counts: unknown = file.counts
   const declared = isObject(counts) ? counts : {}
   for (const name of new Set([...GAME_TABLES, ...Object.keys(declared)])) {
-    if (declared[name] !== (tables as Record<string, unknown[]>)[name]?.length) {
+    const actual = Object.hasOwn(tables, name) ? tables[name as GameTableName].length : undefined
+    if (declared[name] !== actual) {
       return { kind: 'count', collection: name }
     }
   }

@@ -75,7 +75,7 @@ describe('runWrite', () => {
 
   it('done 同時把遊戲局的應用版本設為目前版本（需求規格 12.1）', async () => {
     const db = testDatabase()
-    await addTestGame(db, { appVersion: '0.0.1' })
+    await addTestGame(db, { appVersion: '0.0.0-old' })
     await writeEvent(db)
     expect((await db.games.get(GAME))?.appVersion).toBe(APP_VERSION)
   })
