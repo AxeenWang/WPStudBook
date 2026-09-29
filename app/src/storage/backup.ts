@@ -1,13 +1,16 @@
 import { SCHEMA_VERSION, type WPStudBookDatabase } from './database'
 import {
   GAME_TABLES,
+  addGameData,
   countRows,
   readGameData,
+  remapIds,
   totalRows,
   type GameData,
   type GameTableName,
   type RowCounts,
 } from './game-data'
+import type { GameRow } from './records'
 import { APP_VERSION } from './version'
 
 // 備份檔的編碼、解碼與驗證（需求規格 12.2、技術設計 4.3「備份與還原」）
@@ -401,4 +404,49 @@ async function gunzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayB
 /** 是不是 null 以外的物件；陣列也算，缺少的欄位由之後的檢查擋下 */
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+export interface RestoreOptions {
+  /** 備份檔名，記在還原來源 */
+  fileName: string
+  /** 新局的局名；省略時用備份的局名 */
+  name?: string
+  /** 還原的時間；省略時為現在 */
+  now?: Date
+  /** 每張表寫完後收到已寫筆數與總筆數（需求規格 12.2「大型檔案顯示進度」） */
+  onProgress?: (written: number, total: number) => void
+}
+
+/**
+ * 把驗證過的備份還原成新遊戲局（需求規格 12.2）：在一個 rw 交易內寫入全部資料表，失敗時整筆回復。
+ * 識別全部重新產生（remapIds），原局還在也不相撞。新局的局名用 name（去除前後空白），省略時用備份的局名，
+ * 可以與既有的局重複；建立時間為還原的時間，更新時間沿用備份的；應用版本為目前版本；
+ * 最近備份時間為備份的匯出時間（內容與備份檔相同）；還原來源記檔名、匯出時間、原局名、
+ * 備份的應用版本與檔案原本的結構版本（DATA-05）。不切換目前遊戲局。局名空白時丟出 RangeError，什麼都不寫
+ */
+export async function restoreBackup(
+  db: WPStudBookDatabase,
+  backup: VerifiedBackup,
+  options: RestoreOptions,
+): Promise<GameRow> {
+  const { file, preview } = backup
+  const name = (options.name ?? file.game.name).trim()
+  if (name === '') throw new RangeError('局名不能空白')
+  const data = remapIds(file.collections)
+  const game: GameRow = {
+    ...data.games[0]!,
+    name,
+    createdAt: (options.now ?? new Date()).toISOString(),
+    appVersion: APP_VERSION,
+    lastBackupAt: file.exportedAt,
+    restoredFrom: {
+      fileName: options.fileName,
+      exportedAt: file.exportedAt,
+      gameName: file.game.name,
+      appVersion: file.appVersion,
+      schemaVersion: preview.schemaVersion,
+    },
+  }
+  await addGameData(db, { ...data, games: [game] }, options.onProgress)
+  return game
 }

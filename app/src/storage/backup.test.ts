@@ -8,13 +8,15 @@ import {
   backupFileName,
   exportBackup,
   readBackup,
+  restoreBackup,
   sha256Hex,
   type BackupFile,
   type BackupReadStep,
+  type ReadBackupOptions,
 } from './backup'
 import { SCHEMA_VERSION } from './database'
-import { countRows } from './game-data'
-import { loadGame } from './games'
+import { countRows, readGameData } from './game-data'
+import { currentGameId, listGames, loadGame, setCurrentGame } from './games'
 import { APP_VERSION } from './version'
 
 /** 匯出時間：2026-09-29 01:02:03（UTC） */
@@ -438,5 +440,118 @@ describe('readBackup：集合的內容', () => {
       kind: 'count',
       collection: 'games',
     })
+  })
+})
+
+describe('restoreBackup', () => {
+  /** 還原的時間 */
+  const RESTORED_AT = new Date('2026-09-30T04:05:06.000Z')
+
+  /** 測試用：讀取備份，通過時回傳驗證過的備份 */
+  async function verified(bytes: Uint8Array<ArrayBuffer>, options: ReadBackupOptions = {}) {
+    const result = await readBackup(bytes, options)
+    if (result.status !== 'ok') throw new Error(JSON.stringify(result.reason))
+    return result.backup
+  }
+
+  it('還原成新遊戲局：原局還在也不相撞，識別全部重新產生，筆數相同（需求規格 12.2）', async () => {
+    const { db, bytes } = await sampleBackup({ name: '第一局', appVersion: '0.0.1' })
+    const original = await readGameData(db, GAME)
+    const game = await restoreBackup(db, await verified(bytes), {
+      fileName: 'WPStudBook_第一局.json.gz',
+      now: RESTORED_AT,
+    })
+    expect(game).toStrictEqual({
+      ...original.games[0]!,
+      id: game.id,
+      createdAt: '2026-09-30T04:05:06.000Z',
+      appVersion: APP_VERSION,
+      lastBackupAt: '2026-09-29T01:02:03.000Z',
+      restoredFrom: {
+        fileName: 'WPStudBook_第一局.json.gz',
+        exportedAt: '2026-09-29T01:02:03.000Z',
+        gameName: '第一局',
+        appVersion: APP_VERSION,
+        schemaVersion: SCHEMA_VERSION,
+      },
+    })
+    expect(await loadGame(db, game.id)).toStrictEqual(game)
+    const restored = await readGameData(db, game.id)
+    expect(countRows(restored)).toEqual(countRows(original))
+    const oldIds = new Set(original.horses.map((horse) => horse.id))
+    expect(restored.horses.filter((horse) => oldIds.has(horse.id))).toEqual([])
+    expect(await readGameData(db, GAME)).toStrictEqual(original)
+  })
+
+  it('引用跟著新識別：產駒的父母與出生紀錄指向新局的馬與配種', async () => {
+    const { db, bytes } = await sampleBackup()
+    const game = await restoreBackup(db, await verified(bytes), { fileName: 'b.json.gz' })
+    const { horses, breedings } = await readGameData(db, game.id)
+    const byName = (name: string) => horses.find((horse) => horse.baseName === name)!
+    const foal = horses.find((horse) => horse.birthYear === 1990)!
+    expect(foal).toMatchObject({
+      gameId: game.id,
+      sireId: byName('テストスタリオン').id,
+      damId: byName('テストメア').id,
+      birth: { breedingId: breedings[0]!.id },
+    })
+  })
+
+  it('局名：傳入時去除前後空白後使用；空白時丟出 RangeError，什麼都不寫', async () => {
+    const { db, bytes } = await sampleBackup({ name: '第一局' })
+    const backup = await verified(bytes)
+    const game = await restoreBackup(db, backup, { fileName: 'b.json.gz', name: '  還原的局  ' })
+    expect(game.name).toBe('還原的局')
+    expect(game.restoredFrom?.gameName).toBe('第一局')
+    await expect(restoreBackup(db, backup, { fileName: 'b.json.gz', name: '  ' })).rejects.toThrow(
+      new RangeError('局名不能空白'),
+    )
+    expect(await db.games.count()).toBe(2)
+  })
+
+  it('同一份備份可以還原兩次；局名可以重複；不切換目前遊戲局', async () => {
+    const { db, bytes } = await sampleBackup({ name: '第一局' })
+    await setCurrentGame(db, GAME)
+    const backup = await verified(bytes)
+    const first = await restoreBackup(db, backup, { fileName: 'b.json.gz' })
+    const second = await restoreBackup(db, backup, { fileName: 'b.json.gz' })
+    expect(first.id).not.toBe(second.id)
+    expect((await listGames(db)).map((game) => game.name)).toEqual(['第一局', '第一局', '第一局'])
+    expect(await currentGameId(db)).toBe(GAME)
+  })
+
+  it('經過遷移時，還原來源記檔案原本的結構版本（DATA-05）', async () => {
+    const { db, file } = await sampleBackup()
+    const migrations = { 1: (from: BackupFile): BackupFile => ({ ...from, schemaVersion: 2 }) }
+    const backup = await verified(await signedBytes(file), { migrations, currentVersion: 2 })
+    const game = await restoreBackup(db, backup, { fileName: 'old.json' })
+    expect(game.restoredFrom?.schemaVersion).toBe(1)
+  })
+
+  it('依集合回報寫入進度（已寫筆數與總筆數）', async () => {
+    const { db, bytes } = await sampleBackup()
+    const progress: [number, number][] = []
+    await restoreBackup(db, await verified(bytes), {
+      fileName: 'b.json.gz',
+      onProgress: (written, total) => progress.push([written, total]),
+    })
+    expect(progress).toHaveLength(13)
+    expect(progress[12]).toEqual([15, 15])
+  })
+
+  it('寫入途中失敗時整筆回復，什麼都不寫', async () => {
+    const { db, bytes } = await sampleBackup()
+    const backup = await verified(bytes)
+    const settings = backup.file.collections.settings
+    const broken = {
+      ...backup,
+      file: {
+        ...backup.file,
+        collections: { ...backup.file.collections, settings: [...settings, ...settings] },
+      },
+    }
+    await expect(restoreBackup(db, broken, { fileName: 'b.json.gz' })).rejects.toThrow()
+    expect(await db.games.count()).toBe(1)
+    expect(await db.settings.count()).toBe(1)
   })
 })
