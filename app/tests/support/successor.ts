@@ -1,7 +1,16 @@
 import type { WPStudBookDatabase } from '../../src/storage/database'
 import type { BreedingRow, HorseRow, Sex } from '../../src/storage/records'
 import { cyclePhaseHerd } from './breeding'
-import { GAME, horseRow, ownFoalRow, ownMareRow } from './rows'
+import { addTestGame, testDatabase } from './database'
+import {
+  GAME,
+  horseRow,
+  lineRow,
+  ownFoalRow,
+  ownMareRow,
+  restorationRow,
+  stallionRow,
+} from './rows'
 
 /** 測試資料的配種紀錄不看血統檢查的結果 */
 const PEDIGREE = { estimate: null, duplicates: [], warnings: [] }
@@ -87,5 +96,59 @@ export async function successorHerd(): Promise<WPStudBookDatabase> {
       disposition: 'for-sale',
     }),
   ])
+  return db
+}
+
+/** 第 5 系零代 Z5R（補公系 R1）× 第 1 系 12 代自家母駒 D112 → 第 5 系 13 代的補公系指定配種，受胎 */
+function restored(id: string, year: number): BreedingRow {
+  return {
+    id,
+    gameId: GAME,
+    mareId: 'D112',
+    year,
+    kind: 'designated',
+    sireId: 'Z5R',
+    conception: '受胎',
+    rule: {
+      distance: 4,
+      sire: { line: 5, generation: 0 },
+      dam: { kind: 'own', line: 1, generation: 12 },
+      output: { line: 5, generation: 13 },
+      restoration: true,
+      pedigree: PEDIGREE,
+    },
+  }
+}
+
+/**
+ * 測試用的補公系牧場，目前遊戲年 1990：第 1 系與第 5 系已開啟。第 5 系 12 代的種牡馬 S512 已引退，
+ * 宣告了第 5 系 12 代補公系（R1），補入的零代市場種牡馬 Z5R 在崗；第 1 系 12 代自家母駒 D112（1980 年生）在圈。
+ * 補公系配對（第 5 系零代 × 第 1 系 12 代母馬群 → 第 5 系 13 代）的指定配種都受胎：
+ * 1989 年的 BR89 生下公駒 C513（1990 年生），1990 年的 BR90 產駒還沒出生
+ */
+export async function restorationHerd(): Promise<WPStudBookDatabase> {
+  const db = testDatabase()
+  await addTestGame(db)
+  await db.lines.bulkAdd([lineRow(1, '系1子'), lineRow(5, '系5子')])
+  await db.horses.bulkAdd([
+    horseRow('S512', { sex: 'male', birth: { placement: { line: 5, generation: 12 } } }),
+    horseRow('Z5R', { sex: 'male', sireSystem: '系5子' }),
+    ownFoalRow('D112', 1, 12, { birthYear: 1980 }),
+    horseRow('C513', {
+      sex: 'male',
+      birthYear: 1990,
+      sireId: 'Z5R',
+      damId: 'D112',
+      birth: { breedingId: 'BR89', placement: { line: 5, generation: 13 } },
+      disposition: 'keep',
+    }),
+  ])
+  await db.stallions.bulkAdd([
+    stallionRow('S512', 5, 12, { status: 'retired' }),
+    stallionRow('Z5R', 5, 0, { restorationId: 'R1' }),
+  ])
+  await db.restorations.add(restorationRow('R1', 5, 12, 'sire'))
+  await db.mares.add(ownMareRow('D112', 1, 12))
+  await db.breedings.bulkAdd([restored('BR89', 1989), restored('BR90', 1990)])
   return db
 }

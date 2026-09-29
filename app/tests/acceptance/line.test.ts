@@ -26,9 +26,10 @@ import { addMarketMare } from '../../src/storage/mare-writes'
 import { transferFilly } from '../../src/storage/own-mare-writes'
 import { declareRestoration } from '../../src/storage/restoration-writes'
 import { assignZeroStallion } from '../../src/storage/stallion-writes'
+import { designateSuccessor } from '../../src/storage/successor-writes'
 import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
-import { successorHerd } from '../support/successor'
+import { restorationHerd, successorHerd } from '../support/successor'
 import {
   describePairing,
   pairingOf,
@@ -944,5 +945,24 @@ describe('八系管理（LINE）：儲存層寫入', () => {
     expect(await groups()).toEqual([
       { generation: 5, established: true, activeMares: 1, ownMares: 1 },
     ])
+  })
+
+  it('LINE-40 補公系產駒指定為預定後繼（尚未出生也可以）→ 產出那一代有了種牡馬紀錄，補系結束並解除暫停', async () => {
+    const db = await restorationHerd()
+    const restorations = async () =>
+      listBoard((await loadRuleSnapshot(db, GAME)).eightLines).restorations
+    expect(await restorations()).toMatchObject([
+      { line: 5, generation: 12, side: 'sire', inProgress: true },
+    ])
+    const result = await designateSuccessor(db, GAME, { target: { breedingId: 'BR90' } })
+    expect(result.status).toBe('done')
+    expect(await restorations()).toMatchObject([{ inProgress: false }])
+  })
+
+  it('LINE-41 補公系所生的產駒 → 依補公系配對核對，可以指定為第 5 系 13 代的預定後繼', async () => {
+    const db = await restorationHerd()
+    const result = await designateSuccessor(db, GAME, { target: { horseId: 'C513' } })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value).toMatchObject({ line: 5, generation: 13, horseId: 'C513' })
   })
 })

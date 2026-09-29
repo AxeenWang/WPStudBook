@@ -409,8 +409,11 @@ function sirePlacement(stallions: readonly StallionRow[], horseId: string): Line
   return post ? { line: post.line, generation: post.generation } : null
 }
 
-/** 這一局的配種紀錄；找不到或屬於其他局時丟出錯誤 */
-async function loadBreeding(context: WriteContext, breedingId: string): Promise<BreedingRow> {
+/** 在寫入交易內讀取這一局的配種紀錄；找不到或屬於其他局時丟出錯誤。交易要包含 breedings */
+export async function loadBreeding(
+  context: WriteContext,
+  breedingId: string,
+): Promise<BreedingRow> {
   const breeding = await context.db.breedings.get(breedingId)
   if (!breeding || breeding.gameId !== context.game.id) {
     throw new Error(`找不到配種紀錄：${breedingId}`)
@@ -418,8 +421,8 @@ async function loadBreeding(context: WriteContext, breedingId: string): Promise<
   return breeding
 }
 
-/** 出生紀錄連到這筆配種紀錄的產駒；交易要包含 horses */
-async function linkedFoal(
+/** 在寫入交易內讀取出生紀錄連到這筆配種紀錄的產駒；交易要包含 horses */
+export async function linkedFoal(
   context: WriteContext,
   breeding: BreedingRow,
 ): Promise<HorseRow | undefined> {
