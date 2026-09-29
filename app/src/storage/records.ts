@@ -21,6 +21,26 @@ export interface GameRow {
   createdAt: string
   /** 最近一次修改這一局資料的時間（ISO 8601） */
   updatedAt: string
+  /** 最後寫入這一局的管理器版本（12.1） */
+  appVersion: string
+  /** 最近一次備份的匯出時間（ISO 8601）；還沒備份過時留空（12.2） */
+  lastBackupAt?: string
+  /** 從備份還原而來時的來源（12.2、DATA-05）；自己建立的局沒有 */
+  restoredFrom?: RestoredFrom
+}
+
+/** 還原來源（需求規格 12.2、DATA-05） */
+export interface RestoredFrom {
+  /** 備份檔名 */
+  fileName: string
+  /** 備份的匯出時間（ISO 8601） */
+  exportedAt: string
+  /** 備份裡的局名 */
+  gameName: string
+  /** 匯出備份的管理器版本 */
+  appVersion: string
+  /** 備份檔的結構版本；比目前舊表示還原時經過遷移 */
+  schemaVersion: number
 }
 
 /** 一局的設定；新局選擇只複製設定時整列複製（需求規格 12.1） */

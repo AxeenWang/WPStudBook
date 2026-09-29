@@ -8,10 +8,12 @@ import {
   listGames,
   loadGame,
   loadSettings,
+  recordBackup,
   setCurrentGame,
   setCurrentYear,
   updateSettings,
 } from './games'
+import { APP_VERSION } from './version'
 
 describe('createGame', () => {
   it('全新空白的局：目前遊戲年從起始年開始，設定為預設值，沒有系統對照表', async () => {
@@ -25,6 +27,7 @@ describe('createGame', () => {
       currentYear: 1968,
       createdAt: '2026-09-24T01:02:03.000Z',
       updatedAt: '2026-09-24T01:02:03.000Z',
+      appVersion: APP_VERSION,
     })
     expect(await loadGame(db, game.id)).toEqual(game)
     expect(await loadSettings(db, game.id)).toEqual({
@@ -163,6 +166,15 @@ describe('setCurrentYear', () => {
     expect(await db.events.count()).toBe(0)
   })
 
+  it('應用版本改為目前版本', async () => {
+    const db = testDatabase()
+    await addTestGame(db, { appVersion: '0.0.1' })
+    const result = await setCurrentYear(db, GAME, 1995, { now })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.appVersion).toBe(APP_VERSION)
+    expect(await loadGame(db, GAME)).toEqual(result.value)
+  })
+
   it('和目前相同時不寫入，更新時間不變', async () => {
     const db = testDatabase()
     const game = await addTestGame(db)
@@ -291,6 +303,36 @@ describe('updateSettings', () => {
     await db.settings.delete(GAME)
     await expect(updateSettings(db, GAME, { retirementAge: 24 })).rejects.toThrow(
       '找不到遊戲局的設定：G',
+    )
+  })
+})
+
+describe('recordBackup', () => {
+  it('最近備份時間設為匯出時間，不改更新時間與應用版本（需求規格 12.2）', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db, { appVersion: '0.0.1' })
+    const expected = { ...game, lastBackupAt: '2026-09-29T01:02:03.000Z' }
+    expect(await recordBackup(db, GAME, '2026-09-29T01:02:03.000Z')).toEqual(expected)
+    expect(await loadGame(db, GAME)).toEqual(expected)
+    expect(await db.events.count()).toBe(0)
+  })
+
+  it('只往後不往回：比目前的最近備份時間早或相同時不變', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db, { lastBackupAt: '2026-09-29T01:02:03.000Z' })
+    for (const exportedAt of ['2026-09-28T00:00:00.000Z', '2026-09-29T01:02:03.000Z']) {
+      expect(await recordBackup(db, GAME, exportedAt)).toEqual(game)
+    }
+    expect(await loadGame(db, GAME)).toEqual(game)
+    expect((await recordBackup(db, GAME, '2026-09-30T00:00:00.000Z')).lastBackupAt).toBe(
+      '2026-09-30T00:00:00.000Z',
+    )
+  })
+
+  it('遊戲局不存在時丟出錯誤', async () => {
+    const db = testDatabase()
+    await expect(recordBackup(db, 'missing', '2026-09-29T01:02:03.000Z')).rejects.toThrow(
+      '找不到遊戲局：missing',
     )
   })
 })

@@ -3,6 +3,7 @@ import { DEFAULT_MARE_AGE_SETTINGS } from '../core/mares'
 import { DEFAULT_STALLION_REMINDER_AGE } from '../core/stallions'
 import type { WPStudBookDatabase } from './database'
 import type { GameRow, SettingsRow, SystemRow } from './records'
+import { APP_VERSION } from './version'
 import { gate, runWrite, type WriteOptions, type WriteResult } from './writes'
 
 /** 新局的預設設定（需求規格 7.7、8.5） */
@@ -45,6 +46,7 @@ export async function createGame(
     currentYear: input.startYear,
     createdAt: timestamp,
     updatedAt: timestamp,
+    appVersion: APP_VERSION,
   }
   await db.transaction('rw', [db.games, db.settings, db.systems], async () => {
     let settings: SettingsRow = { gameId: game.id, ...DEFAULT_SETTINGS }
@@ -127,7 +129,31 @@ export async function setCurrentYear(
     if (stop) return stop
     if (year === game.currentYear) return { status: 'done', value: game, warnings: [] }
     await db.games.update(gameId, { currentYear: year })
-    return context.done({ ...game, currentYear: year, updatedAt: context.now })
+    return context.done({
+      ...game,
+      currentYear: year,
+      updatedAt: context.now,
+      appVersion: APP_VERSION,
+    })
+  })
+}
+
+/**
+ * 記錄這一局的最近備份時間（需求規格 12.2）：呼叫端交出備份檔（觸發下載，或寫入備份資料夾成功）後呼叫，
+ * exportedAt 是備份的匯出時間，也就是快照的時間；只往後不往回。
+ * 不改更新時間與應用版本：記錄備份不是資料變更，快照之後的修改仍算未備份（技術設計 4.3「備份與還原」）。
+ * 遊戲局不存在時丟出錯誤。
+ */
+export async function recordBackup(
+  db: WPStudBookDatabase,
+  gameId: string,
+  exportedAt: string,
+): Promise<GameRow> {
+  return db.transaction('rw', db.games, async () => {
+    const game = await loadGame(db, gameId)
+    if (game.lastBackupAt !== undefined && game.lastBackupAt >= exportedAt) return game
+    await db.games.update(gameId, { lastBackupAt: exportedAt })
+    return { ...game, lastBackupAt: exportedAt }
   })
 }
 
