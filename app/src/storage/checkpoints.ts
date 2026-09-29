@@ -85,6 +85,58 @@ export async function listCheckpoints(
   })
 }
 
+/**
+ * 釘選或取消釘選（需求規格 12.4）：釘選的不計入保留個數，也不自動清除。不觸發清除：
+ * 取消釘選後超過保留個數的，等下一次建立檢查點時才清除。不改遊戲局的更新時間。
+ * 找不到遊戲局、檢查點，或檢查點屬於其他局時丟出錯誤
+ */
+export async function setCheckpointPinned(
+  db: WPStudBookDatabase,
+  gameId: string,
+  checkpointId: string,
+  pinned: boolean,
+): Promise<CheckpointRow> {
+  return db.transaction('rw', [db.games, db.checkpoints], async () => {
+    const checkpoint = await loadCheckpoint(db, gameId, checkpointId)
+    await db.checkpoints.update(checkpointId, { pinned })
+    return { ...checkpoint, pinned }
+  })
+}
+
+/**
+ * 修改註記（需求規格 12.4）：去除前後空白，空白時移除註記。不改遊戲局的更新時間。
+ * 找不到遊戲局、檢查點，或檢查點屬於其他局時丟出錯誤
+ */
+export async function updateCheckpointNote(
+  db: WPStudBookDatabase,
+  gameId: string,
+  checkpointId: string,
+  note: string,
+): Promise<CheckpointRow> {
+  return db.transaction('rw', [db.games, db.checkpoints], async () => {
+    const checkpoint = { ...(await loadCheckpoint(db, gameId, checkpointId)) }
+    const trimmed = note.trim()
+    if (trimmed === '') delete checkpoint.note
+    else checkpoint.note = trimmed
+    await db.checkpoints.put(checkpoint)
+    return checkpoint
+  })
+}
+
+/** 讀取這一局的檢查點；找不到遊戲局、檢查點，或檢查點屬於其他局時丟出錯誤 */
+async function loadCheckpoint(
+  db: WPStudBookDatabase,
+  gameId: string,
+  checkpointId: string,
+): Promise<CheckpointRow> {
+  await loadGame(db, gameId)
+  const checkpoint = await db.checkpoints.get(checkpointId)
+  if (!checkpoint || checkpoint.gameId !== gameId) {
+    throw new Error(`找不到這一局的檢查點：${checkpointId}`)
+  }
+  return checkpoint
+}
+
 /** 刪除檢查點的中繼資料與內容 */
 async function deleteCheckpoints(
   db: WPStudBookDatabase,
