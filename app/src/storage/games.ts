@@ -2,6 +2,7 @@ import Dexie from 'dexie'
 import { DEFAULT_MARE_AGE_SETTINGS } from '../core/mares'
 import { DEFAULT_STALLION_REMINDER_AGE } from '../core/stallions'
 import type { WPStudBookDatabase } from './database'
+import { deleteGameData, gameTables, type RowCounts } from './game-data'
 import type { GameRow, SettingsRow, SystemRow } from './records'
 import { APP_VERSION } from './version'
 import { gate, runWrite, type WriteOptions, type WriteResult } from './writes'
@@ -213,5 +214,65 @@ export async function updateSettings(
     }
     await db.settings.put(settings)
     return context.done(settings)
+  })
+}
+
+/** 刪除一局的阻止原因：輸入的局名不符 */
+export interface DeleteGameBlock {
+  kind: 'name-mismatch'
+}
+
+/**
+ * 永久刪除此局（需求規格 12.1、DATA-10）：typedName 去除前後空白後要等於局名，否則阻止，什麼都不刪；
+ * 名稱核對放在儲存層，畫面漏掉也刪不掉。在一個 rw 交易內從 GAME_TABLES 刪除這一局的資料列，
+ * 目前遊戲局是這一局時一併清除。不寫事件。回傳刪除的各表筆數；遊戲局不存在時丟出錯誤
+ */
+export async function deleteGame(
+  db: WPStudBookDatabase,
+  gameId: string,
+  typedName: string,
+): Promise<WriteResult<RowCounts, DeleteGameBlock>> {
+  return db.transaction('rw', [...gameTables(db), db.meta], async () => {
+    const game = await loadGame(db, gameId)
+    if (typedName.trim() !== game.name) {
+      return { status: 'blocked', blocks: [{ kind: 'name-mismatch' }] }
+    }
+    const counts = await deleteGameData(db, gameId)
+    if ((await currentGameId(db)) === gameId) await db.meta.delete(CURRENT_GAME_KEY)
+    return { status: 'done', value: counts, warnings: [] }
+  })
+}
+
+/** 刪除全部存檔時要輸入的文字（需求規格 12.1） */
+export const DELETE_ALL_PHRASE = '刪除全部存檔'
+
+/** 刪除全部存檔的阻止原因：輸入的文字不符 */
+export interface DeleteAllBlock {
+  kind: 'phrase-mismatch'
+}
+
+/** 刪除全部存檔的結果：刪除的遊戲局數與 GAME_TABLES 的總筆數 */
+export interface DeletedAll {
+  games: number
+  rows: number
+}
+
+/**
+ * 刪除全部存檔（需求規格 12.1、DATA-10）：typedPhrase 去除前後空白後要是「刪除全部存檔」，否則阻止，
+ * 什麼都不刪；第二道確認由畫面負責。在一個交易內清空資料庫的每一張表（含 meta）
+ */
+export async function deleteAllGames(
+  db: WPStudBookDatabase,
+  typedPhrase: string,
+): Promise<WriteResult<DeletedAll, DeleteAllBlock>> {
+  return db.transaction('rw', db.tables, async () => {
+    if (typedPhrase.trim() !== DELETE_ALL_PHRASE) {
+      return { status: 'blocked', blocks: [{ kind: 'phrase-mismatch' }] }
+    }
+    const games = await db.games.count()
+    let rows = 0
+    for (const table of gameTables(db)) rows += await table.count()
+    for (const table of db.tables) await table.clear()
+    return { status: 'done', value: { games, rows }, warnings: [] }
   })
 }

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { addSampleGame } from '../../tests/support/game-data'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { GAME, horseRow } from '../../tests/support/rows'
+import { countRows, readGameData } from './game-data'
 import {
   DEFAULT_SETTINGS,
+  DELETE_ALL_PHRASE,
   createGame,
   currentGameId,
+  deleteAllGames,
+  deleteGame,
   listGames,
   loadGame,
   loadSettings,
@@ -334,5 +339,75 @@ describe('recordBackup', () => {
     await expect(recordBackup(db, 'missing', '2026-09-29T01:02:03.000Z')).rejects.toThrow(
       '找不到遊戲局：missing',
     )
+  })
+})
+
+describe('deleteGame', () => {
+  it('局名相符時刪除這一局的全部資料列並回傳各表筆數；其他局不受影響（需求規格 12.1）', async () => {
+    const db = testDatabase()
+    const data = await addSampleGame(db)
+    const other = await addSampleGame(db, { id: 'G2' })
+    expect(await deleteGame(db, GAME, '  測試局 G  ')).toEqual({
+      status: 'done',
+      value: countRows(data),
+      warnings: [],
+    })
+    expect(await db.games.get(GAME)).toBeUndefined()
+    expect(await db.horses.where('gameId').equals(GAME).count()).toBe(0)
+    expect(await readGameData(db, 'G2')).toStrictEqual(other)
+    expect(await db.events.count()).toBe(1)
+  })
+
+  it('目前遊戲局是這一局時一併清除；是別的局時不變', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    await addSampleGame(db, { id: 'G2' })
+    await addSampleGame(db, { id: 'G3' })
+    await setCurrentGame(db, 'G2')
+    expect((await deleteGame(db, GAME, '測試局 G')).status).toBe('done')
+    expect(await currentGameId(db)).toBe('G2')
+    expect((await deleteGame(db, 'G2', '測試局 G2')).status).toBe('done')
+    expect(await currentGameId(db)).toBeUndefined()
+  })
+
+  it('局名不符時阻止，什麼都不刪；遊戲局不存在時丟出錯誤', async () => {
+    const db = testDatabase()
+    const data = await addSampleGame(db)
+    await setCurrentGame(db, GAME)
+    expect(await deleteGame(db, GAME, '測試局')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'name-mismatch' }],
+    })
+    expect(await readGameData(db, GAME)).toStrictEqual(data)
+    expect(await currentGameId(db)).toBe(GAME)
+    await expect(deleteGame(db, 'missing', '測試局 G')).rejects.toThrow('找不到遊戲局：missing')
+  })
+})
+
+describe('deleteAllGames', () => {
+  it('輸入「刪除全部存檔」時清空每一張表（含 meta），回傳遊戲局數與總筆數（需求規格 12.1）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    await addSampleGame(db, { id: 'G2' })
+    await setCurrentGame(db, GAME)
+    expect(DELETE_ALL_PHRASE).toBe('刪除全部存檔')
+    expect(await deleteAllGames(db, ' 刪除全部存檔 ')).toEqual({
+      status: 'done',
+      value: { games: 2, rows: 30 },
+      warnings: [],
+    })
+    for (const table of db.tables) expect(await table.count()).toBe(0)
+  })
+
+  it('文字不符時阻止，什麼都不刪', async () => {
+    const db = testDatabase()
+    const data = await addSampleGame(db)
+    await setCurrentGame(db, GAME)
+    expect(await deleteAllGames(db, '刪除全部')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'phrase-mismatch' }],
+    })
+    expect(await readGameData(db, GAME)).toStrictEqual(data)
+    expect(await currentGameId(db)).toBe(GAME)
   })
 })
