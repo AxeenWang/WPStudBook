@@ -2,20 +2,55 @@ import { describe, expect, it } from 'vitest'
 import { gunzipText } from '../../tests/support/backup'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { addSampleGame } from '../../tests/support/game-data'
-import { GAME } from '../../tests/support/rows'
+import { GAME, horseRow } from '../../tests/support/rows'
 import { readBackup } from './backup'
 import {
   createCheckpoint,
   listCheckpoints,
+  readCheckpoint,
   setCheckpointPinned,
   updateCheckpointNote,
   type NewCheckpoint,
 } from './checkpoints'
+import { readGameData, type RowCounts } from './game-data'
 import { loadGame } from './games'
+import type { EventRow } from './records'
 
 /** 2026-09-29 00:0n（UTC）：建立時間依 n 遞增 */
 function minute(n: number): Date {
   return new Date(Date.UTC(2026, 8, 29, 0, n))
+}
+
+/** addSampleGame 一局的各表筆數：horses 3 列，其他每張表 1 列 */
+const SAMPLE_COUNTS: RowCounts = {
+  games: 1,
+  settings: 1,
+  horses: 3,
+  lines: 1,
+  systems: 1,
+  mares: 1,
+  mareYears: 1,
+  stallions: 1,
+  restorations: 1,
+  breedings: 1,
+  matingRatings: 1,
+  events: 1,
+  horseNumbers: 1,
+}
+
+/** 檢查點之後寫入的事件：識別與寫入時間由參數決定 */
+function laterEvent(id: string, recordedAt: string): EventRow {
+  return {
+    id,
+    gameId: GAME,
+    year: 1991,
+    recordedAt,
+    source: { kind: 'manual' },
+    kind: 'foal-added',
+    horseId: 'G-X',
+    breedingId: 'G-B',
+    disposition: 'for-sale',
+  }
 }
 
 describe('createCheckpoint', () => {
@@ -226,5 +261,96 @@ describe('檢查點的管理：找不到時', () => {
       '找不到遊戲局：missing',
     )
     expect(await db.checkpoints.get(checkpoint.id)).toStrictEqual(checkpoint)
+  })
+})
+
+describe('readCheckpoint', () => {
+  it('通過時回傳檢查點的資料與預覽：遊戲年、筆數對照、捨棄的事件與較晚的檢查點（CKPT-04）', async () => {
+    const db = testDatabase()
+    const data = await addSampleGame(db)
+    await createCheckpoint(db, GAME, { origin: 'auto', now: minute(0) })
+    const target = await createCheckpoint(db, GAME, {
+      origin: 'auto',
+      timing: { month: 5, week: 1 },
+      now: minute(1),
+    })
+    await db.games.update(GAME, { currentYear: 1991, updatedAt: '2026-09-29T00:02:00.000Z' })
+    await db.horses.add(horseRow('G-X', { birthYear: 1991 }))
+    const e1 = laterEvent('E1', '2026-09-29T00:03:00.000Z')
+    const e2 = laterEvent('E2', '2026-09-29T00:02:00.000Z')
+    await db.events.bulkAdd([e1, e2])
+    const pinned = await createCheckpoint(db, GAME, { origin: 'manual', now: minute(4) })
+    await setCheckpointPinned(db, GAME, pinned.checkpoint.id, true)
+    const latest = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(5) })
+    const before = await readGameData(db, GAME)
+
+    const result = await readCheckpoint(db, GAME, target.checkpoint.id)
+    if (result.status !== 'ok') throw new Error(result.status)
+    expect(result.verified.data).toStrictEqual(data)
+    expect(result.verified.preview).toStrictEqual({
+      checkpoint: target.checkpoint,
+      currentYear: { from: 1991, to: 1990 },
+      counts: {
+        current: { ...SAMPLE_COUNTS, horses: 4, events: 3 },
+        checkpoint: SAMPLE_COUNTS,
+      },
+      discardedEvents: [e2, e1],
+      removedCheckpoints: [latest.checkpoint, { ...pinned.checkpoint, pinned: true }],
+      updatedAt: '2026-09-29T00:02:00.000Z',
+    })
+    expect(await readGameData(db, GAME)).toStrictEqual(before)
+    expect(await listCheckpoints(db, GAME)).toHaveLength(4)
+  })
+
+  it('內容不見、內容對不上或檔案不通過時回傳拒絕原因，資料不變（CKPT-05）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    await addSampleGame(db, { id: 'G2' })
+    const a = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(1) })
+    await db.games.update(GAME, { currentYear: 1991 })
+    const b = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(2) })
+    const other = await createCheckpoint(db, 'G2', { origin: 'auto', now: minute(3) })
+    const before = await readGameData(db, GAME)
+    const reasonOf = async (id: string) => {
+      const result = await readCheckpoint(db, GAME, id)
+      return result.status === 'rejected' ? result.reason : undefined
+    }
+    const bytesOf = async (id: string) => (await db.checkpointContents.get(id))!.bytes
+
+    // 內容換成同一局另一個檢查點的：sha256 不符
+    await db.checkpointContents.update(a.checkpoint.id, { bytes: await bytesOf(b.checkpoint.id) })
+    expect(await reasonOf(a.checkpoint.id)).toEqual({ kind: 'content-mismatch' })
+    // 內容換成其他局的，列上的 sha256 也跟著換：遊戲局識別不符
+    await db.checkpointContents.update(b.checkpoint.id, {
+      bytes: await bytesOf(other.checkpoint.id),
+    })
+    await db.checkpoints.update(b.checkpoint.id, { sha256: other.checkpoint.sha256 })
+    expect(await reasonOf(b.checkpoint.id)).toEqual({ kind: 'content-mismatch' })
+    // 檔案截斷：備份的拒絕原因
+    await db.checkpointContents.update(a.checkpoint.id, {
+      bytes: (await bytesOf(other.checkpoint.id)).slice(0, 20),
+    })
+    expect(await reasonOf(a.checkpoint.id)).toEqual({ kind: 'gzip' })
+    // 內容不見
+    await db.checkpointContents.delete(a.checkpoint.id)
+    expect(await reasonOf(a.checkpoint.id)).toEqual({ kind: 'content-missing' })
+
+    expect(await readGameData(db, GAME)).toStrictEqual(before)
+  })
+
+  it('找不到遊戲局、檢查點，或檢查點屬於其他局時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    const { checkpoint } = await createCheckpoint(db, 'G2', { origin: 'auto', now: minute(1) })
+    await expect(readCheckpoint(db, GAME, checkpoint.id)).rejects.toThrow(
+      `找不到這一局的檢查點：${checkpoint.id}`,
+    )
+    await expect(readCheckpoint(db, GAME, 'missing')).rejects.toThrow(
+      '找不到這一局的檢查點：missing',
+    )
+    await expect(readCheckpoint(db, 'missing', checkpoint.id)).rejects.toThrow(
+      '找不到遊戲局：missing',
+    )
   })
 })

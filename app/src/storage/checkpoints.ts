@@ -1,8 +1,14 @@
-import { encodeBackup } from './backup'
+import { encodeBackup, readBackup, type BackupRejection } from './backup'
 import type { WPStudBookDatabase } from './database'
-import { readGameData } from './game-data'
+import { countRows, gameTables, readGameData, type GameData, type RowCounts } from './game-data'
 import { loadGame, loadSettings } from './games'
-import type { CatchUpImport, CheckpointOrigin, CheckpointRow, GameTiming } from './records'
+import type {
+  CatchUpImport,
+  CheckpointOrigin,
+  CheckpointRow,
+  EventRow,
+  GameTiming,
+} from './records'
 import { isGameTiming } from './writes'
 
 // 檢查點與回溯（需求規格 11.1、12.4，技術設計 4.3「檢查點與回溯」）
@@ -121,6 +127,92 @@ export async function updateCheckpointNote(
     await db.checkpoints.put(checkpoint)
     return checkpoint
   })
+}
+
+/**
+ * 讀取檢查點的拒絕原因（CKPT-05）：備份的拒絕原因（BackupRejection），另加
+ * - content-missing：內容不見了
+ * - content-mismatch：內容檔案的 sha256 或遊戲局識別與檢查點不符
+ */
+export type CheckpointRejection =
+  BackupRejection | { kind: 'content-missing' } | { kind: 'content-mismatch' }
+
+/** 回溯的預覽（CKPT-04） */
+export interface RollbackPreview {
+  checkpoint: CheckpointRow
+  /** 目前遊戲年：目前的值與回溯後的值 */
+  currentYear: { from: number; to: number }
+  /** 各表的筆數：目前與檢查點 */
+  counts: { current: RowCounts; checkpoint: RowCounts }
+  /** 將捨棄的事件：目前有而檢查點沒有的，依寫入時間排序 */
+  discardedEvents: EventRow[]
+  /** 將移除的較晚檢查點（建立時間晚於這個檢查點，含釘選的），由新到舊 */
+  removedCheckpoints: CheckpointRow[]
+  /** 預覽當下遊戲局的更新時間；回溯時核對 */
+  updatedAt: string
+}
+
+/** 驗證過的檢查點：data 已遷移到目前的結構 */
+export interface VerifiedCheckpoint {
+  data: GameData
+  preview: RollbackPreview
+}
+
+export type CheckpointReadResult =
+  | { status: 'ok'; verified: VerifiedCheckpoint }
+  | { status: 'rejected'; reason: CheckpointRejection }
+
+/**
+ * 驗證檢查點並預覽回溯（需求規格 12.4、CKPT-04、CKPT-05）：以一個唯讀交易讀出遊戲局、檢查點、內容、
+ * 目前整局資料與較晚的檢查點；交易外以 readBackup 驗證內容，再核對檔案的 sha256 與遊戲局識別。
+ * 不通過時回傳拒絕原因，不丟例外，資料不變；通過時回傳遷移到目前結構的資料與預覽。
+ * 找不到遊戲局、檢查點，或檢查點屬於其他局時丟出錯誤
+ */
+export async function readCheckpoint(
+  db: WPStudBookDatabase,
+  gameId: string,
+  checkpointId: string,
+): Promise<CheckpointReadResult> {
+  const tables = [...gameTables(db), db.checkpoints, db.checkpointContents]
+  const { checkpoint, content, current, later } = await db.transaction('r', tables, async () => {
+    const checkpoint = await loadCheckpoint(db, gameId, checkpointId)
+    return {
+      checkpoint,
+      content: await db.checkpointContents.get(checkpointId),
+      current: await readGameData(db, gameId),
+      later: await laterCheckpoints(db, checkpoint),
+    }
+  })
+  if (!content) return { status: 'rejected', reason: { kind: 'content-missing' } }
+  const read = await readBackup(content.bytes)
+  if (read.status === 'rejected') return read
+  const { file } = read.backup
+  if (file.sha256 !== checkpoint.sha256 || file.game.id !== gameId) {
+    return { status: 'rejected', reason: { kind: 'content-mismatch' } }
+  }
+  const data = file.collections
+  const kept = new Set(data.events.map((event) => event.id))
+  const discardedEvents = current.events
+    .filter((event) => !kept.has(event.id))
+    .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt))
+  const preview: RollbackPreview = {
+    checkpoint,
+    currentYear: { from: current.games[0]!.currentYear, to: data.games[0]!.currentYear },
+    counts: { current: countRows(current), checkpoint: countRows(data) },
+    discardedEvents,
+    removedCheckpoints: later,
+    updatedAt: current.games[0]!.updatedAt,
+  }
+  return { status: 'ok', verified: { data, preview } }
+}
+
+/** 這一局建立時間晚於這個檢查點的檢查點（含釘選的），由新到舊 */
+async function laterCheckpoints(
+  db: WPStudBookDatabase,
+  checkpoint: CheckpointRow,
+): Promise<CheckpointRow[]> {
+  const rows = await listCheckpoints(db, checkpoint.gameId)
+  return rows.filter((row) => row.createdAt > checkpoint.createdAt)
 }
 
 /** 讀取這一局的檢查點；找不到遊戲局、檢查點，或檢查點屬於其他局時丟出錯誤 */
