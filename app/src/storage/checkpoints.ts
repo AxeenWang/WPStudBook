@@ -50,7 +50,8 @@ export interface CreatedCheckpoint {
 
 /**
  * 建立檢查點（需求規格 12.4、CKPT-01、CKPT-02、CKPT-08）：先取 now 作為建立時間，再以唯讀交易讀出整局（一致快照），
- * 在交易外編成備份檔，最後以一個 rw 交易寫入中繼資料與內容，並清除超過保留個數的檢查點。
+ * 在交易外編成備份檔，最後以一個 rw 交易寫入中繼資料與內容，並清除超過保留個數的檢查點（剛建立的一定留著）。
+ * 在呼叫端的 Dexie 交易外呼叫：編碼用到瀏覽器的非同步 API，放進交易會讓交易提前提交；年度匯入提交後再建立。
  * 年是建立當下這一局的目前遊戲年。不改遊戲局的更新時間與應用版本：建立檢查點不是資料變更。
  * 時點不是 1～12 月、1～4 週，或補匯的年不是整數時丟出 RangeError，什麼都不寫；遊戲局不存在時丟出錯誤
  */
@@ -88,8 +89,11 @@ export async function createCheckpoint(
     const { checkpointLimit } = await loadSettings(db, gameId)
     await db.checkpoints.add(checkpoint)
     await db.checkpointContents.add({ checkpointId: checkpoint.id, gameId, bytes })
-    const unpinned = (await listCheckpoints(db, gameId)).filter((row) => !row.pinned)
-    const removed = unpinned.slice(checkpointLimit)
+    // 剛建立的一定留著：系統時鐘往回調時，它的建立時間可能不是最新的
+    const others = (await listCheckpoints(db, gameId)).filter(
+      (row) => !row.pinned && row.id !== checkpoint.id,
+    )
+    const removed = others.slice(checkpointLimit - 1)
     await deleteCheckpoints(db, removed)
     return { checkpoint, removed }
   })
@@ -228,7 +232,10 @@ export interface RollbackBlock {
 }
 
 export interface RollbackOptions {
-  /** 交出目前這一局的備份（下載由 3-3 的輔助函式負責）；丟出錯誤時回溯停止，資料不變 */
+  /**
+   * 交出目前這一局的備份（下載由 3-3 的輔助函式負責）；丟出錯誤時回溯停止，資料不變。
+   * 只交出檔案，不要記錄最近備份時間（recordBackup）：交出的是回溯前的狀態（技術設計 4.3）
+   */
   deliverBackup: (backup: ExportedBackup) => Promise<void> | void
   /** 回溯的時間：備份的匯出時間與回溯後的更新時間；省略時為現在 */
   now?: Date

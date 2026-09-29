@@ -213,6 +213,22 @@ describe('createCheckpoint：保留個數（需求規格 12.4）', () => {
     expect(await db.checkpoints.get(other.checkpoint.id)).toStrictEqual(other.checkpoint)
     expect(await db.checkpointContents.get(other.checkpoint.id)).toBeDefined()
   })
+
+  it('剛建立的一定留著：系統時鐘往回調時也不會被自己清掉', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.settings.update(GAME, { checkpointLimit: 2 })
+    const first = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(5) })
+    const second = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(6) })
+    // 時鐘往回調：新的建立時間比既有的都早
+    const third = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(1) })
+    expect(third.removed).toStrictEqual([first.checkpoint])
+    expect((await listCheckpoints(db, GAME)).map((row) => row.id)).toEqual([
+      second.checkpoint.id,
+      third.checkpoint.id,
+    ])
+    expect(await db.checkpointContents.get(third.checkpoint.id)).toBeDefined()
+  })
 })
 
 describe('listCheckpoints', () => {

@@ -105,7 +105,8 @@ export interface EncodedBackup {
 /**
  * 把整局資料編成備份檔（技術設計 4.3「備份檔」）：欄位依序為格式識別、結構版本、應用版本、匯出時間、
  * 遊戲局摘要、各集合筆數、集合與 sha256。有 CompressionStream 時 gzip，否則是未壓縮的 JSON（DATA-06）。
- * 匯出與檢查點共用（技術設計 4.3「檢查點與回溯」）
+ * 匯出與檢查點共用（技術設計 4.3「檢查點與回溯」）。data 要是 readGameData 的結果：
+ * 鍵剛好是 GAME_TABLES，games 只有這一局的一列
  */
 export async function encodeBackup(data: GameData, exportedAt: string): Promise<EncodedBackup> {
   const game = data.games[0]!
@@ -219,7 +220,7 @@ export type BackupReadResult =
 /** 讀取備份的步驟：解壓、解析、驗證 */
 export type BackupReadStep = 'decompress' | 'parse' | 'verify'
 
-/** 把某一版的備份內容遷移到下一版 */
+/** 把某一版的備份內容遷移到下一版；sha256 要原樣保留，檢查點以它核對內容（readCheckpoint） */
 export type BackupMigration = (file: BackupFile) => BackupFile
 
 /** 逐版遷移，鍵是遷移前的結構版本。結構版本 1 是第一版，目前沒有遷移（技術設計 4.3） */
