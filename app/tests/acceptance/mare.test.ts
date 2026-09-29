@@ -16,15 +16,19 @@ import {
 } from '../../src/core/sisters'
 import { updateSettings } from '../../src/storage/games'
 import { correctDeparture, moveMare, returnMare, sellMare } from '../../src/storage/herd-writes'
+import { correctHorse } from '../../src/storage/horse-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare, changeMareUsage } from '../../src/storage/mare-writes'
 import { correctVigor, setMarePlan } from '../../src/storage/mare-year-writes'
+import { keepSister, transferFilly } from '../../src/storage/own-mare-writes'
 import type { BreedingRow, MareRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from '../support/database'
+import { successorHerd } from '../support/successor'
 import {
   GAME,
   horseRow,
   lineRow,
+  ownFoalRow,
   ownMareRow,
   stallionRow,
   substituteMareRow,
@@ -118,11 +122,17 @@ describe('繁殖牝馬（MARE）', () => {
 })
 
 describe('繁殖牝馬（MARE）：儲存層彙整', () => {
-  /** 寫入母馬與她們的馬匹資料（1990 年 5 歲），回傳第 line 系的母馬群快照 */
+  /** 寫入母馬與她們的馬匹資料（1990 年 5 歲；自家母駒帶出生紀錄），回傳第 line 系的母馬群快照 */
   async function mareGroupsAfter(mares: MareRow[], line: LinePosition) {
     const db = testDatabase()
     await addTestGame(db)
-    await db.horses.bulkAdd(mares.map((mare) => horseRow(mare.horseId, { birthYear: 1985 })))
+    await db.horses.bulkAdd(
+      mares.map((mare) =>
+        mare.usage === 'own'
+          ? ownFoalRow(mare.horseId, mare.groupLine!, mare.groupGeneration!, { birthYear: 1985 })
+          : horseRow(mare.horseId, { birthYear: 1985 }),
+      ),
+    )
     await db.mares.bulkAdd(mares)
     const groups = async () =>
       (await loadRuleSnapshot(db, GAME)).eightLines.lines[line - 1]!.mareGroups
@@ -187,7 +197,7 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     await addTestGame(db)
     await db.lines.bulkAdd([lineRow(3, '系3子'), lineRow(6, '系6子')])
     await db.stallions.add(stallionRow('S66', 6, 6))
-    await db.horses.add(horseRow('F', { birthYear: 1985 }))
+    await db.horses.add(ownFoalRow('F', 3, 6, { birthYear: 1985 }))
     await db.mares.add(ownMareRow('F', 3, 6))
     const result = await addMarketMare(db, GAME, {
       horse: { fullName: '補血の母', sireSystem: 'ハイペリオン' },
@@ -462,5 +472,45 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     expect(thisYear.filter((row) => row.plan === 'resting').map((row) => row.horseId)).toEqual([
       'B',
     ])
+  })
+
+  it('MARE-07 自家產駒轉入的母馬 → 系與代數由出生紀錄決定，自身父系不能手動更正，也不能修改用途', async () => {
+    const db = await successorHerd()
+    expect((await transferFilly(db, GAME, 'F88')).status).toBe('done')
+    expect(await db.mares.get('F88')).toMatchObject({
+      usage: 'own',
+      groupLine: 1,
+      groupGeneration: 5,
+    })
+    await expect(correctHorse(db, GAME, 'F88', { sireSystem: '系3子' })).rejects.toThrow(
+      '只有手動輸入、尚未經匯入確認的市場馬可以更正',
+    )
+    await expect(
+      changeMareUsage(db, GAME, 'F88', { assignment: { kind: 'unassigned' } }),
+    ).rejects.toThrow('不能修改用途')
+  })
+
+  it('MARE-12 同父同母姊妹先後轉入 → 第二匹不被阻止；選定後只有一匹正式保留，被取代者保留紀錄', async () => {
+    const db = await successorHerd()
+    expect((await transferFilly(db, GAME, 'F88')).status).toBe('done')
+    expect((await transferFilly(db, GAME, 'F90')).status).toBe('done')
+    expect((await keepSister(db, GAME, 'F88')).status).toBe('done')
+    expect(await db.mares.get('F88')).toMatchObject({ herd: 'in-herd', sisterStatus: 'kept' })
+    expect(await db.mares.get('F90')).toMatchObject({ herd: 'in-herd', sisterStatus: 'replaced' })
+    const history = await db.events.where('[gameId+horseId]').equals([GAME, 'F90']).toArray()
+    expect(history.map((event) => event.kind).sort()).toEqual([
+      'mare-transferred',
+      'sister-status-changed',
+    ])
+  })
+
+  it('MARE-24 姊妹一匹暫定保留、一匹候選 → 兩匹都列入任務；選定其中一匹後，被取代的不再列入', async () => {
+    const db = await successorHerd()
+    await transferFilly(db, GAME, 'F88')
+    await transferFilly(db, GAME, 'F90')
+    const group = async () => (await loadRuleSnapshot(db, GAME)).eightLines.lines[0]!.mareGroups[0]
+    expect(await group()).toEqual({ generation: 5, established: true, activeMares: 2, ownMares: 2 })
+    await keepSister(db, GAME, 'F90')
+    expect(await group()).toEqual({ generation: 5, established: true, activeMares: 1, ownMares: 1 })
   })
 })

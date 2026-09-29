@@ -21,9 +21,10 @@ import { damRoleOf, mareListed } from './snapshot'
 import {
   confirmation,
   gate,
-  loadMare,
+  loadMareInHerd,
   resolveSire,
   runWrite,
+  type FoalExistsBlock,
   type Prepared,
   type SireInput,
   type SireNameBlock,
@@ -72,24 +73,33 @@ export type BreedingCheckBlock =
   | { kind: 'reason-required' }
   | SireNameBlock
 
-/** 已有產駒的出生紀錄連到這筆配種紀錄（需求規格 9.1、BRD-25）；horseId 是那匹產駒 */
-export interface FoalExistsBlock {
-  kind: 'foal-exists'
-  horseId: string
-}
-
 /** 登記配種的阻止原因：內容不符，或這匹母馬今年已有配種紀錄（改用更正），breedingId 是那一筆 */
 export type RegisterBreedingBlock =
   BreedingCheckBlock | { kind: 'already-registered'; breedingId: string }
 
 /**
- * 更正配種的阻止原因：內容不符；past-year 是往年的紀錄，只能更正今年的；已有產駒；和目前相同
+ * 這筆受胎配種被尚未出生的預定後繼引用（需求規格 9.1、BRD-28）；stallionId 是那一筆任用，要先取消預定後繼
+ */
+export interface SuccessorDesignatedBlock {
+  kind: 'successor-designated'
+  stallionId: string
+}
+
+/**
+ * 更正配種的阻止原因：內容不符；past-year 是往年的紀錄，只能更正今年的；已有產駒；
+ * 被尚未出生的預定後繼引用；和目前相同
  */
 export type CorrectBreedingBlock =
-  BreedingCheckBlock | { kind: 'past-year' } | FoalExistsBlock | UnchangedBlock
+  | BreedingCheckBlock
+  | { kind: 'past-year' }
+  | FoalExistsBlock
+  | SuccessorDesignatedBlock
+  | UnchangedBlock
 
-/** 受胎狀態的阻止原因：已有產駒卻要改成 `受胎` 以外（含清空）；和目前相同 */
-export type ConceptionBlock = FoalExistsBlock | UnchangedBlock
+/**
+ * 受胎狀態的阻止原因：已有產駒或被尚未出生的預定後繼引用，卻要改成 `受胎` 以外（含清空）；和目前相同
+ */
+export type ConceptionBlock = FoalExistsBlock | SuccessorDesignatedBlock | UnchangedBlock
 
 /** 受胎狀態的四種文字（需求規格 9.1） */
 const CONCEPTIONS: readonly Conception[] = ['空胎', '受胎', '不受胎', '未確認']
@@ -131,7 +141,7 @@ export async function registerBreeding(
   options: WriteOptions = {},
 ): Promise<WriteResult<SavedBreeding, RegisterBreedingBlock>> {
   return runWrite(db, gameId, breedingTables(db), options, async (context) => {
-    const mare = await mareInHerd(context, mareId, '登記配種')
+    const mare = await loadMareInHerd(context, mareId, '不能登記配種')
     const year = context.game.currentYear
     const existing = await db.breedings
       .where('[gameId+mareId+year]')
@@ -168,7 +178,8 @@ export async function registerBreeding(
 
 /**
  * 更正目前遊戲年的配種（需求規格 9.1、BRD-25）：類型與種牡馬可以換，檢查照登記重做；受胎狀態不變。
- * 往年的紀錄只回傳 past-year；已有產駒的出生紀錄連到這一筆、內容和目前相同時阻止。
+ * 往年的紀錄只回傳 past-year；已有產駒的出生紀錄連到這一筆、被尚未出生的預定後繼引用（BRD-28）、
+ * 內容和目前相同時阻止。
  * 事件 breeding-corrected 記原內容與新內容。
  * 配種紀錄找不到或屬於其他局，或母馬、種牡馬的狀況同登記時丟出錯誤。
  */
@@ -184,10 +195,12 @@ export async function correctBreeding(
     if (current.year !== context.game.currentYear) {
       return { status: 'blocked', blocks: [{ kind: 'past-year' }] }
     }
-    const mare = await mareInHerd(context, current.mareId, '更正配種')
+    const mare = await loadMareInHerd(context, current.mareId, '不能更正配種')
     const blocks: CorrectBreedingBlock[] = []
     const foal = await linkedFoal(context, current)
     if (foal) blocks.push({ kind: 'foal-exists', horseId: foal.id })
+    const successor = await designatedSuccessor(context, current)
+    if (successor) blocks.push({ kind: 'successor-designated', stallionId: successor.id })
     const checked = await checkBreeding(context, mare, input)
     if (!checked.ok) blocks.push(...checked.blocks)
     else if (sameBreeding(breedingValue(current), breedingValue(checked.value.fields))) {
@@ -222,7 +235,8 @@ export async function correctBreeding(
 /**
  * 登記或更正受胎狀態（需求規格 9.1、BRD-02、BRD-25）：四種狀態原樣保存，傳 null 清回沒有結果。
  * 不限年份，母馬不必在圈（配種後賣出的母馬仍有這一年的紀錄）。和目前相同時阻止；
- * 已有產駒的出生紀錄連到這一筆時，改成 `受胎` 以外（含清空）阻止。不建立產駒（BRD-01）。
+ * 已有產駒的出生紀錄連到這一筆，或被尚未出生的預定後繼引用（BRD-28）時，改成 `受胎` 以外（含清空）阻止。
+ * 不建立產駒（BRD-01）。
  * 事件 conception-set 記原狀態與新狀態。配種紀錄找不到、屬於其他局，或狀態不是四種之一時丟出錯誤。
  */
 export async function setConception(
@@ -235,7 +249,7 @@ export async function setConception(
   if (conception !== null && !CONCEPTIONS.includes(conception)) {
     throw new Error(`受胎狀態不符：${conception}`)
   }
-  return runWrite(db, gameId, [db.breedings, db.horses], options, async (context) => {
+  return runWrite(db, gameId, [db.breedings, db.horses, db.stallions], options, async (context) => {
     const current = await loadBreeding(context, breedingId)
     const from = current.conception
     const to = conception ?? undefined
@@ -244,6 +258,8 @@ export async function setConception(
     else if (to !== '受胎') {
       const foal = await linkedFoal(context, current)
       if (foal) blocks.push({ kind: 'foal-exists', horseId: foal.id })
+      const successor = await designatedSuccessor(context, current)
+      if (successor) blocks.push({ kind: 'successor-designated', stallionId: successor.id })
     }
     if (blocks.length > 0) return { status: 'blocked', blocks }
     const breeding: BreedingRow = { ...current }
@@ -414,19 +430,11 @@ function sirePlacement(stallions: readonly StallionRow[], horseId: string): Line
   return post ? { line: post.line, generation: post.generation } : null
 }
 
-/** 在圈的母馬；找不到、屬於其他局或不在圈內時丟出錯誤，action 是錯誤訊息裡的操作 */
-async function mareInHerd(
+/** 在寫入交易內讀取這一局的配種紀錄；找不到或屬於其他局時丟出錯誤。交易要包含 breedings */
+export async function loadBreeding(
   context: WriteContext,
-  mareId: string,
-  action: '登記配種' | '更正配種',
-): Promise<MareRow> {
-  const mare = await loadMare(context, mareId)
-  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬不能${action}：${mareId}`)
-  return mare
-}
-
-/** 這一局的配種紀錄；找不到或屬於其他局時丟出錯誤 */
-async function loadBreeding(context: WriteContext, breedingId: string): Promise<BreedingRow> {
+  breedingId: string,
+): Promise<BreedingRow> {
   const breeding = await context.db.breedings.get(breedingId)
   if (!breeding || breeding.gameId !== context.game.id) {
     throw new Error(`找不到配種紀錄：${breedingId}`)
@@ -434,8 +442,8 @@ async function loadBreeding(context: WriteContext, breedingId: string): Promise<
   return breeding
 }
 
-/** 出生紀錄連到這筆配種紀錄的產駒；交易要包含 horses */
-async function linkedFoal(
+/** 在寫入交易內讀取出生紀錄連到這筆配種紀錄的產駒；交易要包含 horses */
+export async function linkedFoal(
   context: WriteContext,
   breeding: BreedingRow,
 ): Promise<HorseRow | undefined> {
@@ -443,6 +451,21 @@ async function linkedFoal(
     .where('[gameId+damId]')
     .equals([context.game.id, breeding.mareId])
     .filter((horse) => horse.birth?.breedingId === breeding.id)
+    .first()
+}
+
+/**
+ * 引用這筆配種紀錄的尚未出生的預定後繼（需求規格 7.7）；確認出生後任用改存馬匹，就不再引用。
+ * 交易要包含 stallions
+ */
+async function designatedSuccessor(
+  context: WriteContext,
+  breeding: BreedingRow,
+): Promise<StallionRow | undefined> {
+  return context.db.stallions
+    .where('gameId')
+    .equals(context.game.id)
+    .filter((row) => row.breedingId === breeding.id)
     .first()
 }
 

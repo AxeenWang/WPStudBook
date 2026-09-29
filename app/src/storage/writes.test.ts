@@ -2,16 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { GAME, horseRow, ungroupedMareRow } from '../../tests/support/rows'
 import { lineSystemsOf } from '../../tests/support/systems'
+import type { DesignatedOrigin, SuccessorCandidate } from '../core/successor'
 import type { WPStudBookDatabase } from './database'
 import type { GameTiming, WriteWarning } from './records'
 import {
+  checkOwnSuccessor,
   confirmation,
   gate,
+  loadFoal,
   loadMare,
+  loadMareInHerd,
   parentDuplicateWarnings,
   prepareNewHorse,
   runWrite,
   type NewHorseInput,
+  type WriteOptions,
 } from './writes'
 
 const NOW = new Date('2026-09-26T01:02:03.000Z')
@@ -287,6 +292,29 @@ describe('runWrite 的來源與時點（技術設計 4.3）', () => {
     })
   })
 
+  it('寫入操作可以從上下文取得這次的來源與時點；沒有時點時不帶這個欄位', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const source = { kind: 'import' as const, importType: 'july-conception' as const }
+    const read = (options: WriteOptions) =>
+      runWrite(db, GAME, [], options, async (context) =>
+        context.done({
+          source: context.source,
+          timing: context.timing,
+          keys: Object.keys(context),
+        }),
+      )
+    const imported = await read({ source, timing: { month: 7, week: 1 } })
+    expect(imported.status === 'done' && imported.value).toMatchObject({
+      source,
+      timing: { month: 7, week: 1 },
+    })
+    const manual = await read({})
+    if (manual.status !== 'done') throw new Error(manual.status)
+    expect(manual.value.source).toEqual({ kind: 'manual' })
+    expect(manual.value.keys).not.toContain('timing')
+  })
+
   it('時點不是 1～12 月、1～4 週時丟出錯誤，什麼都不寫', async () => {
     const db = testDatabase()
     await addTestGame(db)
@@ -365,5 +393,93 @@ describe('loadMare', () => {
     expect(found.status === 'done' && found.value.horseId).toBe('M')
     await expect(read('M2')).rejects.toThrow('找不到母馬：M2')
     await expect(read('X')).rejects.toThrow('找不到母馬：X')
+  })
+})
+
+describe('loadMareInHerd', () => {
+  it('在寫入交易內讀取這一局在圈的母馬；不在圈內時丟出錯誤，訊息接上呼叫端的原因', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.mares.bulkAdd([
+      ungroupedMareRow('M', 'unassigned'),
+      ungroupedMareRow('S', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('R', 'unassigned', { herd: 'retired' }),
+    ])
+    const read = (horseId: string) =>
+      runWrite(db, GAME, [db.mares], {}, async (context) =>
+        context.done(await loadMareInHerd(context, horseId, '不能賣出')),
+      )
+    const found = await read('M')
+    expect(found.status === 'done' && found.value.horseId).toBe('M')
+    await expect(read('S')).rejects.toThrow('不在繁殖圈內的母馬不能賣出：S')
+    await expect(read('R')).rejects.toThrow('不在繁殖圈內的母馬不能賣出：R')
+    await expect(read('X')).rejects.toThrow('找不到母馬：X')
+  })
+})
+
+describe('loadFoal', () => {
+  it('在寫入交易內讀取這一局的自家產駒；找不到、屬於其他局或沒有出生紀錄時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('F', { birth: {} }),
+      horseRow('M'),
+      horseRow('F2', { gameId: 'G2', birth: {} }),
+    ])
+    const read = (horseId: string) =>
+      runWrite(db, GAME, [db.horses], {}, async (context) =>
+        context.done(await loadFoal(context, horseId)),
+      )
+    const found = await read('F')
+    expect(found.status === 'done' && found.value.id).toBe('F')
+    await expect(read('M')).rejects.toThrow('不是自家產駒：M')
+    await expect(read('F2')).rejects.toThrow('找不到馬匹：F2')
+    await expect(read('X')).rejects.toThrow('找不到馬匹：X')
+  })
+})
+
+describe('checkOwnSuccessor', () => {
+  /** 第 1 系 4 代 S14 × 第 2 系 4 代自家母駒 D24 所生的第 1 系 5 代 */
+  const origin: DesignatedOrigin = {
+    kind: 'designated',
+    breedingSireId: 'S14',
+    breedingDamId: 'D24',
+    sire: { line: 1, generation: 4 },
+    dam: { kind: 'own', line: 2, generation: 4 },
+    recorded: { line: 1, generation: 5 },
+  }
+  const candidate: SuccessorCandidate = { sireId: 'S14', damId: 'D24', origin }
+
+  it('八系指定配種所生：核對通過時回傳出生紀錄的系與代數；目標省略時就是出生紀錄', () => {
+    const passed = { ok: true, value: { line: 1, generation: 5 } }
+    expect(checkOwnSuccessor(candidate)).toEqual(passed)
+    expect(checkOwnSuccessor(candidate, { line: 1, generation: 5 })).toEqual(passed)
+  })
+
+  it('目標與出生紀錄不同、父母不符時阻止，並列出 core 的核對結果', () => {
+    expect(checkOwnSuccessor(candidate, { line: 1, generation: 6 })).toEqual({
+      ok: false,
+      blocks: [
+        {
+          kind: 'successor',
+          mismatches: [{ mismatch: 'target', expected: { line: 1, generation: 5 } }],
+        },
+      ],
+    })
+    expect(checkOwnSuccessor({ ...candidate, damId: 'X' })).toEqual({
+      ok: false,
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'parents' }] }],
+    })
+  })
+
+  it('自由配種所生或比照自由配種一律阻止（9.5）', () => {
+    const free: SuccessorCandidate = { sireId: 'S14', damId: 'D24', origin: { kind: 'free' } }
+    const blocked = {
+      ok: false,
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'free-breeding' }] }],
+    }
+    expect(checkOwnSuccessor(free)).toEqual(blocked)
+    expect(checkOwnSuccessor(free, { line: 1, generation: 5 })).toEqual(blocked)
   })
 })

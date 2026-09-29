@@ -1,5 +1,7 @@
 import type { Table } from 'dexie'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
+import type { LineGeneration } from '../core/lines'
+import { verifySuccessor, type SuccessorBlock, type SuccessorCandidate } from '../core/successor'
 import {
   findParentSystemConflict,
   normalizeSystemName,
@@ -53,6 +55,10 @@ export interface WriteContext {
   confirmed: boolean
   /** 寫入時間（ISO 8601） */
   now: string
+  /** 這次操作的來源：手動，或哪一種匯入；事件與階段馬番号都記這個來源 */
+  source: EventSource
+  /** 這次操作的遊戲內時點；沒有時留空 */
+  timing?: GameTiming
   /** 寫一筆事件：年份為目前遊戲年，寫入時間為 now，來源與時點取自 WriteOptions */
   addEvent(content: EventContent): Promise<void>
   /** 把遊戲局的更新時間設為 now，回傳 done */
@@ -89,6 +95,8 @@ export async function runWrite<T, B>(
       game,
       confirmed: options.confirmed ?? false,
       now,
+      source,
+      ...(timing === undefined ? {} : { timing }),
       async addEvent(content) {
         await db.events.add({
           ...content,
@@ -318,6 +326,37 @@ export async function loadMare(context: WriteContext, horseId: string): Promise<
   return mare
 }
 
+/**
+ * 在寫入交易內讀取這一局在圈的母馬；找不到、屬於其他局或不在圈內時丟出錯誤。
+ * reason 接在錯誤訊息「不在繁殖圈內的母馬」之後，例如「不能賣出」。交易要包含 mares
+ */
+export async function loadMareInHerd(
+  context: WriteContext,
+  horseId: string,
+  reason: string,
+): Promise<MareRow> {
+  const mare = await loadMare(context, horseId)
+  if (mare.herd !== 'in-herd') throw new Error(`不在繁殖圈內的母馬${reason}：${horseId}`)
+  return mare
+}
+
+/**
+ * 在寫入交易內讀取這一局的自家產駒（有出生紀錄）；找不到、屬於其他局或不是自家產駒時丟出錯誤。
+ * 交易要包含 horses
+ */
+export async function loadFoal(context: WriteContext, horseId: string): Promise<HorseRow> {
+  const horse = await context.db.horses.get(horseId)
+  if (!horse || horse.gameId !== context.game.id) throw new Error(`找不到馬匹：${horseId}`)
+  if (horse.birth === undefined) throw new Error(`不是自家產駒：${horseId}`)
+  return horse
+}
+
+/** 已有產駒的出生紀錄連到這筆配種紀錄（需求規格 9.1、BRD-25）；horseId 是那匹產駒 */
+export interface FoalExistsBlock {
+  kind: 'foal-exists'
+  horseId: string
+}
+
 /** 由資料列組出八系目前的系統（技術設計 4.3「規則輸入快照的彙整」的系統） */
 export function lineSystemsFromRows(
   lines: readonly LineRow[],
@@ -411,4 +450,32 @@ export async function resolveSire(
 /** 資料列記的種牡馬是不是這一匹：內部識別相同，或外部名稱相同 */
 export function sameSire(row: { sireId?: string; sireName?: string }, sire: SireRef): boolean {
   return 'sireId' in sire ? row.sireId === sire.sireId : row.sireName === sire.sireName
+}
+
+/** 進入母馬群或接任前的核對不符（需求規格 9.6、PED-08）；mismatches 是 core 的核對結果 */
+export interface SuccessorCheckBlock {
+  kind: 'successor'
+  mismatches: SuccessorBlock[]
+}
+
+/**
+ * 進入母馬群、指定為預定後繼或接任前，再次核對自家產駒（需求規格 9.6）：通過時回傳出生紀錄的系與代數。
+ * target 是要進入或接任的系與代數，省略時為出生紀錄本身（系與代數不由畫面選）。
+ * 自由配種所生或比照自由配種沒有出生紀錄的系與代數，一律阻止（9.5：不可成為八系後繼）
+ */
+export function checkOwnSuccessor(
+  candidate: SuccessorCandidate,
+  target?: LineGeneration,
+): Prepared<LineGeneration, SuccessorCheckBlock> {
+  const { origin } = candidate
+  if (origin.kind === 'free') {
+    // core 對自由配種所生只回傳 free-breeding，不看目標
+    return {
+      ok: false,
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'free-breeding' }] }],
+    }
+  }
+  const mismatches = verifySuccessor(candidate, target ?? origin.recorded)
+  if (mismatches.length > 0) return { ok: false, blocks: [{ kind: 'successor', mismatches }] }
+  return { ok: true, value: origin.recorded }
 }

@@ -25,7 +25,10 @@ import {
 /** 目前遊戲年 */
 const YEAR = 1990
 
-/** 母馬的馬匹資料；出生年預設 1985（1990 年 5 歲），birthYears 可以另外指定或設為不明 */
+/**
+ * 母馬的馬匹資料；出生年預設 1985（1990 年 5 歲），birthYears 可以另外指定或設為不明。
+ * 自家母駒的出生紀錄與她的母馬群相同，自由配種所生的出生紀錄沒有系與代數
+ */
 function horsesOf(
   mares: readonly MareRow[],
   birthYears: Record<string, number | undefined> = {},
@@ -33,8 +36,18 @@ function horsesOf(
   return mares.map((mare) =>
     horseRow(mare.horseId, {
       birthYear: mare.horseId in birthYears ? birthYears[mare.horseId] : 1985,
+      ...birthOf(mare),
     }),
   )
+}
+
+/** 自家母駒與自由配種所生的出生紀錄 */
+function birthOf(mare: MareRow): Partial<HorseRow> {
+  if (mare.usage === 'free') return { birth: {} }
+  if (mare.usage !== 'own' || mare.groupLine === undefined || mare.groupGeneration === undefined) {
+    return {}
+  }
+  return { birth: { placement: { line: mare.groupLine, generation: mare.groupGeneration } } }
 }
 
 /** 彙整快照；沒寫到的資料表為空 */
@@ -295,5 +308,41 @@ describe('buildEightLineSnapshot', () => {
     expect(() =>
       build({ mares: [ownMareRow('C', 1, 1, { herd: 'sold', sisterStatus: 'sold' })] }),
     ).not.toThrow()
+  })
+
+  it('在圈的自家母駒，母馬群與出生紀錄的系與代數不同或沒有出生紀錄時丟出 RangeError（技術設計 4.3）', () => {
+    const own = [ownMareRow('A', 1, 2)]
+    const placed = (line: LinePosition, generation: number) =>
+      horseRow('A', { birth: { placement: { line, generation } } })
+    for (const horses of [
+      [placed(2, 2)],
+      [placed(1, 3)],
+      [horseRow('A')],
+      [horseRow('A', { birth: {} })],
+    ]) {
+      expect(() => build({ mares: own, horses })).toThrow(RangeError)
+    }
+    expect(() => build({ mares: own, horses: [horseRow('A')] })).toThrow(
+      '母馬的用途與出生紀錄的系與代數不一致：A',
+    )
+    expect(() => build({ mares: own, horses: [placed(1, 2)] })).not.toThrow()
+  })
+
+  it('在圈的自由配種所生要有出生紀錄而且沒有系與代數；不在圈的自家母駒與其他用途不查', () => {
+    const free = [ungroupedMareRow('F', 'free')]
+    const born = (fields: Partial<HorseRow>) => [horseRow('F', fields)]
+    expect(() => build({ mares: free, horses: born({}) })).toThrow(RangeError)
+    expect(() =>
+      build({ mares: free, horses: born({ birth: { placement: { line: 1, generation: 2 } } }) }),
+    ).toThrow(RangeError)
+    expect(() => build({ mares: free, horses: born({ birth: {} }) })).not.toThrow()
+    expect(() => build({ mares: free })).toThrow('找不到母馬的馬匹資料：F')
+    const others = [
+      ownMareRow('S', 1, 2, { herd: 'sold', sisterStatus: 'sold' }),
+      substituteMareRow('M', 1, 2),
+      ungroupedMareRow('U', 'unassigned'),
+    ]
+    const horses = [horseRow('S'), horseRow('M'), horseRow('U')]
+    expect(() => build({ mares: others, horses })).not.toThrow()
   })
 })

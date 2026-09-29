@@ -3,8 +3,9 @@ import { foalingHerd } from '../../tests/support/breeding'
 import { addTestGame } from '../../tests/support/database'
 import { GAME, horseRow, substituteMareRow } from '../../tests/support/rows'
 import { loadGame } from './games'
-import { addFoal, nameFoal, setFoalDisposition } from './foal-writes'
-import type { HorseRow } from './records'
+import { addFoal, nameFoal, relinkFoal, setFoalDisposition } from './foal-writes'
+import { transferFilly } from './own-mare-writes'
+import type { Conception, HorseRow } from './records'
 
 const now = new Date('2026-09-27T01:02:03.000Z')
 
@@ -399,5 +400,167 @@ describe('setFoalDisposition', () => {
     await expect(setFoalDisposition(db, GAME, foal.id, 'sold')).rejects.toThrow(
       `自家產駒缺少牧場處置：${foal.id}`,
     )
+  })
+})
+
+describe('relinkFoal', () => {
+  /**
+   * 產駒牧場（foalingHerd）裡，母馬 damId 1989 年的配種紀錄 breedingId 還不是受胎時確認建立的 1990 年產駒，
+   * 之後紀錄改成受胎；回傳資料庫與產駒識別
+   */
+  async function unlinkedFoal(
+    damId: string,
+    breedingId: string,
+    fields: Partial<Parameters<typeof addFoal>[2]> = {},
+  ) {
+    const db = await foalingHerd()
+    await db.breedings.update(breedingId, { conception: '未確認' })
+    const added = await addFoal(
+      db,
+      GAME,
+      { damId, sex: 'female', birthYear: 1990, ...fields },
+      { confirmed: true },
+    )
+    if (added.status !== 'done') throw new Error(added.status)
+    await db.breedings.update(breedingId, { conception: '受胎' })
+    await db.events.clear()
+    return { db, foalId: added.value.id }
+  }
+
+  it('連到八系指定配種：出生紀錄記配種紀錄與預計產出，父馬取自紀錄，待售改為保留；事件 foal-linked', async () => {
+    const { db, foalId } = await unlinkedFoal('SUB21', 'B89')
+    expect(await db.horses.get(foalId)).toMatchObject({ birth: {}, disposition: 'for-sale' })
+    const result = await relinkFoal(db, GAME, foalId, { now })
+    const foal: HorseRow = {
+      id: foalId,
+      gameId: GAME,
+      birthYear: 1990,
+      sex: 'female',
+      sireId: 'S11',
+      damId: 'SUB21',
+      birth: { breedingId: 'B89', placement: { line: 1, generation: 2 } },
+      disposition: 'keep',
+    }
+    expect(result).toStrictEqual({ status: 'done', value: foal, warnings: [] })
+    expect(await db.horses.get(foalId)).toStrictEqual(foal)
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        year: 1990,
+        recordedAt: '2026-09-27T01:02:03.000Z',
+        source: { kind: 'manual' },
+        kind: 'foal-linked',
+        horseId: foalId,
+        breedingId: 'B89',
+        disposition: { from: 'for-sale', to: 'keep' },
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-27T01:02:03.000Z')
+  })
+
+  it('連到自由配種：沒有系與代數，處置不變；補上外部父馬名時來源依事件的來源', async () => {
+    const manual = await unlinkedFoal('D11', 'F89')
+    const result = await relinkFoal(manual.db, GAME, manual.foalId)
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value).toStrictEqual({
+      id: manual.foalId,
+      gameId: GAME,
+      birthYear: 1990,
+      sex: 'female',
+      sireName: 'ノーザンダンサー',
+      damId: 'D11',
+      pedigreeSource: 'manual',
+      birth: { breedingId: 'F89' },
+      disposition: 'for-sale',
+    })
+    const [event] = await manual.db.events.toArray()
+    expect(event).not.toHaveProperty('disposition')
+
+    const imported = await unlinkedFoal('D11', 'F89')
+    const linked = await relinkFoal(imported.db, GAME, imported.foalId, {
+      source: { kind: 'import', importType: 'april-foals' },
+    })
+    if (linked.status !== 'done') throw new Error(linked.status)
+    expect(linked.value.pedigreeSource).toBe('import')
+  })
+
+  it('產駒已記的父馬和紀錄相同時照常連結，父母名的來源不變；已售出的處置不變', async () => {
+    const { db, foalId } = await unlinkedFoal('D11', 'F89', {
+      sire: { name: 'ノーザンダンサー' },
+      sireSystem: 'ノーザンダンサー',
+    })
+    const result = await relinkFoal(db, GAME, foalId, {
+      source: { kind: 'import', importType: 'april-foals' },
+    })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value).toMatchObject({ sireName: 'ノーザンダンサー', pedigreeSource: 'manual' })
+
+    const sold = await unlinkedFoal('SUB21', 'B89')
+    await sold.db.horses.update(sold.foalId, { disposition: 'sold' })
+    const kept = await relinkFoal(sold.db, GAME, sold.foalId)
+    if (kept.status !== 'done') throw new Error(kept.status)
+    expect(kept.value).toMatchObject({
+      disposition: 'sold',
+      birth: { breedingId: 'B89', placement: { line: 1, generation: 2 } },
+    })
+    const [event] = await sold.db.events.toArray()
+    expect(event).not.toHaveProperty('disposition')
+  })
+
+  it('前一年的紀錄不是受胎或沒有紀錄時阻止並附那一筆與狀態；產駒已記的父馬不同時阻止，什麼都不寫', async () => {
+    const { db, foalId } = await unlinkedFoal('SUB21', 'B89', { sire: { horseId: 'Z1' } })
+    expect(await relinkFoal(db, GAME, foalId)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'sire-mismatch', breedingId: 'B89' }],
+    })
+    for (const conception of ['空胎', '不受胎', '未確認'] as Conception[]) {
+      await db.breedings.update('B89', { conception })
+      expect(await relinkFoal(db, GAME, foalId)).toEqual({
+        status: 'blocked',
+        blocks: [{ kind: 'no-conception-record', breedingId: 'B89', conception }],
+      })
+    }
+    await db.breedings.update('B89', { conception: undefined })
+    expect(await relinkFoal(db, GAME, foalId)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'no-conception-record', breedingId: 'B89' }],
+    })
+    await db.breedings.delete('B89')
+    expect(await relinkFoal(db, GAME, foalId)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'no-conception-record' }],
+    })
+    expect(await db.horses.get(foalId)).toMatchObject({ birth: {}, disposition: 'for-sale' })
+    expect(await db.events.count()).toBe(0)
+  })
+
+  it('已轉入繁殖圈的牝駒連到八系指定配種時阻止；連到自由配種可以，用途仍是自由配種所生', async () => {
+    const designated = await unlinkedFoal('SUB21', 'B89')
+    expect((await transferFilly(designated.db, GAME, designated.foalId)).status).toBe('done')
+    expect(await relinkFoal(designated.db, GAME, designated.foalId)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'mare-entered' }],
+    })
+
+    const free = await unlinkedFoal('D11', 'F89')
+    expect((await transferFilly(free.db, GAME, free.foalId)).status).toBe('done')
+    expect((await relinkFoal(free.db, GAME, free.foalId)).status).toBe('done')
+    expect(await free.db.mares.get(free.foalId)).toMatchObject({ usage: 'free' })
+  })
+
+  it('馬匹找不到、屬於其他局、不是自家產駒或已經連結配種紀錄時丟出錯誤；缺少母馬或出生年時丟出 RangeError', async () => {
+    const { db, foalId } = await unlinkedFoal('SUB21', 'B89')
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('OTHER', { gameId: 'G2', birth: {} }),
+      horseRow('NODAM', { birthYear: 1990, birth: {} }),
+    ])
+    await expect(relinkFoal(db, GAME, 'X')).rejects.toThrow('找不到馬匹：X')
+    await expect(relinkFoal(db, GAME, 'OTHER')).rejects.toThrow('找不到馬匹：OTHER')
+    await expect(relinkFoal(db, GAME, 'Z1')).rejects.toThrow('不是自家產駒：Z1')
+    await expect(relinkFoal(db, GAME, 'NODAM')).rejects.toThrow(RangeError)
+    expect((await relinkFoal(db, GAME, foalId)).status).toBe('done')
+    await expect(relinkFoal(db, GAME, foalId)).rejects.toThrow(`產駒已經連結配種紀錄：${foalId}`)
   })
 })

@@ -3,8 +3,10 @@ import { checkMarketStallionSystem } from '../../src/core/stallions'
 import { openLine } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { assignZeroStallion, setStallionStatus } from '../../src/storage/stallion-writes'
+import { appointStallion } from '../../src/storage/successor-writes'
 import { addTestGame, testDatabase } from '../support/database'
 import { GAME, horseRow, lineRow, stallionRow } from '../support/rows'
+import { successorHerd } from '../support/successor'
 import { lineSystemsOf, systemTableOf } from '../support/systems'
 
 // 需求規格第 15 章「種牡馬匯入（STL）」中由 core 與儲存層寫入負責的部分；匯入與配對由後續計畫補上
@@ -97,6 +99,18 @@ describe('種牡馬匯入（STL）：儲存層寫入', () => {
       .toArray()
     expect(renamed).toEqual([
       expect.objectContaining({ year: 1990, from: 'マンノウォー', to: 'ハイペリオン' }),
+    ])
+  })
+
+  it('STL-03 自家種牡馬接任 → 從既有馬匹選取，不需匯入；沿用內部識別，可以輸入種牡馬馬番号', async () => {
+    const db = await successorHerd()
+    const horses = await db.horses.count()
+    const result = await appointStallion(db, GAME, { horseId: 'C87', horseNumber: '0x0123' })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.appointment).toMatchObject({ horseId: 'C87', status: 'active' })
+    expect(await db.horses.count()).toBe(horses)
+    expect(await db.horseNumbers.toArray()).toEqual([
+      expect.objectContaining({ horseId: 'C87', stage: 'stallion', number: '0x0123' }),
     ])
   })
 })

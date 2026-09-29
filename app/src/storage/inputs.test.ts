@@ -11,6 +11,7 @@ import {
 import { matchHorse } from '../core/identity'
 import { verifySuccessor } from '../core/successor'
 import {
+  buildBrotherRecords,
   buildKnownHorses,
   buildOwnMares,
   buildStallionRecords,
@@ -69,6 +70,28 @@ describe('buildStallionRecords', () => {
 
   it('找不到馬匹資料時丟出錯誤', () => {
     expect(() => buildStallionRecords([stallionRow('A', 1, 3)], [])).toThrow('找不到馬匹：A')
+  })
+})
+
+describe('buildBrotherRecords', () => {
+  it('格位取他的任用，沒有任用時取出生紀錄的系與代數；狀態取任用的，沒有任用時留空', () => {
+    const horses = [
+      horseRow('A', { sireId: 'S', birth: { placement: { line: 1, generation: 5 } } }),
+      horseRow('B', { sireId: 'S', birth: { placement: { line: 1, generation: 5 } } }),
+      horseRow('Z'),
+    ]
+    const stallions = [stallionRow('A', 1, 5, { status: 'replaced' }), stallionRow('Z', 3, 0)]
+    expect(buildBrotherRecords(horses, stallions)).toEqual([
+      { id: 'A', placement: { line: 1, generation: 5 }, sireId: 'S', status: 'replaced' },
+      { id: 'B', placement: { line: 1, generation: 5 }, sireId: 'S' },
+      { id: 'Z', placement: { line: 3, generation: 0 }, status: 'active' },
+    ])
+  })
+
+  it('沒有任用、出生紀錄也沒有系與代數的馬不能比較，丟出錯誤', () => {
+    expect(() => buildBrotherRecords([horseRow('F', { birth: {} })], [])).toThrow(
+      '沒有系與代數的馬不能做兄弟比較：F',
+    )
   })
 })
 

@@ -1,9 +1,9 @@
 import { checkSubAbilityTotal, isSubAbilityGrade } from '../core/foal'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
 import { normalizeSystemName } from '../core/systems'
-import type { FoalExistsBlock } from './breeding-writes'
 import type { WPStudBookDatabase } from './database'
 import type {
+  Conception,
   FoalDisposition,
   HorseAbility,
   HorseRow,
@@ -15,16 +15,17 @@ import {
   confirmation,
   findSameHorse,
   gate,
+  loadFoal,
   loadMare,
   resolveSire,
   runWrite,
   sameSire,
+  type FoalExistsBlock,
   type Prepared,
   type SireInput,
   type SireNameBlock,
   type SireRef,
   type UnchangedBlock,
-  type WriteContext,
   type WriteOptions,
   type WriteResult,
 } from './writes'
@@ -91,6 +92,18 @@ export type FoalNameBlock = { kind: 'name-confirmed' } | { kind: 'horse-name' } 
 
 /** 牧場處置的阻止原因：free-foal 是出生紀錄沒有系與代數的產駒不能改為保留（9.5）；和目前相同 */
 export type DispositionBlock = { kind: 'free-foal' } | UnchangedBlock
+
+/**
+ * 重新連結出生紀錄的阻止原因：
+ * - no-conception-record：母馬「出生年減 1」那一年沒有 `受胎` 的配種紀錄；有紀錄時附那一筆的識別與狀態
+ * - sire-mismatch：產駒已記的父馬和配種紀錄 breedingId 不同
+ * - mare-entered：牝駒已轉入繁殖圈，連到八系指定配種會改變她的系與代數
+ *   （技術設計 4.3「自家母駒與出生紀錄的一致性」）
+ */
+export type RelinkBlock =
+  | { kind: 'no-conception-record'; breedingId?: string; conception?: Conception }
+  | { kind: 'sire-mismatch'; breedingId: string }
+  | { kind: 'mare-entered' }
 
 /** 牧場處置的三種值 */
 const DISPOSITIONS: readonly FoalDisposition[] = ['keep', 'for-sale', 'sold']
@@ -165,7 +178,7 @@ export async function addFoal(
     if (stop) return stop
 
     const sireRef: SireRef | Record<string, never> = linked
-      ? linkedSire(linked)
+      ? (sireOf(linked) ?? {})
       : sire?.ok
         ? sire.value
         : {}
@@ -283,22 +296,76 @@ export async function setFoalDisposition(
   })
 }
 
-/** 這一局的自家產駒（有出生紀錄）；找不到、屬於其他局或不是自家產駒時丟出錯誤 */
-async function loadFoal(context: WriteContext, horseId: string): Promise<HorseRow> {
-  const horse = await context.db.horses.get(horseId)
-  if (!horse || horse.gameId !== context.game.id) throw new Error(`找不到馬匹：${horseId}`)
-  if (horse.birth === undefined) throw new Error(`不是自家產駒：${horseId}`)
-  return horse
+/**
+ * 重新連結出生紀錄（需求規格 9.3、BRD-27）：產駒建立後才把母馬前一年的紀錄改成 `受胎` 時使用。
+ * 只限沒有連結配種紀錄的自家產駒；母馬「出生年減 1」那一年的配種紀錄要是 `受胎`，產駒已記的父馬要和紀錄相同。
+ * 連結後出生紀錄記配種紀錄，八系指定配種所生另記規則快照的預計產出；父馬取自紀錄（原本沒有時補上），
+ * 補上外部父馬名而原本沒有父母名的來源時，來源依事件的來源（同 addFoal）。
+ * 連到八系指定配種、原本待售時牧場處置改為保留，比照 addFoal 的預設（原本待售是沒有連結時強制的）；
+ * 已售出不變，連到自由配種也不變。已轉入繁殖圈的牝駒連到八系指定配種時阻止。母馬不必在圈。
+ * 事件 foal-linked 記配種紀錄與牧場處置的變化。
+ * 馬匹找不到、屬於其他局、不是自家產駒或已經連結配種紀錄時丟出錯誤；自家產駒缺少母馬或出生年時丟出 RangeError。
+ */
+export async function relinkFoal(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  options: WriteOptions = {},
+): Promise<WriteResult<HorseRow, RelinkBlock>> {
+  return runWrite(db, gameId, [db.horses, db.breedings, db.mares], options, async (context) => {
+    const foal = await loadFoal(context, horseId)
+    if (foal.birth?.breedingId !== undefined) throw new Error(`產駒已經連結配種紀錄：${horseId}`)
+    const { damId, birthYear } = foal
+    if (damId === undefined || birthYear === undefined) {
+      throw new RangeError(`自家產駒缺少母馬或出生年：${horseId}`)
+    }
+    const breeding = await db.breedings
+      .where('[gameId+mareId+year]')
+      .equals([gameId, damId, birthYear - 1])
+      .first()
+    if (breeding?.conception !== '受胎') {
+      const block: RelinkBlock = {
+        kind: 'no-conception-record',
+        ...(breeding === undefined ? {} : { breedingId: breeding.id }),
+        ...(breeding?.conception === undefined ? {} : { conception: breeding.conception }),
+      }
+      return { status: 'blocked', blocks: [block] }
+    }
+    const placement = breeding.kind === 'designated' ? breeding.rule?.output : undefined
+    const recorded = sireOf(foal)
+    const blocks: RelinkBlock[] = []
+    if (recorded && !sameSire(breeding, recorded)) {
+      blocks.push({ kind: 'sire-mismatch', breedingId: breeding.id })
+    }
+    if (placement && (await db.mares.get(horseId))) blocks.push({ kind: 'mare-entered' })
+    if (blocks.length > 0) return { status: 'blocked', blocks }
+
+    const importing = context.source.kind === 'import'
+    const addsPedigree = breeding.sireName !== undefined && foal.pedigreeSource === undefined
+    const keep = placement !== undefined && foal.disposition === 'for-sale'
+    const next: HorseRow = {
+      ...foal,
+      ...sireOf(breeding),
+      ...(addsPedigree ? { pedigreeSource: importing ? 'import' : 'manual' } : {}),
+      birth: { breedingId: breeding.id, ...(placement === undefined ? {} : { placement }) },
+      ...(keep ? { disposition: 'keep' } : {}),
+    }
+    await db.horses.put(next)
+    await context.addEvent({
+      kind: 'foal-linked',
+      horseId,
+      breedingId: breeding.id,
+      ...(keep ? { disposition: { from: 'for-sale', to: 'keep' } } : {}),
+    })
+    return context.done(next)
+  })
 }
 
-/** 連結的配種紀錄記的父馬：內部識別或外部名稱 */
-function linkedSire(breeding: {
-  sireId?: string
-  sireName?: string
-}): SireRef | Record<string, never> {
-  if (breeding.sireId !== undefined) return { sireId: breeding.sireId }
-  if (breeding.sireName !== undefined) return { sireName: breeding.sireName }
-  return {}
+/** 資料列（配種紀錄或產駒）記的父馬：內部識別或外部名稱；都沒有時為 undefined */
+function sireOf(row: { sireId?: string; sireName?: string }): SireRef | undefined {
+  if (row.sireId !== undefined) return { sireId: row.sireId }
+  if (row.sireName !== undefined) return { sireName: row.sireName }
+  return undefined
 }
 
 /**

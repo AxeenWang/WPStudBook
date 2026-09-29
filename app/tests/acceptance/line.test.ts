@@ -20,13 +20,23 @@ import {
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
 import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
+import { addFoal } from '../../src/storage/foal-writes'
+import { setCurrentYear } from '../../src/storage/games'
 import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
-import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { loadBrotherRecords, loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare } from '../../src/storage/mare-writes'
+import { transferFilly } from '../../src/storage/own-mare-writes'
 import { declareRestoration } from '../../src/storage/restoration-writes'
 import { assignZeroStallion } from '../../src/storage/stallion-writes'
+import {
+  appointStallion,
+  cancelSuccessor,
+  confirmSuccessorBirth,
+  designateSuccessor,
+} from '../../src/storage/successor-writes'
 import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
+import { restorationHerd, successorHerd } from '../support/successor'
 import {
   describePairing,
   pairingOf,
@@ -34,7 +44,7 @@ import {
   snapshotOf,
   type LineSpec,
 } from '../support/eight-line'
-import { GAME, horseRow, lineRow, ownMareRow, stallionRow } from '../support/rows'
+import { GAME, lineRow, ownFoalRow, ownMareRow, stallionRow } from '../support/rows'
 import { eightLineSystems, lineSystemsOf, subsystemOfLine } from '../support/systems'
 
 // 需求規格第 15 章「八系管理（LINE）」中由 core 與儲存層（彙整與寫入）負責的部分；畫面、匯入與其他寫入由後續計畫補上
@@ -632,7 +642,7 @@ describe('八系管理（LINE）：儲存層彙整', () => {
     await addTestGame(db)
     await db.lines.bulkAdd([lineRow(1, subsystemOfLine(1)), lineRow(3, subsystemOfLine(3))])
     await db.stallions.add(stallionRow('S15', 1, 5))
-    await db.horses.add(horseRow('F1', { birthYear: 1987 }))
+    await db.horses.add(ownFoalRow('F1', 3, 5, { birthYear: 1987 }))
     await db.mares.add(ownMareRow('F1', 3, 5))
 
     const { eightLines } = await loadRuleSnapshot(db, GAME)
@@ -798,7 +808,7 @@ describe('八系管理（LINE）：儲存層寫入', () => {
       '第 1 系 12 代 × 第 5 系 12 代母馬群 → 第 1 系 13 代',
     )
 
-    await db.horses.add(horseRow('F', { birthYear: 1987 }))
+    await db.horses.add(ownFoalRow('F', 5, 11, { birthYear: 1987 }))
     await db.mares.add(ownMareRow('F', 5, 11))
     expect(await declareRestoration(db, GAME, { ...input, generation: 11 })).toEqual({
       status: 'blocked',
@@ -858,7 +868,7 @@ describe('八系管理（LINE）：儲存層寫入', () => {
       { gameId: GAME, subsystem: 'ハイペリオン', parentSystem: 'ハイペリオン' },
     ])
     await db.stallions.add(stallionRow('S14', 1, 4))
-    await db.horses.add(horseRow('F', { birthYear: 1985 }))
+    await db.horses.add(ownFoalRow('F', 2, 4, { birthYear: 1985 }))
     await db.mares.add(ownMareRow('F', 2, 4))
     const substitute = (fullName: string, sireSystem: string) => ({
       horse: { fullName, sireSystem },
@@ -932,5 +942,100 @@ describe('八系管理（LINE）：儲存層寫入', () => {
       groupGeneration: 12,
       source: { kind: 'market-restoration' },
     })
+  })
+
+  it('LINE-17 第一匹自家母駒以暫定保留轉入 → 該代立即成立，不必 5 匹或種牡馬就緒', async () => {
+    const db = await successorHerd()
+    const groups = async () => (await loadRuleSnapshot(db, GAME)).eightLines.lines[0]!.mareGroups
+    expect(await groups()).toEqual([])
+    expect((await transferFilly(db, GAME, 'F88')).status).toBe('done')
+    expect(await groups()).toEqual([
+      { generation: 5, established: true, activeMares: 1, ownMares: 1 },
+    ])
+  })
+
+  it('LINE-40 補公系產駒指定為預定後繼（尚未出生也可以）→ 產出那一代有了種牡馬紀錄，補系結束並解除暫停', async () => {
+    const db = await restorationHerd()
+    const restorations = async () =>
+      listBoard((await loadRuleSnapshot(db, GAME)).eightLines).restorations
+    expect(await restorations()).toMatchObject([
+      { line: 5, generation: 12, side: 'sire', inProgress: true },
+    ])
+    const result = await designateSuccessor(db, GAME, { target: { breedingId: 'BR90' } })
+    expect(result.status).toBe('done')
+    expect(await restorations()).toMatchObject([{ inProgress: false }])
+  })
+
+  it('LINE-41 補公系所生的產駒 → 依補公系配對核對，可以指定為第 5 系 13 代的預定後繼', async () => {
+    const db = await restorationHerd()
+    const result = await designateSuccessor(db, GAME, { target: { horseId: 'C513' } })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value).toMatchObject({ line: 5, generation: 13, horseId: 'C513' })
+  })
+
+  it('LINE-42 已有預定後繼時再指定另一匹 → 阻止，先取消；預定後繼指定受胎配種，產駒出生後由使用者確認，牝駒不能確認', async () => {
+    const db = await successorHerd()
+    const unborn = await designateSuccessor(db, GAME, { target: { breedingId: 'B90' } })
+    if (unborn.status !== 'done') throw new Error(unborn.status)
+    expect(await designateSuccessor(db, GAME, { target: { horseId: 'C87' } })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'line-has-successor', stallionId: unborn.value.id }],
+    })
+
+    // 1991 年 4 月產駒出生；建立產駒不會自動改指
+    expect((await setCurrentYear(db, GAME, 1991)).status).toBe('done')
+    const foal = await addFoal(db, GAME, { damId: 'D24', sex: 'female', birthYear: 1991 })
+    if (foal.status !== 'done') throw new Error(foal.status)
+    expect(await db.stallions.get(unborn.value.id)).toMatchObject({ breedingId: 'B90' })
+    expect(await confirmSuccessorBirth(db, GAME, unborn.value.id)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'foal-female', horseId: foal.value.id }],
+    })
+
+    // 預定後繼失效：取消後改指定已出生的公駒
+    expect((await cancelSuccessor(db, GAME, unborn.value.id)).status).toBe('done')
+    expect((await designateSuccessor(db, GAME, { target: { horseId: 'C87' } })).status).toBe('done')
+  })
+
+  it('LINE-22 同父異母弟弟取代哥哥擔任現任 → 允許，只有弟弟在崗，哥哥紀錄保留為已被取代', async () => {
+    const db = await successorHerd()
+    expect((await appointStallion(db, GAME, { horseId: 'C87' })).status).toBe('done')
+    const result = await appointStallion(db, GAME, {
+      horseId: 'C89',
+      reason: { kind: 'younger-brother' },
+    })
+    expect(result.status).toBe('done')
+    const slot = await db.stallions.where('[gameId+line+generation]').equals([GAME, 1, 5]).toArray()
+    expect(slot.map((row) => [row.horseId, row.status]).sort()).toEqual([
+      ['C87', 'replaced'],
+      ['C89', 'active'],
+    ])
+    expect((await loadRuleSnapshot(db, GAME)).eightLines.lines[0]!.stallions).toEqual([
+      { generation: 4, state: 'active' },
+      { generation: 5, state: 'active' },
+    ])
+  })
+
+  it('LINE-30、LINE-32 第 1 系 5 代兩匹同父兄弟都成為種牡馬 → 並排比較，不判定優劣；選定弟弟時哥哥標示已被取代，保留哥哥時不寫紀錄', async () => {
+    const db = await successorHerd()
+    await appointStallion(db, GAME, { horseId: 'C87' })
+    const before = await db.stallions.toArray()
+    const [elder, younger] = await loadBrotherRecords(db, GAME, ['C87', 'C89'])
+    expect(checkBrothers(elder!, [younger!])).toEqual([])
+    expect(younger).toEqual({ id: 'C89', placement: { line: 1, generation: 5 }, sireId: 'S14' })
+    // 比較只讀資料，不自動更換現任；保留哥哥時不再呼叫接任，任用不變
+    expect(await db.stallions.toArray()).toEqual(before)
+    await appointStallion(db, GAME, { horseId: 'C89', reason: { kind: 'younger-brother' } })
+    const [elderAfter] = await loadBrotherRecords(db, GAME, ['C87'])
+    expect(elderAfter).toMatchObject({ status: 'replaced' })
+  })
+
+  it('LINE-31 兄弟比較中選入不同系或不同代的種牡馬 → 阻止', async () => {
+    const db = await successorHerd()
+    await appointStallion(db, GAME, { horseId: 'C87' })
+    const [reference, other] = await loadBrotherRecords(db, GAME, ['C87', 'S14'])
+    expect(checkBrothers(reference!, [other!])).toEqual([
+      { id: 'S14', mismatches: ['generation', 'sire'] },
+    ])
   })
 })

@@ -169,8 +169,8 @@ async function slotOf(
   return { line: restoration.line, restorationId: restoration.id }
 }
 
-/** 原因的說明去掉前後空白，空白時不寫說明 */
-function reasonOf(reason: StallionChangeReason): StallionChangeReason {
+/** 更換現任的原因：說明去掉前後空白，空白時不寫說明 */
+export function reasonOf(reason: StallionChangeReason): StallionChangeReason {
   const note = reason.note?.trim()
   return note ? { kind: reason.kind, note } : { kind: reason.kind }
 }

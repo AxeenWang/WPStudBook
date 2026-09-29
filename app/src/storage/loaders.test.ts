@@ -4,6 +4,7 @@ import {
   GAME,
   horseRow,
   lineRow,
+  ownFoalRow,
   ownMareRow,
   restorationRow,
   stallionRow,
@@ -11,6 +12,7 @@ import {
   substituteMareRow,
 } from '../../tests/support/rows'
 import {
+  loadBrotherRecords,
   loadKnownHorses,
   loadMating,
   loadRuleSnapshot,
@@ -34,7 +36,7 @@ describe('loadRuleSnapshot', () => {
       stallionRow('Z2', 2, 0, { status: 'retired' }),
     ])
     await db.horses.bulkAdd([
-      horseRow('M1', { birthYear: 1985 }),
+      ownFoalRow('M1', 1, 1, { birthYear: 1985 }),
       horseRow('M2', { birthYear: 1987 }),
     ])
     await db.mares.bulkAdd([ownMareRow('M1', 1, 1), substituteMareRow('M2', 2, 1)])
@@ -71,7 +73,7 @@ describe('loadRuleSnapshot', () => {
   it('馬齡以目前遊戲年計算，定年取這一局的設定', async () => {
     const db = testDatabase()
     await addTestGame(db, { currentYear: 1990 })
-    await db.horses.add(horseRow('M1', { birthYear: 1965 }))
+    await db.horses.add(ownFoalRow('M1', 1, 1, { birthYear: 1965 }))
     await db.mares.add(ownMareRow('M1', 1, 1))
     const activeMares = async () =>
       (await loadRuleSnapshot(db, GAME)).eightLines.lines[0]!.mareGroups[0]!.activeMares
@@ -204,6 +206,28 @@ describe('loadStallionRecords', () => {
     expect(await loadStallionRecords(db, GAME, 5, 1)).toEqual([
       { id: 'C', placement: { line: 5, generation: 1 }, sireId: 'A', status: 'active' },
     ])
+  })
+})
+
+describe('loadBrotherRecords', () => {
+  it('讀取這一局的馬與他們的任用；馬匹找不到或屬於其他局時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('A', { sireId: 'S', birth: { placement: { line: 1, generation: 5 } } }),
+      horseRow('B', { sireId: 'S', birth: { placement: { line: 1, generation: 5 } } }),
+      horseRow('Q', { gameId: 'G2' }),
+    ])
+    await db.stallions.bulkAdd([
+      stallionRow('A', 1, 5),
+      stallionRow('B', 1, 5, { id: 'B2', gameId: 'G2', status: 'retired' }),
+    ])
+    expect(await loadBrotherRecords(db, GAME, ['A', 'B'])).toEqual([
+      { id: 'A', placement: { line: 1, generation: 5 }, sireId: 'S', status: 'active' },
+      { id: 'B', placement: { line: 1, generation: 5 }, sireId: 'S' },
+    ])
+    await expect(loadBrotherRecords(db, GAME, ['A', 'Q'])).rejects.toThrow('找不到馬匹：Q')
   })
 })
 

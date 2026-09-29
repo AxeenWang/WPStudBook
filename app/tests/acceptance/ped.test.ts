@@ -7,7 +7,10 @@ import { systemTableOf, eightLineSystems, subsystemOfLine } from '../support/sys
 import { checkPedigree, estimateVitality } from '../../src/core/vitality'
 import { LINE_POSITIONS, type LinePosition } from '../../src/core/lines'
 import { buildEightLinePlan } from '../support/eight-line-plan'
+import { successorHerd } from '../support/successor'
 import { registerBreeding } from '../../src/storage/breeding-writes'
+import { transferFilly } from '../../src/storage/own-mare-writes'
+import { appointStallion } from '../../src/storage/successor-writes'
 import {
   BUILD_PHASE_PEDIGREE,
   buildPhaseHerd,
@@ -17,6 +20,7 @@ import {
 import {
   GAME,
   horseRow,
+  ownFoalRow,
   ownMareRow,
   restorationRow,
   stallionRow,
@@ -349,7 +353,7 @@ describe('血統檢查（PED）：配種紀錄的寫入', () => {
     const db = await buildPhaseHerd()
     await db.horses.bulkAdd([
       horseRow('OLD', { sex: 'female', birthYear: 1965 }),
-      horseRow('R', { sex: 'female', birthYear: 1985 }),
+      ownFoalRow('R', 1, 1, { birthYear: 1985 }),
     ])
     await db.mares.bulkAdd([
       substituteMareRow('OLD', 2, 1),
@@ -476,5 +480,34 @@ describe('血統檢查（PED）：配種紀錄的寫入', () => {
       status: 'unconfirmed',
       warnings: [{ kind: 'pedigree', warnings: ['insufficient-data'] }],
     })
+  })
+})
+
+describe('血統檢查（PED）：後繼與接替的寫入', () => {
+  it('PED-08 自家母駒進入母馬群前 → 再次核對父母、系與代數，不符時阻止', async () => {
+    const db = await successorHerd()
+    await db.horses.update('F88', {
+      birth: { breedingId: 'B87', placement: { line: 1, generation: 6 } },
+    })
+    expect(await transferFilly(db, GAME, 'F88')).toEqual({
+      status: 'blocked',
+      blocks: [
+        {
+          kind: 'successor',
+          mismatches: [{ mismatch: 'placement', expected: { line: 1, generation: 5 } }],
+        },
+      ],
+    })
+    expect(await db.mares.get('F88')).toBeUndefined()
+  })
+
+  it('PED-08 自家公駒接任前 → 再次核對父母、系與代數，不符時阻止', async () => {
+    const db = await successorHerd()
+    await db.horses.update('C87', { sireId: 'C89' })
+    expect(await appointStallion(db, GAME, { horseId: 'C87' })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'parents' }] }],
+    })
+    expect(await db.stallions.count()).toBe(1)
   })
 })
