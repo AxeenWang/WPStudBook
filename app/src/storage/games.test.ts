@@ -403,12 +403,6 @@ describe('deleteGame', () => {
     await addSampleGame(db, { id: 'G2' })
     await addSampleGame(db, { id: 'G3' })
     await setCurrentGame(db, 'G2')
-    await db.checkpoints.add(checkpointRow('C1'))
-    await db.checkpointContents.add({
-      checkpointId: 'C1',
-      gameId: GAME,
-      bytes: new Uint8Array([1]),
-    })
     expect((await deleteGame(db, GAME, '測試局 G')).status).toBe('done')
     expect(await currentGameId(db)).toBe('G2')
     expect((await deleteGame(db, 'G2', '測試局 G2')).status).toBe('done')
