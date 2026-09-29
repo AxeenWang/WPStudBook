@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { addSampleGame } from '../../tests/support/game-data'
-import { GAME, horseRow } from '../../tests/support/rows'
+import { GAME, checkpointRow, horseRow } from '../../tests/support/rows'
 import { countRows, readGameData } from './game-data'
 import {
   DEFAULT_SETTINGS,
@@ -40,18 +40,24 @@ describe('createGame', () => {
       retirementAge: 25,
       seniorAge: 18,
       stallionReminderAge: 26,
+      checkpointLimit: 12,
     })
     expect(await db.systems.where('gameId').equals(game.id).count()).toBe(0)
   })
 
-  it('預設設定：定年 25、高齡提醒 18、種牡馬提醒 26 歲', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ retirementAge: 25, seniorAge: 18, stallionReminderAge: 26 })
+  it('預設設定：定年 25、高齡提醒 18、種牡馬提醒 26 歲、檢查點保留 12 個', () => {
+    expect(DEFAULT_SETTINGS).toEqual({
+      retirementAge: 25,
+      seniorAge: 18,
+      stallionReminderAge: 26,
+      checkpointLimit: 12,
+    })
   })
 
   it('只複製另一局的系統對照表與設定，不複製八系位置與馬匹', async () => {
     const db = testDatabase()
     const source = await createGame(db, { name: '第一局', startYear: 1968 })
-    await db.settings.update(source.id, { retirementAge: 24, seniorAge: 20 })
+    await db.settings.update(source.id, { retirementAge: 24, seniorAge: 20, checkpointLimit: 6 })
     await db.systems.bulkAdd([
       { gameId: source.id, subsystem: 'マンノウォー', parentSystem: 'マッチェム' },
       {
@@ -77,6 +83,7 @@ describe('createGame', () => {
       retirementAge: 24,
       seniorAge: 20,
       stallionReminderAge: 26,
+      checkpointLimit: 6,
     })
     expect(await db.systems.where('gameId').equals(copy.id).sortBy('subsystem')).toEqual([
       {
@@ -270,6 +277,15 @@ describe('updateSettings', () => {
     expect(await db.events.count()).toBe(0)
   })
 
+  it('檢查點的保留個數可以調整（需求規格 12.4）', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const result = await updateSettings(db, GAME, { checkpointLimit: 20 }, { now })
+    const expected = { gameId: GAME, ...DEFAULT_SETTINGS, checkpointLimit: 20 }
+    expect(result).toEqual({ status: 'done', value: expected, warnings: [] })
+    expect(await loadSettings(db, GAME)).toEqual(expected)
+  })
+
   it('不是 1 以上的整數時阻止，列出每一個不符的欄位，設定不變', async () => {
     const db = testDatabase()
     await addTestGame(db)
@@ -277,12 +293,14 @@ describe('updateSettings', () => {
       retirementAge: 0,
       seniorAge: 18.5,
       stallionReminderAge: 26,
+      checkpointLimit: 0,
     })
     expect(result).toEqual({
       status: 'blocked',
       blocks: [
         { kind: 'not-positive-integer', field: 'retirementAge' },
         { kind: 'not-positive-integer', field: 'seniorAge' },
+        { kind: 'not-positive-integer', field: 'checkpointLimit' },
       ],
     })
     expect(await loadSettings(db, GAME)).toEqual({ gameId: GAME, ...DEFAULT_SETTINGS })
@@ -358,6 +376,27 @@ describe('deleteGame', () => {
     expect(await db.events.count()).toBe(1)
   })
 
+  it('一併刪除這一局的檢查點與內容，其他局的不動（需求規格 12.4）', async () => {
+    const db = testDatabase()
+    const data = await addSampleGame(db)
+    await addSampleGame(db, { id: 'G2' })
+    for (const [id, gameId] of [
+      ['C1', GAME],
+      ['C2', GAME],
+      ['C3', 'G2'],
+    ] as const) {
+      await db.checkpoints.add(checkpointRow(id, { gameId }))
+      await db.checkpointContents.add({ checkpointId: id, gameId, bytes: new Uint8Array([1]) })
+    }
+    expect(await deleteGame(db, GAME, '測試局 G')).toEqual({
+      status: 'done',
+      value: countRows(data),
+      warnings: [],
+    })
+    expect(await db.checkpoints.toCollection().primaryKeys()).toEqual(['C3'])
+    expect(await db.checkpointContents.toCollection().primaryKeys()).toEqual(['C3'])
+  })
+
   it('目前遊戲局是這一局時一併清除；是別的局時不變', async () => {
     const db = testDatabase()
     await addSampleGame(db)
@@ -374,11 +413,19 @@ describe('deleteGame', () => {
     const db = testDatabase()
     const data = await addSampleGame(db)
     await setCurrentGame(db, GAME)
+    await db.checkpoints.add(checkpointRow('C1'))
+    await db.checkpointContents.add({
+      checkpointId: 'C1',
+      gameId: GAME,
+      bytes: new Uint8Array([1]),
+    })
     expect(await deleteGame(db, GAME, '測試局')).toEqual({
       status: 'blocked',
       blocks: [{ kind: 'name-mismatch' }],
     })
     expect(await readGameData(db, GAME)).toStrictEqual(data)
+    expect(await db.checkpoints.count()).toBe(1)
+    expect(await db.checkpointContents.count()).toBe(1)
     expect(await currentGameId(db)).toBe(GAME)
     await expect(deleteGame(db, 'missing', '測試局 G')).rejects.toThrow('找不到遊戲局：missing')
   })
@@ -390,6 +437,12 @@ describe('deleteAllGames', () => {
     await addSampleGame(db)
     await addSampleGame(db, { id: 'G2' })
     await setCurrentGame(db, GAME)
+    await db.checkpoints.add(checkpointRow('C1'))
+    await db.checkpointContents.add({
+      checkpointId: 'C1',
+      gameId: GAME,
+      bytes: new Uint8Array([1]),
+    })
     expect(DELETE_ALL_PHRASE).toBe('刪除全部存檔')
     expect(await deleteAllGames(db, ' 刪除全部存檔 ')).toEqual({
       status: 'done',

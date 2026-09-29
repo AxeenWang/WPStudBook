@@ -24,7 +24,13 @@ import type { BreedingRow } from './records'
 describe('mareAgeSettings', () => {
   it('取這一局的定年與高齡提醒年齡', () => {
     expect(
-      mareAgeSettings({ gameId: GAME, retirementAge: 24, seniorAge: 20, stallionReminderAge: 26 }),
+      mareAgeSettings({
+        gameId: GAME,
+        retirementAge: 24,
+        seniorAge: 20,
+        stallionReminderAge: 26,
+        checkpointLimit: 12,
+      }),
     ).toEqual({ retirementAge: 24, seniorAge: 20 })
   })
 })

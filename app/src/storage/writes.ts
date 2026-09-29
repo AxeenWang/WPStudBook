@@ -62,7 +62,10 @@ export interface WriteContext {
   timing?: GameTiming
   /** 寫一筆事件：年份為目前遊戲年，寫入時間為 now，來源與時點取自 WriteOptions */
   addEvent(content: EventContent): Promise<void>
-  /** 把遊戲局的更新時間設為 now、應用版本設為目前版本，回傳 done */
+  /**
+   * 把遊戲局的更新時間設為 now、應用版本設為目前版本，回傳 done。
+   * 寫入資料列的操作都要經過它：回溯以更新時間核對預覽後有沒有變更（rollbackToCheckpoint）
+   */
   done<T>(value: T, warnings?: WriteWarning[]): Promise<WriteResult<T, never>>
 }
 
@@ -118,7 +121,7 @@ export async function runWrite<T, B>(
 }
 
 /** 遊戲內的時點：1～12 月、每月 1～4 週 */
-function isGameTiming(timing: GameTiming): boolean {
+export function isGameTiming(timing: GameTiming): boolean {
   const { month, week } = timing
   const inRange = (value: number, max: number) =>
     Number.isInteger(value) && value >= 1 && value <= max
