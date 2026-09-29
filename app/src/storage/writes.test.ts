@@ -18,6 +18,7 @@ import {
   type NewHorseInput,
   type WriteOptions,
 } from './writes'
+import { APP_VERSION } from './version'
 
 const NOW = new Date('2026-09-26T01:02:03.000Z')
 
@@ -70,6 +71,13 @@ describe('runWrite', () => {
       },
     ])
     expect((await db.games.get(GAME))?.updatedAt).toBe('2026-09-26T01:02:03.000Z')
+  })
+
+  it('done 同時把遊戲局的應用版本設為目前版本（需求規格 12.1）', async () => {
+    const db = testDatabase()
+    await addTestGame(db, { appVersion: '0.0.0-old' })
+    await writeEvent(db)
+    expect((await db.games.get(GAME))?.appVersion).toBe(APP_VERSION)
   })
 
   it('沒有呼叫 done 時（阻止或待確認）不更新遊戲局的更新時間', async () => {

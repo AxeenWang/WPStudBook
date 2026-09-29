@@ -20,6 +20,9 @@ import type {
 /** 瀏覽器裡的資料庫名稱 */
 export const DATABASE_NAME = 'wpstudbook'
 
+/** 結構版本：Dexie 的版本號，備份檔的結構版本與遷移也用這個號碼（技術設計 4.3） */
+export const SCHEMA_VERSION = 1
+
 export type WPStudBookDatabase = Dexie & {
   games: EntityTable<GameRow, 'id'>
   settings: EntityTable<SettingsRow, 'gameId'>
@@ -57,7 +60,7 @@ export function createDatabase(
   dependencies?: DatabaseDependencies,
 ): WPStudBookDatabase {
   const db = new Dexie(name, dependencies) as WPStudBookDatabase
-  db.version(1).stores({
+  db.version(SCHEMA_VERSION).stores({
     games: 'id',
     settings: 'gameId',
     meta: 'key',

@@ -21,6 +21,7 @@ import type {
   WriteWarning,
 } from './records'
 import { buildLineSystems, buildSystemTable } from './snapshot'
+import { APP_VERSION } from './version'
 
 // 寫入操作的共用部分（技術設計 4.3「寫入操作」）
 
@@ -61,7 +62,7 @@ export interface WriteContext {
   timing?: GameTiming
   /** 寫一筆事件：年份為目前遊戲年，寫入時間為 now，來源與時點取自 WriteOptions */
   addEvent(content: EventContent): Promise<void>
-  /** 把遊戲局的更新時間設為 now，回傳 done */
+  /** 把遊戲局的更新時間設為 now、應用版本設為目前版本，回傳 done */
   done<T>(value: T, warnings?: WriteWarning[]): Promise<WriteResult<T, never>>
 }
 
@@ -109,7 +110,7 @@ export async function runWrite<T, B>(
         })
       },
       async done(value, warnings = []) {
-        await db.games.update(gameId, { updatedAt: now })
+        await db.games.update(gameId, { updatedAt: now, appVersion: APP_VERSION })
         return { status: 'done', value, warnings }
       },
     })
