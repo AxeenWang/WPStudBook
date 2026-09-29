@@ -1,15 +1,31 @@
-import { encodeBackup, readBackup, type BackupRejection } from './backup'
+import {
+  encodeBackup,
+  exportBackup,
+  readBackup,
+  type BackupRejection,
+  type ExportedBackup,
+} from './backup'
 import type { WPStudBookDatabase } from './database'
-import { countRows, gameTables, readGameData, type GameData, type RowCounts } from './game-data'
+import {
+  addGameData,
+  countRows,
+  deleteGameData,
+  gameTables,
+  readGameData,
+  type GameData,
+  type RowCounts,
+} from './game-data'
 import { loadGame, loadSettings } from './games'
 import type {
   CatchUpImport,
   CheckpointOrigin,
   CheckpointRow,
   EventRow,
+  GameRow,
   GameTiming,
 } from './records'
-import { isGameTiming } from './writes'
+import { APP_VERSION } from './version'
+import { isGameTiming, type WriteResult } from './writes'
 
 // 檢查點與回溯（需求規格 11.1、12.4，技術設計 4.3「檢查點與回溯」）
 
@@ -204,6 +220,64 @@ export async function readCheckpoint(
     updatedAt: current.games[0]!.updatedAt,
   }
   return { status: 'ok', verified: { data, preview } }
+}
+
+/** 回溯的阻止原因：預覽之後遊戲局有變更，交付的備份不一定含有將捨棄的全部資料 */
+export interface RollbackBlock {
+  kind: 'changed-since-preview'
+}
+
+export interface RollbackOptions {
+  /** 交出目前這一局的備份（下載由 3-3 的輔助函式負責）；丟出錯誤時回溯停止，資料不變 */
+  deliverBackup: (backup: ExportedBackup) => Promise<void> | void
+  /** 回溯的時間：備份的匯出時間與回溯後的更新時間；省略時為現在 */
+  now?: Date
+}
+
+/** 回溯的結果：回溯後的遊戲局與被移除的較晚檢查點 */
+export interface RolledBack {
+  game: GameRow
+  removed: CheckpointRow[]
+}
+
+/**
+ * 回溯到驗證過的檢查點（需求規格 12.4、CKPT-04、CKPT-06、CKPT-07）：先以 exportBackup 匯出目前這一局，
+ * 交給 deliverBackup；它丟出錯誤時回溯停止，資料不變。接著在一個 rw 交易內：遊戲局的更新時間要等於預覽時的值，
+ * 否則阻止，什麼都不寫；以 deleteGameData 刪除整局，再以 addGameData 寫回檢查點的資料（識別不變）；
+ * 刪除較晚的檢查點與內容，含釘選的。games 那一列：目前遊戲年取檢查點，應用版本為目前版本，更新時間為 now，
+ * 其他欄位（局名、起始年、建立時間、最近備份時間、還原來源）沿用目前的列；settings 沿用目前的列。
+ * 不記錄最近備份時間：交付的備份是回溯前的狀態。不寫事件。找不到遊戲局，或檢查點已不在時丟出錯誤
+ */
+export async function rollbackToCheckpoint(
+  db: WPStudBookDatabase,
+  verified: VerifiedCheckpoint,
+  options: RollbackOptions,
+): Promise<WriteResult<RolledBack, RollbackBlock>> {
+  const { data, preview } = verified
+  const { checkpoint } = preview
+  const { gameId } = checkpoint
+  const now = options.now ?? new Date()
+  await options.deliverBackup(await exportBackup(db, gameId, now))
+  const tables = [...gameTables(db), db.checkpoints, db.checkpointContents]
+  return db.transaction('rw', tables, async () => {
+    const current = await loadGame(db, gameId)
+    if (current.updatedAt !== preview.updatedAt) {
+      return { status: 'blocked', blocks: [{ kind: 'changed-since-preview' }] }
+    }
+    await loadCheckpoint(db, gameId, checkpoint.id)
+    const settings = await loadSettings(db, gameId)
+    const game: GameRow = {
+      ...current,
+      currentYear: data.games[0]!.currentYear,
+      appVersion: APP_VERSION,
+      updatedAt: now.toISOString(),
+    }
+    await deleteGameData(db, gameId)
+    await addGameData(db, { ...data, games: [game], settings: [settings] })
+    const removed = await laterCheckpoints(db, checkpoint)
+    await deleteCheckpoints(db, removed)
+    return { status: 'done', value: { game, removed }, warnings: [] }
+  })
 }
 
 /** 這一局建立時間晚於這個檢查點的檢查點（含釘選的），由新到舊 */

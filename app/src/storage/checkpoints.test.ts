@@ -3,18 +3,23 @@ import { gunzipText } from '../../tests/support/backup'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { addSampleGame } from '../../tests/support/game-data'
 import { GAME, horseRow } from '../../tests/support/rows'
-import { readBackup } from './backup'
+import { readBackup, type ExportedBackup } from './backup'
 import {
   createCheckpoint,
   listCheckpoints,
   readCheckpoint,
+  rollbackToCheckpoint,
   setCheckpointPinned,
   updateCheckpointNote,
   type NewCheckpoint,
+  type VerifiedCheckpoint,
 } from './checkpoints'
-import { readGameData, type RowCounts } from './game-data'
-import { loadGame } from './games'
+import type { WPStudBookDatabase } from './database'
+import { readGameData, type GameData, type RowCounts } from './game-data'
+import { loadGame, setCurrentYear } from './games'
 import type { EventRow } from './records'
+import { addSystem } from './system-writes'
+import { APP_VERSION } from './version'
 
 /** 2026-09-29 00:0n（UTC）：建立時間依 n 遞增 */
 function minute(n: number): Date {
@@ -36,6 +41,25 @@ const SAMPLE_COUNTS: RowCounts = {
   matingRatings: 1,
   events: 1,
   horseNumbers: 1,
+}
+
+/** 讀取並驗證這一局的檢查點；不通過時讓測試失敗 */
+async function verifiedOf(
+  db: WPStudBookDatabase,
+  checkpointId: string,
+): Promise<VerifiedCheckpoint> {
+  const result = await readCheckpoint(db, GAME, checkpointId)
+  if (result.status !== 'ok') throw new Error(result.status)
+  return result.verified
+}
+
+/** 回溯的交付函式：收下備份，不下載 */
+function collector() {
+  const delivered: ExportedBackup[] = []
+  const deliverBackup = (backup: ExportedBackup) => {
+    delivered.push(backup)
+  }
+  return { delivered, deliverBackup }
 }
 
 /** 檢查點之後寫入的事件：識別與寫入時間由參數決定 */
@@ -352,5 +376,153 @@ describe('readCheckpoint', () => {
     await expect(readCheckpoint(db, 'missing', checkpoint.id)).rejects.toThrow(
       '找不到遊戲局：missing',
     )
+  })
+})
+
+describe('rollbackToCheckpoint', () => {
+  it('整局回到檢查點，識別不變；目前遊戲年取檢查點，games 其他欄位與設定沿用目前的值（CKPT-06）', async () => {
+    const db = testDatabase()
+    const data = await addSampleGame(db)
+    const { checkpoint } = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(1) })
+    await setCurrentYear(db, GAME, 1991, { now: minute(2) })
+    const system = { subsystem: 'ヘイルトゥリーズン', parentSystem: 'ターントゥ' }
+    await addSystem(db, GAME, system, { now: minute(3) })
+    await db.settings.update(GAME, { retirementAge: 24 })
+    // 目前的列：舊版本寫的，局名、建立時間、最近備份時間與還原來源都和檢查點不同
+    const restoredFrom = {
+      fileName: 'WPStudBook_原局_1990年_20260920-000000.json.gz',
+      exportedAt: '2026-09-20T00:00:00.000Z',
+      gameName: '原局',
+      appVersion: '0.0.1',
+      schemaVersion: 1,
+    }
+    await db.games.update(GAME, {
+      name: '改名的局',
+      createdAt: '2026-09-25T00:00:00.000Z',
+      appVersion: '0.0.0-old',
+      lastBackupAt: '2026-09-29T00:03:30.000Z',
+      restoredFrom,
+    })
+    const verified = await verifiedOf(db, checkpoint.id)
+    const { deliverBackup } = collector()
+
+    const result = await rollbackToCheckpoint(db, verified, { deliverBackup, now: minute(9) })
+    const game = {
+      ...data.games[0]!,
+      name: '改名的局',
+      createdAt: '2026-09-25T00:00:00.000Z',
+      updatedAt: '2026-09-29T00:09:00.000Z',
+      appVersion: APP_VERSION,
+      lastBackupAt: '2026-09-29T00:03:30.000Z',
+      restoredFrom,
+    }
+    expect(result).toStrictEqual({ status: 'done', value: { game, removed: [] }, warnings: [] })
+    expect(await readGameData(db, GAME)).toStrictEqual({
+      ...data,
+      games: [game],
+      settings: [{ ...data.settings[0]!, retirementAge: 24 }],
+    })
+  })
+
+  it('先交出目前這一局的備份，內容是回溯前的資料；不記錄最近備份時間（CKPT-04）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    const { checkpoint } = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(1) })
+    await setCurrentYear(db, GAME, 1991, { now: minute(2) })
+    const before = await readGameData(db, GAME)
+    const verified = await verifiedOf(db, checkpoint.id)
+    const delivered: { backup: ExportedBackup; data: GameData }[] = []
+    await rollbackToCheckpoint(db, verified, {
+      deliverBackup: async (backup) => {
+        delivered.push({ backup, data: await readGameData(db, GAME) })
+      },
+      now: minute(9),
+    })
+    expect(delivered).toHaveLength(1)
+    const { backup, data } = delivered[0]!
+    expect(data).toStrictEqual(before)
+    expect(backup.summary.exportedAt).toBe('2026-09-29T00:09:00.000Z')
+    const read = await readBackup(backup.bytes)
+    if (read.status !== 'ok') throw new Error(read.status)
+    expect(read.backup.file.collections).toStrictEqual(before)
+    expect(await loadGame(db, GAME)).not.toHaveProperty('lastBackupAt')
+  })
+
+  it('交付失敗時回溯停止，資料與檢查點都不變（CKPT-05）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    const { checkpoint } = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(1) })
+    await setCurrentYear(db, GAME, 1991, { now: minute(2) })
+    await createCheckpoint(db, GAME, { origin: 'auto', now: minute(3) })
+    const verified = await verifiedOf(db, checkpoint.id)
+    const before = await readGameData(db, GAME)
+    const checkpoints = await listCheckpoints(db, GAME)
+    const deliverBackup = () => {
+      throw new Error('下載失敗')
+    }
+    await expect(
+      rollbackToCheckpoint(db, verified, { deliverBackup, now: minute(9) }),
+    ).rejects.toThrow('下載失敗')
+    expect(await readGameData(db, GAME)).toStrictEqual(before)
+    expect(await listCheckpoints(db, GAME)).toStrictEqual(checkpoints)
+  })
+
+  it('預覽之後有變更時阻止，資料與檢查點都不變（CKPT-05）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    const { checkpoint } = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(1) })
+    await setCurrentYear(db, GAME, 1991, { now: minute(2) })
+    await createCheckpoint(db, GAME, { origin: 'auto', now: minute(3) })
+    const verified = await verifiedOf(db, checkpoint.id)
+    const system = { subsystem: 'ヘイルトゥリーズン', parentSystem: 'ターントゥ' }
+    await addSystem(db, GAME, system, { now: minute(4) })
+    const before = await readGameData(db, GAME)
+    const checkpoints = await listCheckpoints(db, GAME)
+    const { delivered, deliverBackup } = collector()
+    expect(
+      await rollbackToCheckpoint(db, verified, { deliverBackup, now: minute(9) }),
+    ).toStrictEqual({ status: 'blocked', blocks: [{ kind: 'changed-since-preview' }] })
+    expect(await readGameData(db, GAME)).toStrictEqual(before)
+    expect(await listCheckpoints(db, GAME)).toStrictEqual(checkpoints)
+    expect(delivered).toHaveLength(1)
+  })
+
+  it('移除較晚的檢查點與內容，含釘選的；較早的與其他局的不動（CKPT-06、CKPT-07）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    const other = await addSampleGame(db, { id: 'G2' })
+    const early = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(0) })
+    const target = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(1) })
+    const pinned = await createCheckpoint(db, GAME, { origin: 'manual', now: minute(3) })
+    const pinnedRow = await setCheckpointPinned(db, GAME, pinned.checkpoint.id, true)
+    const latest = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(4) })
+    const otherCheckpoint = await createCheckpoint(db, 'G2', { origin: 'auto', now: minute(5) })
+    const verified = await verifiedOf(db, target.checkpoint.id)
+    const { deliverBackup } = collector()
+
+    const result = await rollbackToCheckpoint(db, verified, { deliverBackup, now: minute(9) })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.removed).toStrictEqual([latest.checkpoint, pinnedRow])
+    expect(await listCheckpoints(db, GAME)).toStrictEqual([target.checkpoint, early.checkpoint])
+    expect(await db.checkpointContents.get(latest.checkpoint.id)).toBeUndefined()
+    expect(await db.checkpointContents.get(pinned.checkpoint.id)).toBeUndefined()
+    expect(await db.checkpointContents.get(target.checkpoint.id)).toBeDefined()
+    expect(await listCheckpoints(db, 'G2')).toStrictEqual([otherCheckpoint.checkpoint])
+    expect(await readGameData(db, 'G2')).toStrictEqual(other)
+  })
+
+  it('檢查點在預覽之後不見時丟出錯誤，資料不變', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    const { checkpoint } = await createCheckpoint(db, GAME, { origin: 'auto', now: minute(1) })
+    await setCurrentYear(db, GAME, 1991, { now: minute(2) })
+    const verified = await verifiedOf(db, checkpoint.id)
+    await db.checkpoints.delete(checkpoint.id)
+    const before = await readGameData(db, GAME)
+    const { deliverBackup } = collector()
+    await expect(
+      rollbackToCheckpoint(db, verified, { deliverBackup, now: minute(9) }),
+    ).rejects.toThrow(`找不到這一局的檢查點：${checkpoint.id}`)
+    expect(await readGameData(db, GAME)).toStrictEqual(before)
   })
 })
