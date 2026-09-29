@@ -67,6 +67,8 @@ export function buildBrotherRecords(
   stallions: readonly StallionRow[],
 ): StallionRecord[] {
   return horses.map((horse) => {
+    // 一匹馬有多筆任用時取第一筆：只有零代市場種牡馬會同時有建系與補公系的任用，
+    // 他沒有父馬的內部識別，和誰比較都不算同父
     const row = stallions.find((candidate) => candidate.horseId === horse.id)
     const placement = row ? { line: row.line, generation: row.generation } : horse.birth?.placement
     if (!placement) throw new Error(`沒有系與代數的馬不能做兄弟比較：${horse.id}`)

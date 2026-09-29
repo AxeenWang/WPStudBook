@@ -549,6 +549,41 @@ describe('appointStallion', () => {
     expect(await db.events.count()).toBe(0)
   })
 
+  it('尚未出生的預定後繼指定的就是他出生的配種時阻止，先確認出生；確認後沿用那一列接任', async () => {
+    const db = await successorHerd()
+    const unborn = await designateSuccessor(db, GAME, { target: { breedingId: 'B90' } })
+    if (unborn.status !== 'done') throw new Error(unborn.status)
+    await db.horses.add(
+      horseRow('C91', {
+        sex: 'male',
+        birthYear: 1991,
+        sireId: 'S14',
+        damId: 'D24',
+        birth: { breedingId: 'B90', placement: { line: 1, generation: 5 } },
+        disposition: 'keep',
+      }),
+    )
+    await db.events.clear()
+    expect(await appointStallion(db, GAME, { horseId: 'C91' })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'birth-unconfirmed', stallionId: unborn.value.id }],
+    })
+    expect(await db.stallions.count()).toBe(2)
+    expect(await db.events.count()).toBe(0)
+    expect((await confirmSuccessorBirth(db, GAME, unborn.value.id)).status).toBe('done')
+    const result = await appointStallion(db, GAME, { horseId: 'C91' })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.appointment).toStrictEqual({
+      id: unborn.value.id,
+      gameId: GAME,
+      line: 1,
+      generation: 5,
+      horseId: 'C91',
+      status: 'active',
+    })
+    expect(await db.stallions.count()).toBe(2)
+  })
+
   it('9.6 核對不符或種牡馬馬番号格式不符時阻止，阻止原因一次列全，什麼都不寫（PED-08、BRD-15）', async () => {
     const db = await successorHerd()
     await db.horses.update('C87', { damId: 'D24B' })

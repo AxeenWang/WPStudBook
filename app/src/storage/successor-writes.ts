@@ -72,6 +72,7 @@ export interface AppointStallionInput {
  * - horse-number：種牡馬馬番号的格式不符
  * - stallion-ended：他在那一格已退出生產行列或已引退，先用 setStallionStatus 更正
  * - unchanged：他已是那一格的現任
+ * - birth-unconfirmed：那一格尚未出生的預定後繼 stallionId 指定的就是他出生的配種，先確認出生（需求規格 7.7）
  * - reason-required：那一格已有接任過的種牡馬，是更換現任，要附原因
  */
 export type AppointStallionBlock =
@@ -79,6 +80,7 @@ export type AppointStallionBlock =
   | { kind: 'horse-number' }
   | { kind: 'stallion-ended' }
   | UnchangedBlock
+  | { kind: 'birth-unconfirmed'; stallionId: string }
   | { kind: 'reason-required' }
 
 /** 接任後的任用，以及同一格改為已被取代的任用 */
@@ -257,7 +259,8 @@ export async function setSuccessorReadiness(
 /**
  * 正式接任或更換現任（需求規格 7.7、9.6、PED-08、LINE-22、LINE-30、STL-03）：對象是自家公駒，
  * 格位取出生紀錄的系與代數，不由畫面選；以 9.6 核對，不符時阻止。他在那一格是預定後繼或已被取代時沿用那一列，
- * 已退出生產行列或已引退時阻止（先用 setStallionStatus 更正），已在崗時阻止，沒有任用時新增一列。
+ * 已退出生產行列或已引退時阻止（先用 setStallionStatus 更正），已在崗時阻止；那一格尚未出生的預定後繼
+ * 指定的就是他出生的配種時阻止，先用 confirmSuccessorBirth 確認出生；沒有任用時新增一列。
  * 那一格另有接任過的任用（在崗、已被取代、退出生產行列、已引退）時是更換現任，要附 7.7 的原因；
  * 第一次接任不需原因；同一格其他還沒接任的預定後繼不算。以 chooseIncumbent 套用：他改為在崗並拿掉就緒，
  * 同一格原本在崗的改為已被取代；上一代的現任（交接期間可同時在崗）與這一系其他的預定後繼不動。
@@ -295,6 +298,9 @@ export async function appointStallion(
     } else if (own?.status === 'active') {
       blocks.push({ kind: 'unchanged' })
     }
+    // 9.6 通過時出生紀錄一定連到配種紀錄；任用還存著那筆配種的，是還沒確認出生的預定後繼
+    const unborn = rows.find((row) => row.breedingId === horse.birth?.breedingId)
+    if (unborn) blocks.push({ kind: 'birth-unconfirmed', stallionId: unborn.id })
     const replacing = rows.some((row) => row !== own && row.status !== undefined)
     if (replacing && input.reason === undefined) blocks.push({ kind: 'reason-required' })
     if (blocks.length > 0) return { status: 'blocked', blocks }

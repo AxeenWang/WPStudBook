@@ -8,6 +8,7 @@ import {
   checkOwnSuccessor,
   loadFoal,
   loadMare,
+  loadMareInHerd,
   runWrite,
   type SuccessorCheckBlock,
   type UnchangedBlock,
@@ -99,8 +100,7 @@ export async function transferFilly(
  * 選為正式保留時該代成立（establishedGeneration 設為 true，不改回，8.2）。沒有任何變化時阻止。
  * 狀態有變的每匹母馬各寫一筆事件 sister-status-changed，記原狀態、新狀態與選定的母馬；
  * 回傳狀態有變的母馬，選定的那一匹在前。之後改保留另一匹，對她再做一次。
- * 母馬或她的馬匹找不到、屬於其他局，或不是自家母駒時丟出錯誤；不在圈內時 chooseKeptSister 丟出 RangeError
- * （畫面只列出在圈的姊妹）。
+ * 母馬或她的馬匹找不到、屬於其他局、不在圈內，或不是自家母駒時丟出錯誤（畫面只列出在圈的姊妹）。
  */
 export async function keepSister(
   db: WPStudBookDatabase,
@@ -109,7 +109,7 @@ export async function keepSister(
   options: WriteOptions = {},
 ): Promise<WriteResult<MareRow[], UnchangedBlock>> {
   return runWrite(db, gameId, [db.horses, db.mares], options, async (context) => {
-    const mare = await loadMare(context, horseId)
+    const mare = await loadMareInHerd(context, horseId, '不能選為正式保留')
     if (mare.usage !== 'own') throw new Error(`只有自家母駒有接替狀態：${horseId}`)
     const horse = await db.horses.get(horseId)
     if (!horse) throw new Error(`找不到馬匹：${horseId}`)

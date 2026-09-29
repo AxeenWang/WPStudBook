@@ -84,7 +84,7 @@ export interface EightLineRows {
   lines: readonly LineRow[]
   stallions: readonly StallionRow[]
   mares: readonly MareRow[]
-  /** 至少包含有分群的在圈母馬的馬匹資料，用來算馬齡 */
+  /** 至少包含有分群的在圈母馬與在圈的自由配種所生的馬匹資料，用來算馬齡與核對出生紀錄 */
   horses: readonly HorseRow[]
   restorations: readonly RestorationRow[]
 }

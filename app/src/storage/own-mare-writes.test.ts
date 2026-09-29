@@ -250,7 +250,7 @@ describe('keepSister', () => {
     expect(await db.events.count()).toBe(before)
   })
 
-  it('母馬找不到、屬於其他局、不在圈內（core 的 RangeError），或不是自家母駒時丟出錯誤', async () => {
+  it('母馬找不到、屬於其他局、不在圈內，或不是自家母駒時丟出錯誤', async () => {
     const db = await sistersHerd()
     await addTestGame(db, { id: 'G2' })
     await db.horses.add(horseRow('M', { sex: 'female' }))
@@ -262,7 +262,8 @@ describe('keepSister', () => {
     await db.mares.update('F88', { herd: 'sold' })
     await expect(keepSister(db, GAME, 'X')).rejects.toThrow('找不到母馬：X')
     await expect(keepSister(db, GAME, 'OTHER')).rejects.toThrow('找不到母馬：OTHER')
-    await expect(keepSister(db, GAME, 'F88')).rejects.toThrow(RangeError)
+    // 不在圈內是畫面不會送出的狀況，丟出一般錯誤，不是資料矛盾的 RangeError
+    await expect(keepSister(db, GAME, 'F88')).rejects.not.toBeInstanceOf(RangeError)
     await expect(keepSister(db, GAME, 'F88')).rejects.toThrow(
       '不在繁殖圈內的母馬不能選為正式保留：F88',
     )
