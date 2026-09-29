@@ -118,7 +118,7 @@ export async function runWrite<T, B>(
 }
 
 /** 遊戲內的時點：1～12 月、每月 1～4 週 */
-function isGameTiming(timing: GameTiming): boolean {
+export function isGameTiming(timing: GameTiming): boolean {
   const { month, week } = timing
   const inRange = (value: number, max: number) =>
     Number.isInteger(value) && value >= 1 && value <= max

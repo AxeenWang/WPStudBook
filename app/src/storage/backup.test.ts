@@ -7,6 +7,7 @@ import {
   BACKUP_FORMAT,
   PRIMARY_KEYS,
   backupFileName,
+  encodeBackup,
   exportBackup,
   readBackup,
   restoreBackup,
@@ -96,6 +97,18 @@ describe('exportBackup', () => {
     await exportBackup(db, GAME, NOW)
     expect(await loadGame(db, GAME)).toStrictEqual(data.games[0])
     await expect(exportBackup(db, 'missing', NOW)).rejects.toThrow('找不到遊戲局：missing')
+  })
+})
+
+describe('encodeBackup', () => {
+  it('匯出的內容就是它的輸出；sha256 是檔案裡的雜湊', async () => {
+    const db = testDatabase()
+    const data = await addSampleGame(db)
+    const exported = await exportBackup(db, GAME, NOW)
+    const encoded = await encodeBackup(data, NOW.toISOString())
+    expect(encoded.bytes).toEqual(exported.bytes)
+    expect(encoded.compressed).toBe(true)
+    expect(encoded.sha256).toBe(JSON.parse(await gunzipText(encoded.bytes)).sha256)
   })
 })
 

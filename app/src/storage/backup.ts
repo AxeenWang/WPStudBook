@@ -62,7 +62,7 @@ export interface ExportedBackup {
 
 /**
  * 匯出一局的完整備份（需求規格 12.2、DATA-07）：先取 now 作為匯出時間，再以唯讀交易讀出整局（一致快照），
- * 序列化、雜湊與壓縮在交易外進行。有 CompressionStream 時 gzip 成 .json.gz，否則輸出 .json（DATA-06）。
+ * 序列化、雜湊與壓縮（encodeBackup）在交易外進行。有 CompressionStream 時 gzip 成 .json.gz，否則輸出 .json（DATA-06）。
  * 只讀：不觸發下載，也不記錄最近備份時間，呼叫端交出檔案後以 recordBackup 記錄。遊戲局不存在時丟出錯誤
  */
 export async function exportBackup(
@@ -74,24 +74,7 @@ export async function exportBackup(
   const data = await readGameData(db, gameId)
   const game = data.games[0]!
   const counts = countRows(data)
-  const body: Omit<BackupFile, 'sha256'> = {
-    format: BACKUP_FORMAT,
-    schemaVersion: SCHEMA_VERSION,
-    appVersion: APP_VERSION,
-    exportedAt,
-    game: {
-      id: game.id,
-      name: game.name,
-      startYear: game.startYear,
-      currentYear: game.currentYear,
-    },
-    counts,
-    collections: data,
-  }
-  const text = JSON.stringify({ ...body, sha256: await sha256Hex(JSON.stringify(body)) })
-  const compressed = typeof CompressionStream === 'function'
-  const plain = new TextEncoder().encode(text)
-  const bytes = compressed ? await gzip(plain) : plain
+  const { bytes, compressed } = await encodeBackup(data, exportedAt)
   const fileName = backupFileName(game.name, game.currentYear, now, compressed)
   return {
     fileName,
@@ -108,6 +91,42 @@ export async function exportBackup(
       compressed,
     },
   }
+}
+
+/** 編成備份檔的內容 */
+export interface EncodedBackup {
+  bytes: Uint8Array<ArrayBuffer>
+  /** 檔案裡的 sha256 */
+  sha256: string
+  /** 是否 gzip 壓縮；瀏覽器不支援 CompressionStream 時為 false（DATA-06） */
+  compressed: boolean
+}
+
+/**
+ * 把整局資料編成備份檔（技術設計 4.3「備份檔」）：欄位依序為格式識別、結構版本、應用版本、匯出時間、
+ * 遊戲局摘要、各集合筆數、集合與 sha256。有 CompressionStream 時 gzip，否則是未壓縮的 JSON（DATA-06）。
+ * 匯出與檢查點共用（技術設計 4.3「檢查點與回溯」）
+ */
+export async function encodeBackup(data: GameData, exportedAt: string): Promise<EncodedBackup> {
+  const game = data.games[0]!
+  const body: Omit<BackupFile, 'sha256'> = {
+    format: BACKUP_FORMAT,
+    schemaVersion: SCHEMA_VERSION,
+    appVersion: APP_VERSION,
+    exportedAt,
+    game: {
+      id: game.id,
+      name: game.name,
+      startYear: game.startYear,
+      currentYear: game.currentYear,
+    },
+    counts: countRows(data),
+    collections: data,
+  }
+  const sha256 = await sha256Hex(JSON.stringify(body))
+  const plain = new TextEncoder().encode(JSON.stringify({ ...body, sha256 }))
+  const compressed = typeof CompressionStream === 'function'
+  return { bytes: compressed ? await gzip(plain) : plain, sha256, compressed }
 }
 
 /** 檔名裡的局名最多取幾個字 */
