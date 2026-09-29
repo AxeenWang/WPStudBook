@@ -254,57 +254,6 @@ export async function setSuccessorReadiness(
   })
 }
 
-/** 已出生的公駒：以 9.6 核對，格位是出生紀錄的系與代數。不是公駒時丟出錯誤 */
-async function coltTarget(
-  context: WriteContext,
-  horseId: string,
-): Promise<Prepared<ResolvedTarget, DesignateSuccessorBlock>> {
-  const horse = await loadFoal(context, horseId)
-  if (horse.sex !== 'male') throw new Error(`只有公駒可以當預定後繼：${horseId}`)
-  const checked = checkOwnSuccessor(
-    await loadSuccessorCandidate(context.db, context.game.id, horseId),
-  )
-  return checked.ok ? { ok: true, value: { slot: checked.value, horseId } } : checked
-}
-
-/**
- * 尚未出生的產駒：配種紀錄要是受胎的八系指定配種、還沒有產駒；以配種紀錄組出的核對輸入做 9.6 核對，
- * 格位是規則快照的預計產出。傳了就緒，或紀錄不是受胎的八系指定配種時丟出錯誤
- */
-async function unbornTarget(
-  context: WriteContext,
-  breedingId: string,
-  readiness: StallionReadiness | undefined,
-): Promise<Prepared<ResolvedTarget, DesignateSuccessorBlock>> {
-  if (readiness !== undefined) throw new Error(`尚未出生的預定後繼沒有就緒狀態：${breedingId}`)
-  const breeding = await loadBreeding(context, breedingId)
-  if (breeding.kind !== 'designated' || breeding.conception !== '受胎') {
-    throw new Error(`不是受胎的八系指定配種：${breedingId}`)
-  }
-  const foal = await linkedFoal(context, breeding)
-  if (foal) return { ok: false, blocks: [{ kind: 'foal-exists', horseId: foal.id }] }
-  const checked = checkOwnSuccessor(unbornCandidate(breeding))
-  return checked.ok ? { ok: true, value: { slot: checked.value, breedingId } } : checked
-}
-
-/**
- * 尚未出生的產駒的核對輸入：父母取自配種紀錄，出生紀錄的系與代數取規則快照的預計產出
- * （技術設計 4.3「預定後繼的指定」）
- */
-function unbornCandidate(breeding: BreedingRow): SuccessorCandidate {
-  const placement = breeding.rule?.output
-  return buildSuccessorCandidate(
-    {
-      id: breeding.id,
-      gameId: breeding.gameId,
-      sireId: breeding.sireId,
-      damId: breeding.mareId,
-      birth: { breedingId: breeding.id, ...(placement === undefined ? {} : { placement }) },
-    },
-    breeding,
-  )
-}
-
 /**
  * 正式接任或更換現任（需求規格 7.7、9.6、PED-08、LINE-22、LINE-30、STL-03）：對象是自家公駒，
  * 格位取出生紀錄的系與代數，不由畫面選；以 9.6 核對，不符時阻止。他在那一格是預定後繼或已被取代時沿用那一列，
@@ -384,6 +333,57 @@ export async function appointStallion(
 }
 
 /** 已出生的公駒：以 9.6 核對，格位是出生紀錄的系與代數。不是公駒時丟出錯誤 */
+async function coltTarget(
+  context: WriteContext,
+  horseId: string,
+): Promise<Prepared<ResolvedTarget, DesignateSuccessorBlock>> {
+  const horse = await loadFoal(context, horseId)
+  if (horse.sex !== 'male') throw new Error(`只有公駒可以當預定後繼：${horseId}`)
+  const checked = checkOwnSuccessor(
+    await loadSuccessorCandidate(context.db, context.game.id, horseId),
+  )
+  return checked.ok ? { ok: true, value: { slot: checked.value, horseId } } : checked
+}
+
+/**
+ * 尚未出生的產駒：配種紀錄要是受胎的八系指定配種、還沒有產駒；以配種紀錄組出的核對輸入做 9.6 核對，
+ * 格位是規則快照的預計產出。傳了就緒，或紀錄不是受胎的八系指定配種時丟出錯誤
+ */
+async function unbornTarget(
+  context: WriteContext,
+  breedingId: string,
+  readiness: StallionReadiness | undefined,
+): Promise<Prepared<ResolvedTarget, DesignateSuccessorBlock>> {
+  if (readiness !== undefined) throw new Error(`尚未出生的預定後繼沒有就緒狀態：${breedingId}`)
+  const breeding = await loadBreeding(context, breedingId)
+  if (breeding.kind !== 'designated' || breeding.conception !== '受胎') {
+    throw new Error(`不是受胎的八系指定配種：${breedingId}`)
+  }
+  const foal = await linkedFoal(context, breeding)
+  if (foal) return { ok: false, blocks: [{ kind: 'foal-exists', horseId: foal.id }] }
+  const checked = checkOwnSuccessor(unbornCandidate(breeding))
+  return checked.ok ? { ok: true, value: { slot: checked.value, breedingId } } : checked
+}
+
+/**
+ * 尚未出生的產駒的核對輸入：父母取自配種紀錄，出生紀錄的系與代數取規則快照的預計產出
+ * （技術設計 4.3「預定後繼的指定」）
+ */
+function unbornCandidate(breeding: BreedingRow): SuccessorCandidate {
+  const placement = breeding.rule?.output
+  return buildSuccessorCandidate(
+    {
+      id: breeding.id,
+      gameId: breeding.gameId,
+      sireId: breeding.sireId,
+      damId: breeding.mareId,
+      birth: { breedingId: breeding.id, ...(placement === undefined ? {} : { placement }) },
+    },
+    breeding,
+  )
+}
+
+/** 這一局的預定後繼（狀態留空的任用）；找不到、屬於其他局或已接任時丟出錯誤 */
 async function loadPending(context: WriteContext, stallionId: string): Promise<StallionRow> {
   const row = await context.db.stallions.get(stallionId)
   if (!row || row.gameId !== context.game.id) throw new Error(`找不到種牡馬的任用：${stallionId}`)
