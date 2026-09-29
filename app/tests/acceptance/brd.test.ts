@@ -2,13 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { checkSubAbilityTotal, foalDisplayName, trackingName } from '../../src/core/foal'
 import { matchHorse } from '../../src/core/identity'
 import { verifySuccessor } from '../../src/core/successor'
-import { expectedFoaling, registerBreeding, setConception } from '../../src/storage/breeding-writes'
+import {
+  correctBreeding,
+  expectedFoaling,
+  registerBreeding,
+  setConception,
+} from '../../src/storage/breeding-writes'
 import { addFoal, nameFoal, relinkFoal, setFoalDisposition } from '../../src/storage/foal-writes'
 import { buildSuccessorCandidate } from '../../src/storage/inputs'
 import { loadSuccessorCandidate } from '../../src/storage/loaders'
 import { rateMating } from '../../src/storage/rating-writes'
+import { cancelSuccessor, designateSuccessor } from '../../src/storage/successor-writes'
 import { buildPhaseHerd, designatedTo, foalingHerd } from '../support/breeding'
 import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
+import { successorHerd } from '../support/successor'
 
 // 需求規格第 15 章「配種與產駒（BRD）」中由 core 與儲存層負責的部分；匯入與畫面由後續計畫補上
 
@@ -334,5 +341,21 @@ describe('配種與產駒（BRD）', () => {
       status: 'blocked',
       blocks: [{ kind: 'sire-mismatch', breedingId: 'N89' }],
     })
+  })
+
+  it('BRD-28 受胎配種已被尚未出生的預定後繼指定 → 不能更正配種類型與種牡馬，受胎狀態不能改成受胎以外；取消預定後繼後才能改', async () => {
+    const db = await successorHerd()
+    const designated = await designateSuccessor(db, GAME, { target: { breedingId: 'B90' } })
+    if (designated.status !== 'done') throw new Error(designated.status)
+    const blocked = {
+      status: 'blocked',
+      blocks: [{ kind: 'successor-designated', stallionId: designated.value.id }],
+    }
+    expect(
+      await correctBreeding(db, GAME, 'B90', { kind: 'free', sire: { name: 'ノーザンダンサー' } }),
+    ).toEqual(blocked)
+    expect(await setConception(db, GAME, 'B90', '不受胎')).toEqual(blocked)
+    expect((await cancelSuccessor(db, GAME, designated.value.id)).status).toBe('done')
+    expect((await setConception(db, GAME, 'B90', '不受胎')).status).toBe('done')
   })
 })

@@ -549,6 +549,34 @@ describe('correctBreeding：指定配種', () => {
       ],
     })
   })
+
+  it('被尚未出生的預定後繼引用時阻止並指出那一筆，阻止原因一次列全；取消後可以更正（BRD-28）', async () => {
+    const db = await buildPhaseHerd()
+    const registered = await registerBreeding(db, GAME, 'SUB21', designatedTo(1, 2, 'S11'))
+    if (registered.status !== 'done') throw new Error(registered.status)
+    const { id } = registered.value.breeding
+    await setConception(db, GAME, id, '受胎')
+    await db.stallions.bulkAdd([
+      { id: 'P0', gameId: GAME, line: 2, generation: 2, breedingId: 'OTHER' },
+      { id: 'P1', gameId: GAME, line: 1, generation: 2, breedingId: id },
+    ])
+    expect(await correctBreeding(db, GAME, id, freeNamed('ノーザンダンサー'))).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'successor-designated', stallionId: 'P1' }],
+    })
+    expect(await correctBreeding(db, GAME, id, designatedTo(1, 2, 'Z1'))).toEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'successor-designated', stallionId: 'P1' },
+        {
+          kind: 'rule',
+          rule: { side: 'sire', expected: { line: 1, generation: 1 }, mismatches: ['generation'] },
+        },
+      ],
+    })
+    await db.stallions.delete('P1')
+    expect((await correctBreeding(db, GAME, id, freeNamed('ノーザンダンサー'))).status).toBe('done')
+  })
 })
 
 describe('registerBreeding：血統檢查（10.2）', () => {
@@ -649,6 +677,26 @@ describe('setConception', () => {
       })
     }
     expect((await db.breedings.get('B89'))?.conception).toBe('受胎')
+  })
+
+  it('被尚未出生的預定後繼引用時，不能改成受胎以外或清空；沒有被引用的紀錄不受影響（BRD-28）', async () => {
+    const db = await herd()
+    await db.breedings.bulkAdd([
+      freeBreeding('B', 1990, { conception: '受胎' }),
+      freeBreeding('B89', 1989, { conception: '受胎' }),
+    ])
+    await db.stallions.bulkAdd([
+      { id: 'P0', gameId: GAME, line: 2, generation: 5, breedingId: 'OTHER' },
+      { id: 'P1', gameId: GAME, line: 1, generation: 5, breedingId: 'B' },
+    ])
+    for (const conception of ['不受胎', null] as const) {
+      expect(await setConception(db, GAME, 'B', conception)).toEqual({
+        status: 'blocked',
+        blocks: [{ kind: 'successor-designated', stallionId: 'P1' }],
+      })
+    }
+    expect((await db.breedings.get('B'))?.conception).toBe('受胎')
+    expect((await setConception(db, GAME, 'B89', '不受胎')).status).toBe('done')
   })
 
   it('不限年份，母馬不必在圈：可以補登往年、已賣出母馬的受胎狀態', async () => {
