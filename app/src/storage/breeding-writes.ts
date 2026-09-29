@@ -190,7 +190,7 @@ export async function correctBreeding(
   input: BreedingInput,
   options: WriteOptions = {},
 ): Promise<WriteResult<SavedBreeding, CorrectBreedingBlock>> {
-  return runWrite(db, gameId, [...breedingTables(db), db.stallions], options, async (context) => {
+  return runWrite(db, gameId, breedingTables(db), options, async (context) => {
     const current = await loadBreeding(context, breedingId)
     if (current.year !== context.game.currentYear) {
       return { status: 'blocked', blocks: [{ kind: 'past-year' }] }
