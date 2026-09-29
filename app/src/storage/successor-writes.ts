@@ -1,10 +1,14 @@
+import { normalizeAbilityNumber } from '../core/identity'
 import type { LineGeneration } from '../core/lines'
+import { chooseIncumbent, type StallionRecord } from '../core/stallions'
 import type { SuccessorCandidate } from '../core/successor'
 import { linkedFoal, loadBreeding } from './breeding-writes'
 import type { WPStudBookDatabase } from './database'
+import { recordHorseNumber } from './horse-numbers'
 import { buildSuccessorCandidate } from './inputs'
 import { loadSuccessorCandidate } from './loaders'
-import type { BreedingRow, StallionReadiness, StallionRow } from './records'
+import type { BreedingRow, StallionChangeReason, StallionReadiness, StallionRow } from './records'
+import { reasonOf } from './stallion-writes'
 import {
   checkOwnSuccessor,
   loadFoal,
@@ -51,6 +55,37 @@ export type DesignateSuccessorBlock =
  */
 export type ConfirmBirthBlock =
   { kind: 'not-born' } | { kind: 'foal-female'; horseId: string } | SuccessorCheckBlock
+
+/** 正式接任或更換現任的輸入 */
+export interface AppointStallionInput {
+  /** 接任的自家公駒 */
+  horseId: string
+  /** 更換現任的原因（需求規格 7.7）；那一格已有接任過的種牡馬時必填 */
+  reason?: StallionChangeReason
+  /** 種牡馬馬番号（需求規格 6.4、7.7）；只有空白時當作沒有填 */
+  horseNumber?: string
+}
+
+/**
+ * 正式接任與更換現任的阻止原因：
+ * - successor：9.6 的核對不符
+ * - horse-number：種牡馬馬番号的格式不符
+ * - stallion-ended：他在那一格已退出生產行列或已引退，先用 setStallionStatus 更正
+ * - unchanged：他已是那一格的現任
+ * - reason-required：那一格已有接任過的種牡馬，是更換現任，要附原因
+ */
+export type AppointStallionBlock =
+  | SuccessorCheckBlock
+  | { kind: 'horse-number' }
+  | { kind: 'stallion-ended' }
+  | UnchangedBlock
+  | { kind: 'reason-required' }
+
+/** 接任後的任用，以及同一格改為已被取代的任用 */
+export interface AppointedStallion {
+  appointment: StallionRow
+  replaced: StallionRow[]
+}
 
 /** 就緒狀態的兩種值：競走中、已引退待指定 */
 const READINESS: readonly StallionReadiness[] = ['racing', 'retired-awaiting']
@@ -270,10 +305,100 @@ function unbornCandidate(breeding: BreedingRow): SuccessorCandidate {
   )
 }
 
-/** 這一局的預定後繼（狀態留空的任用）；找不到、屬於其他局或已接任時丟出錯誤 */
+/**
+ * 正式接任或更換現任（需求規格 7.7、9.6、PED-08、LINE-22、LINE-30、STL-03）：對象是自家公駒，
+ * 格位取出生紀錄的系與代數，不由畫面選；以 9.6 核對，不符時阻止。他在那一格是預定後繼或已被取代時沿用那一列，
+ * 已退出生產行列或已引退時阻止（先用 setStallionStatus 更正），已在崗時阻止，沒有任用時新增一列。
+ * 那一格另有接任過的任用（在崗、已被取代、退出生產行列、已引退）時是更換現任，要附 7.7 的原因；
+ * 第一次接任不需原因；同一格其他還沒接任的預定後繼不算。以 chooseIncumbent 套用：他改為在崗並拿掉就緒，
+ * 同一格原本在崗的改為已被取代；上一代的現任（交接期間可同時在崗）與這一系其他的預定後繼不動。
+ * 種牡馬馬番号去掉前後空白、統一寫法，有填時記一筆種牡馬階段。事件 stallion-appointed 記格位、原因與被取代的馬，
+ * 生效年是事件的年份。兄弟比較後保留原現任時不呼叫這個操作，不寫任何紀錄。
+ * 馬匹找不到、屬於其他局、不是自家產駒或不是公駒時丟出錯誤。
+ */
+export async function appointStallion(
+  db: WPStudBookDatabase,
+  gameId: string,
+  input: AppointStallionInput,
+  options: WriteOptions = {},
+): Promise<WriteResult<AppointedStallion, AppointStallionBlock>> {
+  const tables = [db.horses, db.breedings, db.stallions, db.horseNumbers]
+  return runWrite(db, gameId, tables, options, async (context) => {
+    const { horseId } = input
+    const horse = await loadFoal(context, horseId)
+    if (horse.sex !== 'male') throw new Error(`只有公駒可以接任種牡馬：${horseId}`)
+    const checked = checkOwnSuccessor(await loadSuccessorCandidate(db, gameId, horseId))
+    const numberText = input.horseNumber?.trim() ?? ''
+    const horseNumber = numberText === '' ? undefined : normalizeAbilityNumber(numberText)
+    const blocks: AppointStallionBlock[] = checked.ok ? [] : [...checked.blocks]
+    if (horseNumber === null) blocks.push({ kind: 'horse-number' })
+    if (!checked.ok || horseNumber === null) return { status: 'blocked', blocks }
+
+    const slot = checked.value
+    // 自家產駒至少 1 代，這一格不會有補公系補入的零代任用
+    const rows = await db.stallions
+      .where('[gameId+line+generation]')
+      .equals([gameId, slot.line, slot.generation])
+      .toArray()
+    const own = rows.find((row) => row.horseId === horseId)
+    if (own?.status === 'withdrawn' || own?.status === 'retired') {
+      blocks.push({ kind: 'stallion-ended' })
+    } else if (own?.status === 'active') {
+      blocks.push({ kind: 'unchanged' })
+    }
+    const replacing = rows.some((row) => row !== own && row.status !== undefined)
+    if (replacing && input.reason === undefined) blocks.push({ kind: 'reason-required' })
+    if (blocks.length > 0) return { status: 'blocked', blocks }
+
+    const current: StallionRow = own ?? {
+      id: crypto.randomUUID(),
+      gameId,
+      line: slot.line,
+      generation: slot.generation,
+      horseId,
+    }
+    const slotRows = own ? rows : [...rows, current]
+    const changes = chooseIncumbent(horseId, slotRows.flatMap(stallionRecordOf))
+    const appointment: StallionRow = { ...current, status: 'active' }
+    delete appointment.readiness
+    const replaced = slotRows.flatMap((row): StallionRow[] =>
+      changes.some((change) => change.id === row.horseId && change.to === 'replaced')
+        ? [{ ...row, status: 'replaced' }]
+        : [],
+    )
+    await db.stallions.bulkPut([appointment, ...replaced])
+    if (horseNumber !== undefined) {
+      await recordHorseNumber(context, horseId, 'stallion', horseNumber)
+    }
+    await context.addEvent({
+      kind: 'stallion-appointed',
+      line: slot.line,
+      horseId,
+      stallionId: appointment.id,
+      generation: slot.generation,
+      ...(input.reason === undefined ? {} : { reason: reasonOf(input.reason) }),
+      replacedHorseIds: replaced.flatMap((row) => row.horseId ?? []),
+    })
+    return context.done({ appointment, replaced })
+  })
+}
+
+/** 已出生的公駒：以 9.6 核對，格位是出生紀錄的系與代數。不是公駒時丟出錯誤 */
 async function loadPending(context: WriteContext, stallionId: string): Promise<StallionRow> {
   const row = await context.db.stallions.get(stallionId)
   if (!row || row.gameId !== context.game.id) throw new Error(`找不到種牡馬的任用：${stallionId}`)
   if (row.status !== undefined) throw new Error(`已接任的種牡馬不是預定後繼：${stallionId}`)
   return row
+}
+
+/** 任用列在 chooseIncumbent 用的種牡馬紀錄；尚未出生的預定後繼沒有馬匹，不列入 */
+function stallionRecordOf(row: StallionRow): StallionRecord[] {
+  if (row.horseId === undefined) return []
+  return [
+    {
+      id: row.horseId,
+      placement: { line: row.line, generation: row.generation },
+      status: row.status,
+    },
+  ]
 }

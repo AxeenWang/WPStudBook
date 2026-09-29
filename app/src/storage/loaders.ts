@@ -11,6 +11,7 @@ import type { LineSystemSnapshot, SystemTable } from '../core/systems'
 import type { WPStudBookDatabase } from './database'
 import { loadGame, loadSettings } from './games'
 import {
+  buildBrotherRecords,
   buildKnownHorses,
   buildOwnMares,
   buildStallionRecords,
@@ -201,6 +202,26 @@ export async function loadStallionRecords(
       rows.flatMap((row) => row.horseId ?? []),
     )
     return buildStallionRecords(rows, horses)
+  })
+}
+
+/**
+ * 讀取兄弟比較用的種牡馬紀錄（需求規格 7.7、LINE-30、LINE-31）：畫面以現任為比較對象呼叫 checkBrothers。
+ * 馬匹找不到、屬於其他局，或沒有系與代數時丟出錯誤
+ */
+export async function loadBrotherRecords(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseIds: readonly string[],
+): Promise<StallionRecord[]> {
+  return db.transaction('r', [db.horses, db.stallions], async () => {
+    const horses = await loadHorses(db, gameId, horseIds)
+    const stallions = await db.stallions
+      .where('horseId')
+      .anyOf([...horseIds])
+      .filter((row) => row.gameId === gameId)
+      .toArray()
+    return buildBrotherRecords(horses, stallions)
   })
 }
 

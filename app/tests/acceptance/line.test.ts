@@ -23,12 +23,13 @@ import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor
 import { addFoal } from '../../src/storage/foal-writes'
 import { setCurrentYear } from '../../src/storage/games'
 import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
-import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { loadBrotherRecords, loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare } from '../../src/storage/mare-writes'
 import { transferFilly } from '../../src/storage/own-mare-writes'
 import { declareRestoration } from '../../src/storage/restoration-writes'
 import { assignZeroStallion } from '../../src/storage/stallion-writes'
 import {
+  appointStallion,
   cancelSuccessor,
   confirmSuccessorBirth,
   designateSuccessor,
@@ -994,5 +995,47 @@ describe('八系管理（LINE）：儲存層寫入', () => {
     // 預定後繼失效：取消後改指定已出生的公駒
     expect((await cancelSuccessor(db, GAME, unborn.value.id)).status).toBe('done')
     expect((await designateSuccessor(db, GAME, { target: { horseId: 'C87' } })).status).toBe('done')
+  })
+
+  it('LINE-22 同父異母弟弟取代哥哥擔任現任 → 允許，只有弟弟在崗，哥哥紀錄保留為已被取代', async () => {
+    const db = await successorHerd()
+    expect((await appointStallion(db, GAME, { horseId: 'C87' })).status).toBe('done')
+    const result = await appointStallion(db, GAME, {
+      horseId: 'C89',
+      reason: { kind: 'younger-brother' },
+    })
+    expect(result.status).toBe('done')
+    const slot = await db.stallions.where('[gameId+line+generation]').equals([GAME, 1, 5]).toArray()
+    expect(slot.map((row) => [row.horseId, row.status]).sort()).toEqual([
+      ['C87', 'replaced'],
+      ['C89', 'active'],
+    ])
+    expect((await loadRuleSnapshot(db, GAME)).eightLines.lines[0]!.stallions).toEqual([
+      { generation: 4, state: 'active' },
+      { generation: 5, state: 'active' },
+    ])
+  })
+
+  it('LINE-30、LINE-32 第 1 系 5 代兩匹同父兄弟都成為種牡馬 → 並排比較，不判定優劣；選定弟弟時哥哥標示已被取代，保留哥哥時不寫紀錄', async () => {
+    const db = await successorHerd()
+    await appointStallion(db, GAME, { horseId: 'C87' })
+    const before = await db.stallions.toArray()
+    const [elder, younger] = await loadBrotherRecords(db, GAME, ['C87', 'C89'])
+    expect(checkBrothers(elder!, [younger!])).toEqual([])
+    expect(younger).toEqual({ id: 'C89', placement: { line: 1, generation: 5 }, sireId: 'S14' })
+    // 比較只讀資料，不自動更換現任；保留哥哥時不再呼叫接任，任用不變
+    expect(await db.stallions.toArray()).toEqual(before)
+    await appointStallion(db, GAME, { horseId: 'C89', reason: { kind: 'younger-brother' } })
+    const [elderAfter] = await loadBrotherRecords(db, GAME, ['C87'])
+    expect(elderAfter).toMatchObject({ status: 'replaced' })
+  })
+
+  it('LINE-31 兄弟比較中選入不同系或不同代的種牡馬 → 阻止', async () => {
+    const db = await successorHerd()
+    await appointStallion(db, GAME, { horseId: 'C87' })
+    const [reference, other] = await loadBrotherRecords(db, GAME, ['C87', 'S14'])
+    expect(checkBrothers(reference!, [other!])).toEqual([
+      { id: 'S14', mismatches: ['generation', 'sire'] },
+    ])
   })
 })

@@ -10,6 +10,7 @@ import { buildEightLinePlan } from '../support/eight-line-plan'
 import { successorHerd } from '../support/successor'
 import { registerBreeding } from '../../src/storage/breeding-writes'
 import { transferFilly } from '../../src/storage/own-mare-writes'
+import { appointStallion } from '../../src/storage/successor-writes'
 import {
   BUILD_PHASE_PEDIGREE,
   buildPhaseHerd,
@@ -498,5 +499,15 @@ describe('血統檢查（PED）：後繼與接替的寫入', () => {
       ],
     })
     expect(await db.mares.get('F88')).toBeUndefined()
+  })
+
+  it('PED-08 自家公駒接任前 → 再次核對父母、系與代數，不符時阻止', async () => {
+    const db = await successorHerd()
+    await db.horses.update('C87', { sireId: 'C89' })
+    expect(await appointStallion(db, GAME, { horseId: 'C87' })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'parents' }] }],
+    })
+    expect(await db.stallions.count()).toBe(1)
   })
 })

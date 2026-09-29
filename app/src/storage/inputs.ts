@@ -58,6 +58,23 @@ export function buildStallionRecords(
 }
 
 /**
+ * 兄弟比較用的種牡馬紀錄（需求規格 7.7、LINE-31；技術設計 4.3「規則輸入快照的彙整」的種牡馬紀錄）：
+ * 每匹馬的格位取他的任用，沒有任用時取出生紀錄的系與代數；狀態取任用的，沒有任用時留空。
+ * 沒有任用、出生紀錄也沒有系與代數的馬（例如自由配種所生）不能比較，丟出錯誤
+ */
+export function buildBrotherRecords(
+  horses: readonly HorseRow[],
+  stallions: readonly StallionRow[],
+): StallionRecord[] {
+  return horses.map((horse) => {
+    const row = stallions.find((candidate) => candidate.horseId === horse.id)
+    const placement = row ? { line: row.line, generation: row.generation } : horse.birth?.placement
+    if (!placement) throw new Error(`沒有系與代數的馬不能做兄弟比較：${horse.id}`)
+    return { id: horse.id, placement, sireId: horse.sireId, status: row?.status }
+  })
+}
+
+/**
  * 正式後繼核對用的產駒（需求規格 9.6）：產駒記載的父母，加上出生紀錄連結的配種紀錄的規則快照。
  * 沒有配種紀錄、自由配種、沒有規則快照，或出生紀錄沒有系與代數時，比照自由配種。
  * breeding 不是這匹產駒出生紀錄連結的配種紀錄時丟出 RangeError。

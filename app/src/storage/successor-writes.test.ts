@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { addTestGame } from '../../tests/support/database'
 import { GAME, horseRow, stallionRow } from '../../tests/support/rows'
 import { successorHerd } from '../../tests/support/successor'
+import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
 import { loadRuleSnapshot } from './loaders'
 import type { HorseRow, StallionReadiness, StallionRow } from './records'
 import {
+  appointStallion,
   cancelSuccessor,
   confirmSuccessorBirth,
   designateSuccessor,
@@ -384,5 +386,235 @@ describe('setSuccessorReadiness', () => {
       setSuccessorReadiness(db, GAME, 'BROKEN', 'active' as StallionReadiness),
     ).rejects.toThrow('就緒狀態不符：active')
     await expect(setSuccessorReadiness(db, GAME, 'BROKEN', 'racing')).rejects.toThrow(RangeError)
+  })
+})
+
+describe('appointStallion', () => {
+  /** 第 1 系 5 代這一格的任用：[馬匹, 狀態]，依馬匹排序 */
+  async function slotOf(db: WPStudBookDatabase) {
+    const rows = await db.stallions.where('[gameId+line+generation]').equals([GAME, 1, 5]).toArray()
+    return rows.map((row) => [row.horseId, row.status]).sort()
+  }
+
+  it('新一代第一次接任：新增在崗的任用，不需原因；上一代的現任不動；事件 stallion-appointed', async () => {
+    const db = await successorHerd()
+    const result = await appointStallion(db, GAME, { horseId: 'C87' }, { now })
+    if (result.status !== 'done') throw new Error(result.status)
+    const appointment: StallionRow = {
+      id: result.value.appointment.id,
+      gameId: GAME,
+      line: 1,
+      generation: 5,
+      horseId: 'C87',
+      status: 'active',
+    }
+    expect(result).toStrictEqual({
+      status: 'done',
+      value: { appointment, replaced: [] },
+      warnings: [],
+    })
+    expect(await db.stallions.get(appointment.id)).toStrictEqual(appointment)
+    expect(await db.stallions.get('S14')).toMatchObject({ status: 'active' })
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        ...EVENT,
+        kind: 'stallion-appointed',
+        line: 1,
+        horseId: 'C87',
+        stallionId: appointment.id,
+        generation: 5,
+        replacedHorseIds: [],
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-28T01:02:03.000Z')
+    expect(await db.horseNumbers.count()).toBe(0)
+  })
+
+  it('預定後繼正式接任：沿用那一列，改為在崗並拿掉就緒', async () => {
+    const db = await successorHerd()
+    const designated = await designateSuccessor(db, GAME, {
+      target: { horseId: 'C87' },
+      readiness: 'retired-awaiting',
+    })
+    if (designated.status !== 'done') throw new Error(designated.status)
+    const result = await appointStallion(db, GAME, { horseId: 'C87' })
+    if (result.status !== 'done') throw new Error(result.status)
+    const appointment: StallionRow = {
+      id: designated.value.id,
+      gameId: GAME,
+      line: 1,
+      generation: 5,
+      horseId: 'C87',
+      status: 'active',
+    }
+    expect(result.value.appointment).toStrictEqual(appointment)
+    expect(await db.stallions.get(designated.value.id)).toStrictEqual(appointment)
+    expect(await db.stallions.count()).toBe(2)
+  })
+
+  it('更換現任要附原因：同一格原本在崗的改為已被取代，事件記原因（說明去掉空白）與被取代的馬', async () => {
+    const db = await successorHerd()
+    const first = await appointStallion(db, GAME, { horseId: 'C87' })
+    if (first.status !== 'done') throw new Error(first.status)
+    expect(await appointStallion(db, GAME, { horseId: 'C89' })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'reason-required' }],
+    })
+    await db.events.clear()
+    const result = await appointStallion(
+      db,
+      GAME,
+      { horseId: 'C89', reason: { kind: 'younger-brother', note: ' 能力較高 ' } },
+      { now },
+    )
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.replaced).toStrictEqual([
+      { ...first.value.appointment, status: 'replaced' },
+    ])
+    expect(await slotOf(db)).toEqual([
+      ['C87', 'replaced'],
+      ['C89', 'active'],
+    ])
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        ...EVENT,
+        kind: 'stallion-appointed',
+        line: 1,
+        horseId: 'C89',
+        stallionId: result.value.appointment.id,
+        generation: 5,
+        reason: { kind: 'younger-brother', note: '能力較高' },
+        replacedHorseIds: ['C87'],
+      },
+    ])
+  })
+
+  it('被取代的可以換回來：沿用那一列，原本在崗的改為已被取代', async () => {
+    const db = await successorHerd()
+    const first = await appointStallion(db, GAME, { horseId: 'C87' })
+    if (first.status !== 'done') throw new Error(first.status)
+    const reason = { kind: 'other' as const }
+    await appointStallion(db, GAME, { horseId: 'C89', reason })
+    const back = await appointStallion(db, GAME, { horseId: 'C87', reason })
+    if (back.status !== 'done') throw new Error(back.status)
+    expect(back.value.appointment.id).toBe(first.value.appointment.id)
+    expect(await slotOf(db)).toEqual([
+      ['C87', 'active'],
+      ['C89', 'replaced'],
+    ])
+  })
+
+  it('那一格只剩已離場的種牡馬時也是更換，要附原因；同一格還沒接任的預定後繼不算', async () => {
+    const db = await successorHerd()
+    const unborn = await designateSuccessor(db, GAME, { target: { breedingId: 'B90' } })
+    if (unborn.status !== 'done') throw new Error(unborn.status)
+    const first = await appointStallion(db, GAME, { horseId: 'C87' })
+    expect(first.status).toBe('done')
+    expect(await db.stallions.get(unborn.value.id)).toMatchObject({ breedingId: 'B90' })
+    if (first.status !== 'done') throw new Error(first.status)
+    await db.stallions.update(first.value.appointment.id, { status: 'retired' })
+    expect(await appointStallion(db, GAME, { horseId: 'C89' })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'reason-required' }],
+    })
+    const replaced = await appointStallion(db, GAME, {
+      horseId: 'C89',
+      reason: { kind: 'predecessor-retired' },
+    })
+    if (replaced.status !== 'done') throw new Error(replaced.status)
+    expect(replaced.value.replaced).toEqual([])
+    // 尚未出生的預定後繼沒有馬匹與狀態，排序時排在最前面
+    expect(await slotOf(db)).toEqual([
+      [undefined, undefined],
+      ['C87', 'retired'],
+      ['C89', 'active'],
+    ])
+  })
+
+  it('他在那一格已退出或已引退時阻止（先更正狀態）；已在崗時阻止', async () => {
+    const db = await successorHerd()
+    const reason = { kind: 'other' as const }
+    for (const status of ['withdrawn', 'retired'] as const) {
+      await db.stallions.put(stallionRow('C87', 1, 5, { status }))
+      expect(await appointStallion(db, GAME, { horseId: 'C87', reason })).toEqual({
+        status: 'blocked',
+        blocks: [{ kind: 'stallion-ended' }],
+      })
+    }
+    await db.stallions.put(stallionRow('C87', 1, 5))
+    expect(await appointStallion(db, GAME, { horseId: 'C87', reason })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    expect(await db.events.count()).toBe(0)
+  })
+
+  it('9.6 核對不符或種牡馬馬番号格式不符時阻止，阻止原因一次列全，什麼都不寫（PED-08、BRD-15）', async () => {
+    const db = await successorHerd()
+    await db.horses.update('C87', { damId: 'D24B' })
+    expect(await appointStallion(db, GAME, { horseId: 'C87', horseNumber: '0xZZ' })).toEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'successor', mismatches: [{ mismatch: 'parents' }] },
+        { kind: 'horse-number' },
+      ],
+    })
+    expect(await appointStallion(db, GAME, { horseId: 'C89', horseNumber: '12' })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'horse-number' }],
+    })
+    await db.horses.add(
+      horseRow('FC', { sex: 'male', birthYear: 1990, damId: 'D24B', birth: { breedingId: 'F89' } }),
+    )
+    expect(await appointStallion(db, GAME, { horseId: 'FC' })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'free-breeding' }] }],
+    })
+    expect(await db.stallions.count()).toBe(1)
+    expect(await db.events.count()).toBe(0)
+    expect(await db.horseNumbers.count()).toBe(0)
+    expect((await loadGame(db, GAME)).updatedAt).toBe(CREATED_AT)
+  })
+
+  it('種牡馬馬番号去掉前後空白、統一寫法後記一筆種牡馬階段；只有空白時不記（STL-03）', async () => {
+    const db = await successorHerd()
+    expect(
+      (await appointStallion(db, GAME, { horseId: 'C87', horseNumber: ' 0x1a2 ' })).status,
+    ).toBe('done')
+    expect(await db.horseNumbers.toArray()).toStrictEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        horseId: 'C87',
+        stage: 'stallion',
+        number: '0x01A2',
+        year: 1990,
+        source: { kind: 'manual' },
+      },
+    ])
+    const reason = { kind: 'younger-brother' as const }
+    expect(
+      (await appointStallion(db, GAME, { horseId: 'C89', reason, horseNumber: '  ' })).status,
+    ).toBe('done')
+    expect(await db.horseNumbers.count()).toBe(1)
+  })
+
+  it('馬匹找不到、屬於其他局、不是自家產駒或不是公駒時丟出錯誤', async () => {
+    const db = await successorHerd()
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('MARKET', { sex: 'male' }),
+      horseRow('OTHER', { gameId: 'G2', sex: 'male', birth: {} }),
+    ])
+    await expect(appointStallion(db, GAME, { horseId: 'F88' })).rejects.toThrow(
+      '只有公駒可以接任種牡馬：F88',
+    )
+    await expect(appointStallion(db, GAME, { horseId: 'MARKET' })).rejects.toThrow(
+      '不是自家產駒：MARKET',
+    )
+    await expect(appointStallion(db, GAME, { horseId: 'OTHER' })).rejects.toThrow(
+      '找不到馬匹：OTHER',
+    )
+    await expect(appointStallion(db, GAME, { horseId: 'X' })).rejects.toThrow('找不到馬匹：X')
   })
 })
