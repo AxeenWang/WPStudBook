@@ -3,8 +3,9 @@ import { checkSubAbilityTotal, foalDisplayName, trackingName } from '../../src/c
 import { matchHorse } from '../../src/core/identity'
 import { verifySuccessor } from '../../src/core/successor'
 import { expectedFoaling, registerBreeding, setConception } from '../../src/storage/breeding-writes'
-import { addFoal, nameFoal, setFoalDisposition } from '../../src/storage/foal-writes'
+import { addFoal, nameFoal, relinkFoal, setFoalDisposition } from '../../src/storage/foal-writes'
 import { buildSuccessorCandidate } from '../../src/storage/inputs'
+import { loadSuccessorCandidate } from '../../src/storage/loaders'
 import { rateMating } from '../../src/storage/rating-writes'
 import { buildPhaseHerd, designatedTo, foalingHerd } from '../support/breeding'
 import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
@@ -297,5 +298,41 @@ describe('配種與產駒（BRD）', () => {
       })
     }
     expect(await db.matingRatings.count()).toBe(0)
+  })
+
+  it('BRD-27 產駒建立時母馬前一年還不是受胎，之後改成受胎 → 重新連結後取得系與代數、待售改為保留，可以成為後繼；父馬不同 → 阻止', async () => {
+    const db = await foalingHerd()
+    await setConception(db, GAME, 'B89', '未確認')
+    const added = await addFoal(
+      db,
+      GAME,
+      { damId: 'SUB21', sex: 'male', birthYear: 1990 },
+      { confirmed: true },
+    )
+    if (added.status !== 'done') throw new Error(added.status)
+    expect((await setConception(db, GAME, 'B89', '受胎')).status).toBe('done')
+    const linked = await relinkFoal(db, GAME, added.value.id)
+    if (linked.status !== 'done') throw new Error(linked.status)
+    expect(linked.value).toMatchObject({
+      sireId: 'S11',
+      birth: { breedingId: 'B89', placement: { line: 1, generation: 2 } },
+      disposition: 'keep',
+    })
+    const candidate = await loadSuccessorCandidate(db, GAME, added.value.id)
+    expect(verifySuccessor(candidate, { line: 1, generation: 2 })).toEqual([])
+
+    // SUB11 的產駒記了別的父馬，前一年的紀錄改成受胎後也不能連結
+    const other = await addFoal(
+      db,
+      GAME,
+      { damId: 'SUB11', sex: 'female', birthYear: 1990, sire: { name: 'トサミドリ' } },
+      { confirmed: true },
+    )
+    if (other.status !== 'done') throw new Error(other.status)
+    await setConception(db, GAME, 'N89', '受胎')
+    expect(await relinkFoal(db, GAME, other.value.id)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'sire-mismatch', breedingId: 'N89' }],
+    })
   })
 })
