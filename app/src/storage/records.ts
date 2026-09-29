@@ -52,12 +52,54 @@ export interface SettingsRow {
   seniorAge: number
   /** 現任種牡馬的提醒年齡（7.7），預設 26 歲 */
   stallionReminderAge: number
+  /** 保留的未釘選檢查點個數（12.4），預設 12 個 */
+  checkpointLimit: number
 }
 
 /** 不屬於任何一局的全域資料 */
 export interface MetaRow {
   key: string
   value: string
+}
+
+/** 檢查點的建立方式（需求規格 12.4）：年度匯入後自動建立，或手動建立 */
+export type CheckpointOrigin = 'auto' | 'manual'
+
+/** 直接補匯的年與時點（需求規格 11.1、CKPT-08） */
+export interface CatchUpImport {
+  year: number
+  timing: GameTiming
+}
+
+/**
+ * 檢查點的中繼資料（需求規格 12.4、技術設計 4.3「檢查點與回溯」）；內容另存在 CheckpointContentRow。
+ * 不屬於 GAME_TABLES：備份不含檢查點，回溯時要留下
+ */
+export interface CheckpointRow {
+  id: string
+  gameId: string
+  origin: CheckpointOrigin
+  /** 建立當下這一局的目前遊戲年 */
+  year: number
+  /** 遊戲內的時點：年度匯入後是目前進度的時點；手動建立時可以留空 */
+  timing?: GameTiming
+  /** 直接補匯時，補匯的年與時點 */
+  catchUp?: CatchUpImport
+  /** 建立時間（ISO 8601），也是內容裡備份檔的匯出時間 */
+  createdAt: string
+  /** 內容檔案裡的 sha256 */
+  sha256: string
+  /** 註記（例如遊戲存檔名稱）；沒有時留空 */
+  note?: string
+  /** 是否釘選：釘選的不計入保留個數，也不自動清除；只讀取不建索引，所以存布林值 */
+  pinned: boolean
+}
+
+/** 檢查點的內容：與備份檔相同的位元組 */
+export interface CheckpointContentRow {
+  checkpointId: string
+  gameId: string
+  bytes: Uint8Array<ArrayBuffer>
 }
 
 export type Sex = 'male' | 'female'

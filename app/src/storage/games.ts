@@ -7,11 +7,12 @@ import type { GameRow, SettingsRow, SystemRow } from './records'
 import { APP_VERSION } from './version'
 import { gate, runWrite, type WriteOptions, type WriteResult } from './writes'
 
-/** 新局的預設設定（需求規格 7.7、8.5） */
+/** 新局的預設設定（需求規格 7.7、8.5、12.4） */
 export const DEFAULT_SETTINGS: Readonly<Omit<SettingsRow, 'gameId'>> = {
   retirementAge: DEFAULT_MARE_AGE_SETTINGS.retirementAge,
   seniorAge: DEFAULT_MARE_AGE_SETTINGS.seniorAge,
   stallionReminderAge: DEFAULT_STALLION_REMINDER_AGE,
+  checkpointLimit: 12,
 }
 
 /** meta 表中記錄目前遊戲局的鍵 */
@@ -178,6 +179,7 @@ const SETTING_FIELDS: readonly (keyof SettingsChange)[] = [
   'retirementAge',
   'seniorAge',
   'stallionReminderAge',
+  'checkpointLimit',
 ]
 
 /** 設定的阻止原因：field 不是 1 以上的整數 */
@@ -187,7 +189,7 @@ export interface SettingsBlock {
 }
 
 /**
- * 修改這一局的設定（需求規格 7.7、8.5）：只改 change 有填的欄位，每一項都要是 1 以上的整數。
+ * 修改這一局的設定（需求規格 7.7、8.5、12.4）：只改 change 有填的欄位，每一項都要是 1 以上的整數。
  * 不寫事件；新設定從下一次判斷開始生效（MARE-10）。沒有變更時不寫入。遊戲局或設定不存在時丟出錯誤。
  */
 export async function updateSettings(
@@ -223,21 +225,23 @@ export interface DeleteGameBlock {
 }
 
 /**
- * 永久刪除此局（需求規格 12.1、DATA-10）：typedName 去除前後空白後要等於局名，否則阻止，什麼都不刪；
- * 名稱核對放在儲存層，畫面漏掉也刪不掉。在一個 rw 交易內從 GAME_TABLES 刪除這一局的資料列，
- * 目前遊戲局是這一局時一併清除。不寫事件。回傳刪除的各表筆數；遊戲局不存在時丟出錯誤
+ * 連同這一局的檢查點與內容（需求規格 12.4），目前遊戲局是這一局時一併清除。不寫事件。
+ * 回傳 GAME_TABLES 各表刪除的筆數；遊戲局不存在時丟出錯誤
  */
 export async function deleteGame(
   db: WPStudBookDatabase,
   gameId: string,
   typedName: string,
 ): Promise<WriteResult<RowCounts, DeleteGameBlock>> {
-  return db.transaction('rw', [...gameTables(db), db.meta], async () => {
+  const tables = [...gameTables(db), db.meta, db.checkpoints, db.checkpointContents]
+  return db.transaction('rw', tables, async () => {
     const game = await loadGame(db, gameId)
     if (typedName.trim() !== game.name) {
       return { status: 'blocked', blocks: [{ kind: 'name-mismatch' }] }
     }
     const counts = await deleteGameData(db, gameId)
+    await db.checkpoints.where('gameId').equals(gameId).delete()
+    await db.checkpointContents.where('gameId').equals(gameId).delete()
     if ((await currentGameId(db)) === gameId) await db.meta.delete(CURRENT_GAME_KEY)
     return { status: 'done', value: counts, warnings: [] }
   })

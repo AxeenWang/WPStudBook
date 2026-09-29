@@ -1,5 +1,6 @@
 import type { LinePosition } from '../../src/core/lines'
 import type {
+  CheckpointRow,
   HorseRow,
   LineRow,
   MareRow,
@@ -134,6 +135,20 @@ export function restorationRow(
     reason: '後繼無法延續',
     year: 1990,
     revoked: false,
+    ...fields,
+  }
+}
+
+/** 檢查點的中繼資料：手動建立、1990 年、未釘選；內容另外寫入 */
+export function checkpointRow(id: string, fields: Partial<CheckpointRow> = {}): CheckpointRow {
+  return {
+    id,
+    gameId: GAME,
+    origin: 'manual',
+    year: 1990,
+    createdAt: '2026-09-29T00:00:00.000Z',
+    sha256: '0'.repeat(64),
+    pinned: false,
     ...fields,
   }
 }

@@ -16,7 +16,7 @@ import type {
   SystemRow,
 } from './records'
 
-// 整局資料的讀出、寫入與刪除（技術設計 4.3「備份與還原」）：備份、還原與危險區共用
+// 整局資料的讀出、寫入與刪除（技術設計 4.3「備份與還原」）：備份、還原、危險區、檢查點與回溯共用
 
 /** 一局的全部資料：GAME_TABLES 每張表一個陣列，資料列原樣 */
 export interface GameData {
@@ -38,8 +38,9 @@ export interface GameData {
 export type GameTableName = keyof GameData
 
 /**
- * 屬於一局的資料表：meta 以外的每一張。games 以 id 歸屬，其他以 gameId 歸屬。
- * 匯出、還原、刪除與計算筆數都用這份清單；加表時一併更新（測試會檢查）
+ * 屬於一局的資料表：全域的 meta 與檢查點的兩張表以外的每一張。games 以 id 歸屬，其他以 gameId 歸屬。
+ * 匯出、還原、回溯、檢查點的內容、刪除與計算筆數都用這份清單；加表時一併更新，
+ * 不屬於一局資料的表在測試裡明示排除（技術設計 4.3「整局資料」）
  */
 export const GAME_TABLES: readonly GameTableName[] = [
   'games',
@@ -132,7 +133,7 @@ export async function addGameData(
 
 /**
  * 從 GAME_TABLES 刪除一局的全部資料列（一個 rw 交易），回傳各表刪除的筆數。
- * 不碰 meta；遊戲局不存在時什麼都不刪，筆數都是 0
+ * 不碰 meta 與檢查點；遊戲局不存在時什麼都不刪，筆數都是 0
  */
 export async function deleteGameData(db: WPStudBookDatabase, gameId: string): Promise<RowCounts> {
   return db.transaction('rw', gameTables(db), async () => {

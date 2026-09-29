@@ -18,12 +18,16 @@ import type { EventRow } from './records'
 /** addSampleGame 一局的總筆數：horses 3 列，其他每張表 1 列 */
 const SAMPLE_TOTAL = 15
 
+/**
+ * 不屬於一局資料的表（技術設計 4.3「整局資料」）：全域的 meta；
+ * 檢查點的兩張表不進備份，回溯清掉整局資料時要留下，刪除一局時另外刪
+ */
+const EXCLUDED_TABLES = ['meta', 'checkpoints', 'checkpointContents']
+
 describe('GAME_TABLES', () => {
-  it('涵蓋 meta 以外的每一張資料表', () => {
-    const names = testDatabase()
-      .tables.map((table) => table.name)
-      .filter((name) => name !== 'meta')
-    expect([...GAME_TABLES].sort()).toEqual(names.sort())
+  it('每一張資料表不是在 GAME_TABLES，就是明示排除', () => {
+    const names = testDatabase().tables.map((table) => table.name)
+    expect([...GAME_TABLES, ...EXCLUDED_TABLES].sort()).toEqual(names.sort())
   })
 })
 
