@@ -1,5 +1,13 @@
 import { SCHEMA_VERSION, type WPStudBookDatabase } from './database'
-import { countRows, readGameData, totalRows, type GameData, type RowCounts } from './game-data'
+import {
+  GAME_TABLES,
+  countRows,
+  readGameData,
+  totalRows,
+  type GameData,
+  type GameTableName,
+  type RowCounts,
+} from './game-data'
 import { APP_VERSION } from './version'
 
 // 備份檔的編碼、解碼與驗證（需求規格 12.2、技術設計 4.3「備份與還原」）
@@ -141,6 +149,11 @@ async function gzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuf
  * - not-backup：格式識別不符，或結構版本不是 1 以上的整數
  * - future-version：結構版本比目前新；version 是檔案的結構版本
  * - hash：雜湊不符
+ * - field：欄位不符；path 指出位置，例如 collections.horses[3].id（集合、資料列與欄位）
+ * - duplicate-id：重複識別：同一集合的主鍵重複（複合主鍵以 + 連接），或 id 跨集合重複；
+ *   collection 是重複出現的集合
+ * - missing-relation：缺少關聯；path 指出引用的欄位，value 是找不到的識別
+ * - count：筆數不符；collection 是筆數對不上的集合
  */
 export type BackupRejection =
   | { kind: 'gzip' }
@@ -149,6 +162,10 @@ export type BackupRejection =
   | { kind: 'not-backup' }
   | { kind: 'future-version'; version: number }
   | { kind: 'hash' }
+  | { kind: 'field'; path: string }
+  | { kind: 'duplicate-id'; collection: string; id: string }
+  | { kind: 'missing-relation'; path: string; value: string }
+  | { kind: 'count'; collection: string }
 
 /** 還原前的預覽（需求規格 12.2）；schemaVersion 是檔案原本的結構版本 */
 export interface BackupPreview {
@@ -191,8 +208,8 @@ export interface ReadBackupOptions {
 
 /**
  * 讀取並驗證備份檔（需求規格 12.2、DATA-04、DATA-05）：依序解壓、解析、格式、版本、雜湊、遷移，
- * 任一步不通過就回傳拒絕與原因，不丟例外（第 5 章的資料來源異常）。開頭是 1F 8B 時當作 gzip，
- * 其他當作未壓縮的 JSON。雜湊在遷移前比對。只讀，不碰資料庫
+ * 再檢查集合的欄位、重複、關聯與筆數。任一步不通過就回傳拒絕與原因，不丟例外（第 5 章的資料來源異常）。
+ * 開頭是 1F 8B 時當作 gzip，其他當作未壓縮的 JSON。雜湊在遷移前比對。只讀，不碰資料庫
  */
 export async function readBackup(
   bytes: Uint8Array<ArrayBuffer>,
@@ -232,7 +249,133 @@ export async function readBackup(
     if (!migrate) throw new Error(`缺少結構版本 ${from} 的遷移`)
     file = migrate(file)
   }
+  const invalid = checkCollections(file)
+  if (invalid) return reject(invalid)
   return { status: 'ok', backup: { file, preview: previewOf(file, version) } }
+}
+
+/** 各表的主鍵欄位與型別，與資料庫的結構相同（database.ts） */
+const PRIMARY_KEYS: Record<GameTableName, readonly (readonly [string, 'string' | 'number'])[]> = {
+  games: [['id', 'string']],
+  settings: [['gameId', 'string']],
+  horses: [['id', 'string']],
+  lines: [
+    ['gameId', 'string'],
+    ['line', 'number'],
+  ],
+  systems: [
+    ['gameId', 'string'],
+    ['subsystem', 'string'],
+  ],
+  mares: [['horseId', 'string']],
+  mareYears: [
+    ['gameId', 'string'],
+    ['horseId', 'string'],
+    ['year', 'number'],
+  ],
+  stallions: [['id', 'string']],
+  restorations: [['id', 'string']],
+  breedings: [['id', 'string']],
+  matingRatings: [['id', 'string']],
+  events: [['id', 'string']],
+  horseNumbers: [['id', 'string']],
+}
+
+/**
+ * 資料列層級的引用：集合、欄位（巢狀欄位以 . 連接）與指向的集合（技術設計 4.3）。
+ * 事件內容裡的引用不查：取消預定後繼會刪除任用列，事件裡的任用識別本來就可能懸空
+ */
+const RELATIONS: readonly (readonly [GameTableName, string, GameTableName])[] = [
+  ['horses', 'sireId', 'horses'],
+  ['horses', 'damId', 'horses'],
+  ['horses', 'birth.breedingId', 'breedings'],
+  ['mares', 'horseId', 'horses'],
+  ['mareYears', 'horseId', 'mares'],
+  ['stallions', 'horseId', 'horses'],
+  ['stallions', 'breedingId', 'breedings'],
+  ['stallions', 'restorationId', 'restorations'],
+  ['breedings', 'mareId', 'mares'],
+  ['breedings', 'sireId', 'horses'],
+  ['matingRatings', 'mareId', 'mares'],
+  ['matingRatings', 'sireId', 'horses'],
+  ['horseNumbers', 'horseId', 'horses'],
+  ['events', 'horseId', 'horses'],
+]
+
+/**
+ * 集合的內容檢查（技術設計 4.3「讀取與驗證」的欄位、重複、關聯與筆數），通過時回傳 undefined。
+ * 不逐欄驗證型別與列舉值：檔案完整性由雜湊保證
+ */
+function checkCollections(file: BackupFile): BackupRejection | undefined {
+  // 欄位：集合剛好是 GAME_TABLES，每一列是物件、主鍵欄位的型別正確、屬於這一局；摘要與 games 那一列一致
+  const collections: unknown = file.collections
+  if (!isObject(collections)) return { kind: 'field', path: 'collections' }
+  for (const name of Object.keys(collections)) {
+    if (!GAME_TABLES.includes(name as GameTableName)) {
+      return { kind: 'field', path: `collections.${name}` }
+    }
+  }
+  for (const name of GAME_TABLES) {
+    if (!Array.isArray(collections[name])) return { kind: 'field', path: `collections.${name}` }
+  }
+  const tables = collections as Record<GameTableName, Record<string, unknown>[]>
+  for (const name of ['games', 'settings'] as const) {
+    if (tables[name].length !== 1) return { kind: 'field', path: `collections.${name}` }
+  }
+  const game = tables.games[0]!
+  for (const name of GAME_TABLES) {
+    for (const [index, row] of tables[name].entries()) {
+      const path = `collections.${name}[${index}]`
+      if (!isObject(row)) return { kind: 'field', path }
+      for (const [field, type] of PRIMARY_KEYS[name]) {
+        if (typeof row[field] !== type) return { kind: 'field', path: `${path}.${field}` }
+      }
+      if (name !== 'games' && row.gameId !== game.id) {
+        return { kind: 'field', path: `${path}.gameId` }
+      }
+    }
+  }
+  const summary: unknown = file.game
+  const fields = ['id', 'name', 'startYear', 'currentYear'] as const
+  if (!isObject(summary) || fields.some((field) => summary[field] !== game[field])) {
+    return { kind: 'field', path: 'game' }
+  }
+  // 重複：各表主鍵不重複，所有 id 跨表也不重複（還原時共用一張新舊對照表）
+  const ids = new Set<unknown>()
+  for (const name of GAME_TABLES) {
+    const keys = new Set<string>()
+    for (const row of tables[name]) {
+      const key = PRIMARY_KEYS[name].map(([field]) => String(row[field])).join('+')
+      if (keys.has(key)) return { kind: 'duplicate-id', collection: name, id: key }
+      keys.add(key)
+      if (row.id === undefined) continue
+      if (ids.has(row.id)) return { kind: 'duplicate-id', collection: name, id: String(row.id) }
+      ids.add(row.id)
+    }
+  }
+  // 關聯：資料列層級的引用都找得到
+  for (const [name, field, target] of RELATIONS) {
+    const [keyField] = PRIMARY_KEYS[target][0]!
+    const targets = new Set(tables[target].map((row) => row[keyField]))
+    for (const [index, row] of tables[name].entries()) {
+      const value = field
+        .split('.')
+        .reduce<unknown>((item, part) => (isObject(item) ? item[part] : undefined), row)
+      if (value !== undefined && !targets.has(value)) {
+        const path = `collections.${name}[${index}].${field}`
+        return { kind: 'missing-relation', path, value: String(value) }
+      }
+    }
+  }
+  // 筆數：counts 的鍵與各集合的筆數相符
+  const counts: unknown = file.counts
+  const declared = isObject(counts) ? counts : {}
+  for (const name of new Set([...GAME_TABLES, ...Object.keys(declared)])) {
+    if (declared[name] !== (tables as Record<string, unknown[]>)[name]?.length) {
+      return { kind: 'count', collection: name }
+    }
+  }
+  return undefined
 }
 
 /** 預覽：局名、起始年與目前遊戲年、匯出時間、檔案原本的結構版本、應用版本、各集合筆數與總筆數 */

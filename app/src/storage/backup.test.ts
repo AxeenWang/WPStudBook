@@ -253,3 +253,190 @@ describe('readBackup', () => {
     )
   })
 })
+
+describe('readBackup：集合的內容', () => {
+  /** 測試用：改動樣本備份的內容（重新算雜湊），讀取後回傳拒絕原因；通過時回傳 undefined */
+  async function rejectionOf(change: (file: BackupFile) => void) {
+    const { file } = await sampleBackup()
+    change(file)
+    const result = await readBackup(await signedBytes(file))
+    return result.status === 'rejected' ? result.reason : undefined
+  }
+
+  /** 測試用：當作任意物件修改 */
+  const loose = (value: object) => value as Record<string, unknown>
+
+  it('集合不是物件、多或少一個集合、集合不是陣列時拒絕，附位置（DATA-04）', async () => {
+    expect(await rejectionOf((file) => (loose(file).collections = null))).toEqual({
+      kind: 'field',
+      path: 'collections',
+    })
+    expect(await rejectionOf((file) => (loose(file).collections = []))).toEqual({
+      kind: 'field',
+      path: 'collections.games',
+    })
+    expect(await rejectionOf((file) => (loose(file.collections).checkpoints = []))).toEqual({
+      kind: 'field',
+      path: 'collections.checkpoints',
+    })
+    expect(await rejectionOf((file) => delete loose(file.collections).events)).toEqual({
+      kind: 'field',
+      path: 'collections.events',
+    })
+    expect(await rejectionOf((file) => (loose(file.collections).horses = {}))).toEqual({
+      kind: 'field',
+      path: 'collections.horses',
+    })
+  })
+
+  it('games 與 settings 不是剛好一列時拒絕', async () => {
+    expect(
+      await rejectionOf((file) => file.collections.games.push({ ...file.collections.games[0]! })),
+    ).toEqual({ kind: 'field', path: 'collections.games' })
+    expect(await rejectionOf((file) => (file.collections.settings = []))).toEqual({
+      kind: 'field',
+      path: 'collections.settings',
+    })
+  })
+
+  it('資料列不是物件、主鍵欄位缺少或型別不對、不屬於這一局時拒絕', async () => {
+    expect(await rejectionOf((file) => (loose(file.collections.horses)[1] = 'G-M'))).toEqual({
+      kind: 'field',
+      path: 'collections.horses[1]',
+    })
+    expect(await rejectionOf((file) => delete loose(file.collections.horses[0]!).id)).toEqual({
+      kind: 'field',
+      path: 'collections.horses[0].id',
+    })
+    expect(await rejectionOf((file) => (loose(file.collections.lines[0]!).line = '1'))).toEqual({
+      kind: 'field',
+      path: 'collections.lines[0].line',
+    })
+    expect(
+      await rejectionOf((file) => (loose(file.collections.mareYears[0]!).year = '1989')),
+    ).toEqual({ kind: 'field', path: 'collections.mareYears[0].year' })
+    expect(
+      await rejectionOf((file) => (loose(file.collections.settings[0]!).gameId = 123)),
+    ).toEqual({ kind: 'field', path: 'collections.settings[0].gameId' })
+    expect(await rejectionOf((file) => (file.collections.events[0]!.gameId = 'G2'))).toEqual({
+      kind: 'field',
+      path: 'collections.events[0].gameId',
+    })
+  })
+
+  it('遊戲局摘要與 games 那一列不一致時拒絕', async () => {
+    for (const change of [
+      (file: BackupFile) => (file.game.name = '別的局'),
+      (file: BackupFile) => (file.game.currentYear = 1991),
+      (file: BackupFile) => delete loose(file).game,
+    ]) {
+      expect(await rejectionOf(change)).toEqual({ kind: 'field', path: 'game' })
+    }
+  })
+
+  it('同一集合的主鍵重複，或 id 跨集合重複時拒絕（DATA-04）', async () => {
+    expect(
+      await rejectionOf((file) => file.collections.horses.push({ ...file.collections.horses[0]! })),
+    ).toEqual({ kind: 'duplicate-id', collection: 'horses', id: 'G-F' })
+    expect(
+      await rejectionOf((file) =>
+        file.collections.mareYears.push({ ...file.collections.mareYears[0]!, plan: 'resting' }),
+      ),
+    ).toEqual({ kind: 'duplicate-id', collection: 'mareYears', id: 'G+G-M+1989' })
+    expect(await rejectionOf((file) => (file.collections.events[0]!.id = 'G-B'))).toEqual({
+      kind: 'duplicate-id',
+      collection: 'events',
+      id: 'G-B',
+    })
+  })
+
+  it('資料列層級的引用找不到時拒絕，附位置與值（DATA-04）', async () => {
+    const cases: [(file: BackupFile) => void, string][] = [
+      [(file) => (file.collections.horses[0]!.sireId = 'X'), 'horses[0].sireId'],
+      [(file) => (file.collections.horses[0]!.damId = 'X'), 'horses[0].damId'],
+      [
+        (file) => (file.collections.horses[0]!.birth = { breedingId: 'X' }),
+        'horses[0].birth.breedingId',
+      ],
+      [(file) => (file.collections.mares[0]!.horseId = 'X'), 'mares[0].horseId'],
+      [(file) => (file.collections.mareYears[0]!.horseId = 'X'), 'mareYears[0].horseId'],
+      [(file) => (file.collections.stallions[0]!.horseId = 'X'), 'stallions[0].horseId'],
+      [(file) => (file.collections.stallions[0]!.breedingId = 'X'), 'stallions[0].breedingId'],
+      [
+        (file) => (file.collections.stallions[0]!.restorationId = 'X'),
+        'stallions[0].restorationId',
+      ],
+      [(file) => (file.collections.breedings[0]!.mareId = 'X'), 'breedings[0].mareId'],
+      [(file) => (file.collections.breedings[0]!.sireId = 'X'), 'breedings[0].sireId'],
+      [(file) => (file.collections.matingRatings[0]!.mareId = 'X'), 'matingRatings[0].mareId'],
+      [(file) => (file.collections.matingRatings[0]!.sireId = 'X'), 'matingRatings[0].sireId'],
+      [(file) => (file.collections.horseNumbers[0]!.horseId = 'X'), 'horseNumbers[0].horseId'],
+      [(file) => (loose(file.collections.events[0]!).horseId = 'X'), 'events[0].horseId'],
+    ]
+    for (const [change, path] of cases) {
+      expect(await rejectionOf(change)).toEqual({
+        kind: 'missing-relation',
+        path: `collections.${path}`,
+        value: 'X',
+      })
+    }
+  })
+
+  it('母馬年度資料、配種與評價的母馬要在 mares：只有馬匹不夠', async () => {
+    expect(await rejectionOf((file) => (file.collections.mareYears[0]!.horseId = 'G-F'))).toEqual({
+      kind: 'missing-relation',
+      path: 'collections.mareYears[0].horseId',
+      value: 'G-F',
+    })
+    expect(await rejectionOf((file) => (file.collections.breedings[0]!.mareId = 'G-F'))).toEqual({
+      kind: 'missing-relation',
+      path: 'collections.breedings[0].mareId',
+      value: 'G-F',
+    })
+    expect(
+      await rejectionOf((file) => (file.collections.matingRatings[0]!.mareId = 'G-F')),
+    ).toEqual({
+      kind: 'missing-relation',
+      path: 'collections.matingRatings[0].mareId',
+      value: 'G-F',
+    })
+  })
+
+  it('事件內容裡懸空的引用不拒絕：取消預定後繼會刪除任用列', async () => {
+    const reason = await rejectionOf((file) => {
+      file.collections.events.push({
+        id: 'G-E2',
+        gameId: GAME,
+        year: 1990,
+        recordedAt: '2026-09-24T00:00:00.000Z',
+        source: { kind: 'manual' },
+        kind: 'successor-cancelled',
+        line: 1,
+        stallionId: 'G-gone',
+        generation: 1,
+        breedingId: 'G-gone-B',
+      })
+      file.counts.events = 2
+    })
+    expect(reason).toBeUndefined()
+  })
+
+  it('筆數與集合對不上、少一個或多一個鍵時拒絕', async () => {
+    expect(await rejectionOf((file) => (file.counts.horses = 2))).toEqual({
+      kind: 'count',
+      collection: 'horses',
+    })
+    expect(await rejectionOf((file) => delete loose(file.counts).horseNumbers)).toEqual({
+      kind: 'count',
+      collection: 'horseNumbers',
+    })
+    expect(await rejectionOf((file) => (loose(file.counts).checkpoints = 0))).toEqual({
+      kind: 'count',
+      collection: 'checkpoints',
+    })
+    expect(await rejectionOf((file) => (loose(file).counts = null))).toEqual({
+      kind: 'count',
+      collection: 'games',
+    })
+  })
+})
