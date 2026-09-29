@@ -12,6 +12,7 @@ import {
   type FoalExistsBlock,
   type Prepared,
   type SuccessorCheckBlock,
+  type UnchangedBlock,
   type WriteContext,
   type WriteOptions,
   type WriteResult,
@@ -41,6 +42,15 @@ export type DesignateSuccessorBlock =
   | { kind: 'line-has-successor'; stallionId: string }
   | { kind: 'already-appointed'; stallionId: string }
   | FoalExistsBlock
+
+/**
+ * 確認預定後繼出生的阻止原因：
+ * - not-born：連到那筆配種的產駒還沒有建立
+ * - foal-female：產駒 horseId 是牝，預定後繼失效，由使用者取消（需求規格 7.7）
+ * - successor：產駒的 9.6 核對不符
+ */
+export type ConfirmBirthBlock =
+  { kind: 'not-born' } | { kind: 'foal-female'; horseId: string } | SuccessorCheckBlock
 
 /** 就緒狀態的兩種值：競走中、已引退待指定 */
 const READINESS: readonly StallionReadiness[] = ['racing', 'retired-awaiting']
@@ -135,6 +145,77 @@ export async function cancelSuccessor(
       ...(row.breedingId === undefined ? {} : { breedingId: row.breedingId }),
     })
     return context.done(row)
+  })
+}
+
+/**
+ * 確認預定後繼的產駒出生（需求規格 7.7「產駒出生後不自動改指，由使用者確認」、LINE-42）：
+ * 只限尚未出生的預定後繼。找出出生紀錄連到那筆配種的產駒：還沒有時阻止；是牝時阻止（預定後繼失效，由使用者取消）。
+ * 公駒以 9.6 再核對，目標是這一列的系與代數；通過後這一列改存馬匹、拿掉配種紀錄，就緒為競走中。
+ * 事件 successor-born 記系位置、馬匹與配種紀錄。任用找不到、屬於其他局、已接任或已出生時丟出錯誤。
+ */
+export async function confirmSuccessorBirth(
+  db: WPStudBookDatabase,
+  gameId: string,
+  stallionId: string,
+  options: WriteOptions = {},
+): Promise<WriteResult<StallionRow, ConfirmBirthBlock>> {
+  return runWrite(db, gameId, [db.horses, db.breedings, db.stallions], options, async (context) => {
+    const { breedingId, ...row } = await loadPending(context, stallionId)
+    if (breedingId === undefined) throw new Error(`預定後繼已經出生：${stallionId}`)
+    const foal = await linkedFoal(context, await loadBreeding(context, breedingId))
+    const blocks: ConfirmBirthBlock[] = []
+    if (!foal) blocks.push({ kind: 'not-born' })
+    else if (foal.sex === 'female') blocks.push({ kind: 'foal-female', horseId: foal.id })
+    if (!foal || blocks.length > 0) return { status: 'blocked', blocks }
+    const checked = checkOwnSuccessor(await loadSuccessorCandidate(db, gameId, foal.id), {
+      line: row.line,
+      generation: row.generation,
+    })
+    if (!checked.ok) return { status: 'blocked', blocks: checked.blocks }
+    const next: StallionRow = { ...row, horseId: foal.id, readiness: 'racing' }
+    await db.stallions.put(next)
+    await context.addEvent({
+      kind: 'successor-born',
+      line: next.line,
+      horseId: foal.id,
+      stallionId,
+      breedingId,
+    })
+    return context.done(next)
+  })
+}
+
+/**
+ * 預定後繼的就緒狀態（需求規格 7.7）：已出生的預定後繼在競走中與已引退待指定之間切換；和目前相同時阻止。
+ * 事件 successor-readiness-changed 記原狀態與新狀態。任用找不到、屬於其他局、已接任或尚未出生，
+ * 或就緒不是兩種之一時丟出錯誤；已出生的預定後繼缺少就緒狀態時丟出 RangeError。
+ */
+export async function setSuccessorReadiness(
+  db: WPStudBookDatabase,
+  gameId: string,
+  stallionId: string,
+  readiness: StallionReadiness,
+  options: WriteOptions = {},
+): Promise<WriteResult<StallionRow, UnchangedBlock>> {
+  if (!READINESS.includes(readiness)) throw new Error(`就緒狀態不符：${readiness}`)
+  return runWrite(db, gameId, [db.stallions], options, async (context) => {
+    const row = await loadPending(context, stallionId)
+    const { horseId, readiness: from } = row
+    if (horseId === undefined) throw new Error(`尚未出生的預定後繼沒有就緒狀態：${stallionId}`)
+    if (from === undefined) throw new RangeError(`預定後繼缺少就緒狀態：${stallionId}`)
+    if (from === readiness) return { status: 'blocked', blocks: [{ kind: 'unchanged' }] }
+    const next: StallionRow = { ...row, readiness }
+    await db.stallions.put(next)
+    await context.addEvent({
+      kind: 'successor-readiness-changed',
+      line: row.line,
+      horseId,
+      stallionId,
+      from,
+      to: readiness,
+    })
+    return context.done(next)
   })
 }
 

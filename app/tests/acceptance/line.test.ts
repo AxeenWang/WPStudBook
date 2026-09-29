@@ -20,13 +20,19 @@ import {
 import { findParentSystemConflict, summarizeLineSystems } from '../../src/core/systems'
 import { checkSubstituteMare } from '../../src/core/substitute'
 import { verifySuccessor, type DesignatedOrigin } from '../../src/core/successor'
+import { addFoal } from '../../src/storage/foal-writes'
+import { setCurrentYear } from '../../src/storage/games'
 import { changeLineSubsystem, openLine, type OpenLineInput } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { addMarketMare } from '../../src/storage/mare-writes'
 import { transferFilly } from '../../src/storage/own-mare-writes'
 import { declareRestoration } from '../../src/storage/restoration-writes'
 import { assignZeroStallion } from '../../src/storage/stallion-writes'
-import { designateSuccessor } from '../../src/storage/successor-writes'
+import {
+  cancelSuccessor,
+  confirmSuccessorBirth,
+  designateSuccessor,
+} from '../../src/storage/successor-writes'
 import { changeSystem } from '../../src/storage/system-writes'
 import { addTestGame, testDatabase } from '../support/database'
 import { restorationHerd, successorHerd } from '../support/successor'
@@ -964,5 +970,29 @@ describe('八系管理（LINE）：儲存層寫入', () => {
     const result = await designateSuccessor(db, GAME, { target: { horseId: 'C513' } })
     if (result.status !== 'done') throw new Error(result.status)
     expect(result.value).toMatchObject({ line: 5, generation: 13, horseId: 'C513' })
+  })
+
+  it('LINE-42 已有預定後繼時再指定另一匹 → 阻止，先取消；預定後繼指定受胎配種，產駒出生後由使用者確認，牝駒不能確認', async () => {
+    const db = await successorHerd()
+    const unborn = await designateSuccessor(db, GAME, { target: { breedingId: 'B90' } })
+    if (unborn.status !== 'done') throw new Error(unborn.status)
+    expect(await designateSuccessor(db, GAME, { target: { horseId: 'C87' } })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'line-has-successor', stallionId: unborn.value.id }],
+    })
+
+    // 1991 年 4 月產駒出生；建立產駒不會自動改指
+    expect((await setCurrentYear(db, GAME, 1991)).status).toBe('done')
+    const foal = await addFoal(db, GAME, { damId: 'D24', sex: 'female', birthYear: 1991 })
+    if (foal.status !== 'done') throw new Error(foal.status)
+    expect(await db.stallions.get(unborn.value.id)).toMatchObject({ breedingId: 'B90' })
+    expect(await confirmSuccessorBirth(db, GAME, unborn.value.id)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'foal-female', horseId: foal.value.id }],
+    })
+
+    // 預定後繼失效：取消後改指定已出生的公駒
+    expect((await cancelSuccessor(db, GAME, unborn.value.id)).status).toBe('done')
+    expect((await designateSuccessor(db, GAME, { target: { horseId: 'C87' } })).status).toBe('done')
   })
 })

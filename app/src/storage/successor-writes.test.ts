@@ -4,8 +4,13 @@ import { GAME, horseRow, stallionRow } from '../../tests/support/rows'
 import { successorHerd } from '../../tests/support/successor'
 import { loadGame } from './games'
 import { loadRuleSnapshot } from './loaders'
-import type { StallionReadiness, StallionRow } from './records'
-import { cancelSuccessor, designateSuccessor } from './successor-writes'
+import type { HorseRow, StallionReadiness, StallionRow } from './records'
+import {
+  cancelSuccessor,
+  confirmSuccessorBirth,
+  designateSuccessor,
+  setSuccessorReadiness,
+} from './successor-writes'
 
 const now = new Date('2026-09-28T01:02:03.000Z')
 
@@ -232,5 +237,152 @@ describe('cancelSuccessor', () => {
       '已接任的種牡馬不是預定後繼：S14',
     )
     expect(await db.stallions.get('S14')).toBeDefined()
+  })
+})
+
+describe('confirmSuccessorBirth', () => {
+  /** 後繼牧場，B90 已指定為第 1 系的預定後繼；產駒 C91（牡，1991 年生）的欄位可以覆寫，null 表示還沒建立 */
+  async function unbornHerd(foal: Partial<HorseRow> | null = {}) {
+    const db = await successorHerd()
+    const designated = await designateSuccessor(db, GAME, { target: { breedingId: 'B90' } })
+    if (designated.status !== 'done') throw new Error(designated.status)
+    if (foal) {
+      await db.horses.add(
+        horseRow('C91', {
+          sex: 'male',
+          birthYear: 1991,
+          sireId: 'S14',
+          damId: 'D24',
+          birth: { breedingId: 'B90', placement: { line: 1, generation: 5 } },
+          disposition: 'keep',
+          ...foal,
+        }),
+      )
+    }
+    await db.events.clear()
+    return { db, stallionId: designated.value.id }
+  }
+
+  it('產駒出生後由使用者確認：這一列改存馬匹、拿掉配種紀錄，就緒為競走中；事件 successor-born', async () => {
+    const { db, stallionId } = await unbornHerd()
+    const result = await confirmSuccessorBirth(db, GAME, stallionId, { now })
+    const row: StallionRow = {
+      id: stallionId,
+      gameId: GAME,
+      line: 1,
+      generation: 5,
+      horseId: 'C91',
+      readiness: 'racing',
+    }
+    expect(result).toStrictEqual({ status: 'done', value: row, warnings: [] })
+    expect(await db.stallions.get(stallionId)).toStrictEqual(row)
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        ...EVENT,
+        kind: 'successor-born',
+        line: 1,
+        horseId: 'C91',
+        stallionId,
+        breedingId: 'B90',
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-28T01:02:03.000Z')
+  })
+
+  it('產駒還沒建立時阻止；產駒是牝時阻止（預定後繼失效，由使用者取消），什麼都不寫', async () => {
+    const notBorn = await unbornHerd(null)
+    expect(await confirmSuccessorBirth(notBorn.db, GAME, notBorn.stallionId)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'not-born' }],
+    })
+    const filly = await unbornHerd({ sex: 'female' })
+    expect(await confirmSuccessorBirth(filly.db, GAME, filly.stallionId)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'foal-female', horseId: 'C91' }],
+    })
+    expect(await filly.db.stallions.get(filly.stallionId)).toMatchObject({ breedingId: 'B90' })
+    expect(await filly.db.events.count()).toBe(0)
+  })
+
+  it('產駒的 9.6 核對不符時阻止：父母不符；這一列的系與代數和出生紀錄不同', async () => {
+    const parents = await unbornHerd({ sireId: 'C87' })
+    expect(await confirmSuccessorBirth(parents.db, GAME, parents.stallionId)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'successor', mismatches: [{ mismatch: 'parents' }] }],
+    })
+    const target = await unbornHerd()
+    await target.db.stallions.update(target.stallionId, { generation: 6 })
+    expect(await confirmSuccessorBirth(target.db, GAME, target.stallionId)).toEqual({
+      status: 'blocked',
+      blocks: [
+        {
+          kind: 'successor',
+          mismatches: [{ mismatch: 'target', expected: { line: 1, generation: 5 } }],
+        },
+      ],
+    })
+  })
+
+  it('任用找不到、屬於其他局、已接任或已出生時丟出錯誤', async () => {
+    const { db, stallionId } = await unbornHerd()
+    const colt = await confirmSuccessorBirth(db, GAME, stallionId)
+    expect(colt.status).toBe('done')
+    await expect(confirmSuccessorBirth(db, GAME, stallionId)).rejects.toThrow(
+      `預定後繼已經出生：${stallionId}`,
+    )
+    await expect(confirmSuccessorBirth(db, GAME, 'S14')).rejects.toThrow(
+      '已接任的種牡馬不是預定後繼：S14',
+    )
+    await expect(confirmSuccessorBirth(db, GAME, 'X')).rejects.toThrow('找不到種牡馬的任用：X')
+  })
+})
+
+describe('setSuccessorReadiness', () => {
+  it('已出生的預定後繼在競走中與已引退待指定之間切換；事件記原狀態與新狀態', async () => {
+    const db = await successorHerd()
+    const designated = await designateSuccessor(db, GAME, { target: { horseId: 'C87' } })
+    if (designated.status !== 'done') throw new Error(designated.status)
+    await db.events.clear()
+    const id = designated.value.id
+    const result = await setSuccessorReadiness(db, GAME, id, 'retired-awaiting', { now })
+    const row = { ...designated.value, readiness: 'retired-awaiting' }
+    expect(result).toStrictEqual({ status: 'done', value: row, warnings: [] })
+    expect(await db.stallions.get(id)).toStrictEqual(row)
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        ...EVENT,
+        kind: 'successor-readiness-changed',
+        line: 1,
+        horseId: 'C87',
+        stallionId: id,
+        from: 'racing',
+        to: 'retired-awaiting',
+      },
+    ])
+    expect((await setSuccessorReadiness(db, GAME, id, 'racing')).status).toBe('done')
+    expect(await setSuccessorReadiness(db, GAME, id, 'racing')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+  })
+
+  it('尚未出生、已接任、找不到，或就緒不符時丟出錯誤；已出生卻沒有就緒時丟出 RangeError', async () => {
+    const db = await successorHerd()
+    const unborn = await designateSuccessor(db, GAME, { target: { breedingId: 'B90' } })
+    if (unborn.status !== 'done') throw new Error(unborn.status)
+    await db.stallions.add({ id: 'BROKEN', gameId: GAME, line: 2, generation: 5, horseId: 'C89' })
+    await expect(setSuccessorReadiness(db, GAME, unborn.value.id, 'racing')).rejects.toThrow(
+      `尚未出生的預定後繼沒有就緒狀態：${unborn.value.id}`,
+    )
+    await expect(setSuccessorReadiness(db, GAME, 'S14', 'racing')).rejects.toThrow(
+      '已接任的種牡馬不是預定後繼：S14',
+    )
+    await expect(setSuccessorReadiness(db, GAME, 'X', 'racing')).rejects.toThrow(
+      '找不到種牡馬的任用：X',
+    )
+    await expect(
+      setSuccessorReadiness(db, GAME, 'BROKEN', 'active' as StallionReadiness),
+    ).rejects.toThrow('就緒狀態不符：active')
+    await expect(setSuccessorReadiness(db, GAME, 'BROKEN', 'racing')).rejects.toThrow(RangeError)
   })
 })
