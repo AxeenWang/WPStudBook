@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { gunzipText } from '../../tests/support/backup'
+import { gunzipText, sampleBackup, signedBytes } from '../../tests/support/backup'
 import { testDatabase } from '../../tests/support/database'
 import { addSampleGame } from '../../tests/support/game-data'
 import { GAME } from '../../tests/support/rows'
-import { BACKUP_FORMAT, backupFileName, exportBackup, sha256Hex } from './backup'
+import {
+  BACKUP_FORMAT,
+  backupFileName,
+  exportBackup,
+  readBackup,
+  sha256Hex,
+  type BackupFile,
+  type BackupReadStep,
+} from './backup'
 import { SCHEMA_VERSION } from './database'
 import { countRows } from './game-data'
 import { loadGame } from './games'
@@ -115,6 +123,133 @@ describe('sha256Hex', () => {
     )
     expect(await sha256Hex('')).toBe(
       'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    )
+  })
+})
+
+describe('readBackup', () => {
+  /** 測試用：讀取並回傳拒絕原因；通過時丟出錯誤 */
+  async function rejection(bytes: Uint8Array<ArrayBuffer>) {
+    const result = await readBackup(bytes)
+    if (result.status !== 'rejected') throw new Error('應該被拒絕')
+    return result.reason
+  }
+
+  it('匯出的備份通過：回傳內容與預覽，依序回報解壓、解析、驗證', async () => {
+    const { bytes, file } = await sampleBackup({ name: '第一局' })
+    const steps: BackupReadStep[] = []
+    const result = await readBackup(bytes, { onProgress: (step) => steps.push(step) })
+    if (result.status !== 'ok') throw new Error(result.status)
+    expect(result.backup.file).toStrictEqual(file)
+    expect(result.backup.preview).toStrictEqual({
+      gameName: '第一局',
+      startYear: 1968,
+      currentYear: 1990,
+      exportedAt: '2026-09-29T01:02:03.000Z',
+      schemaVersion: SCHEMA_VERSION,
+      appVersion: APP_VERSION,
+      counts: file.counts,
+      total: 15,
+    })
+    expect(steps).toEqual(['decompress', 'parse', 'verify'])
+  })
+
+  it('未壓縮的 JSON 也能讀，不經解壓（DATA-06）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    vi.stubGlobal('CompressionStream', undefined)
+    const { bytes } = await exportBackup(db, GAME, NOW)
+    const steps: BackupReadStep[] = []
+    const result = await readBackup(bytes, { onProgress: (step) => steps.push(step) })
+    expect(result.status).toBe('ok')
+    expect(steps).toEqual(['parse', 'verify'])
+  })
+
+  it('錯誤或截斷的 gzip 拒絕（DATA-04）', async () => {
+    const { bytes } = await sampleBackup()
+    expect(await rejection(bytes.slice(0, Math.floor(bytes.length / 2)))).toEqual({ kind: 'gzip' })
+    const broken = bytes.slice()
+    for (let index = 10; index < broken.length - 8; index++) broken[index] = 0
+    expect(await rejection(broken)).toEqual({ kind: 'gzip' })
+  })
+
+  it('檔案是 gzip 但瀏覽器不支援 DecompressionStream 時拒絕', async () => {
+    const { bytes } = await sampleBackup()
+    vi.stubGlobal('DecompressionStream', undefined)
+    expect(await rejection(bytes)).toEqual({ kind: 'gzip-unsupported' })
+  })
+
+  it('截斷或不是 JSON、不是 UTF-8 時拒絕（DATA-04）', async () => {
+    const { file } = await sampleBackup()
+    const text = JSON.stringify(file)
+    const encode = (value: string) => new TextEncoder().encode(value)
+    expect(await rejection(encode(text.slice(0, text.length - 1)))).toEqual({ kind: 'not-json' })
+    expect(await rejection(encode('WPStudBook'))).toEqual({ kind: 'not-json' })
+    // 非法的 UTF-8 位元組在 JSON 字串裡：不嚴格解碼時會變成替代字元，成為合法的 JSON
+    expect(await rejection(new Uint8Array([0x22, 0xff, 0x22]))).toEqual({ kind: 'not-json' })
+  })
+
+  it('格式識別不符，或結構版本不是 1 以上的整數時拒絕', async () => {
+    const { file } = await sampleBackup()
+    for (const changed of [
+      { ...file, format: 'other' },
+      { ...file, schemaVersion: 0 },
+      { ...file, schemaVersion: 1.5 },
+      { ...file, schemaVersion: '1' },
+    ]) {
+      expect(await rejection(await signedBytes(changed))).toEqual({ kind: 'not-backup' })
+    }
+    for (const value of ['[]', 'null', '1']) {
+      expect(await rejection(new TextEncoder().encode(value))).toEqual({ kind: 'not-backup' })
+    }
+  })
+
+  it('結構版本比目前新時拒絕並附版本（DATA-04）', async () => {
+    const { file } = await sampleBackup()
+    const future = { ...file, schemaVersion: SCHEMA_VERSION + 1 }
+    expect(await rejection(await signedBytes(future))).toEqual({
+      kind: 'future-version',
+      version: SCHEMA_VERSION + 1,
+    })
+  })
+
+  it('雜湊不符時拒絕：內容被改過，或沒有雜湊', async () => {
+    const { file } = await sampleBackup()
+    const encode = (value: object) => new TextEncoder().encode(JSON.stringify(value))
+    const renamed = { ...file, game: { ...file.game, name: '改過的局名' } }
+    expect(await rejection(encode(renamed))).toEqual({ kind: 'hash' })
+    const unsigned: Record<string, unknown> = { ...file }
+    delete unsigned.sha256
+    expect(await rejection(encode(unsigned))).toEqual({ kind: 'hash' })
+  })
+
+  it('較舊的結構版本逐版遷移，預覽保留檔案原本的版本（DATA-05）', async () => {
+    const { file } = await sampleBackup()
+    const calls: number[] = []
+    const migrations = {
+      1: (from: BackupFile): BackupFile => {
+        calls.push(1)
+        return { ...from, schemaVersion: 2 }
+      },
+      2: (from: BackupFile): BackupFile => {
+        calls.push(2)
+        const [foal, ...others] = from.collections.horses
+        const horses = [{ ...foal!, note: '由 2 版遷移' }, ...others]
+        return { ...from, schemaVersion: 3, collections: { ...from.collections, horses } }
+      },
+    }
+    const result = await readBackup(await signedBytes(file), { migrations, currentVersion: 3 })
+    if (result.status !== 'ok') throw new Error(result.status)
+    expect(calls).toEqual([1, 2])
+    expect(result.backup.file.schemaVersion).toBe(3)
+    expect(result.backup.file.collections.horses[0]!.note).toBe('由 2 版遷移')
+    expect(result.backup.preview.schemaVersion).toBe(1)
+  })
+
+  it('缺少某一版的遷移時丟出錯誤', async () => {
+    const { bytes } = await sampleBackup()
+    await expect(readBackup(bytes, { migrations: {}, currentVersion: 2 })).rejects.toThrow(
+      '缺少結構版本 1 的遷移',
     )
   })
 })

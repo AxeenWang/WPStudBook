@@ -132,3 +132,130 @@ async function gzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuf
   const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
+
+/**
+ * 讀取備份檔的拒絕原因（DATA-04）：
+ * - gzip：錯誤或截斷的 gzip
+ * - gzip-unsupported：檔案是 gzip，但瀏覽器不支援 DecompressionStream
+ * - not-json：截斷或不是 JSON（UTF-8 嚴格解碼或 JSON.parse 失敗）
+ * - not-backup：格式識別不符，或結構版本不是 1 以上的整數
+ * - future-version：結構版本比目前新；version 是檔案的結構版本
+ * - hash：雜湊不符
+ */
+export type BackupRejection =
+  | { kind: 'gzip' }
+  | { kind: 'gzip-unsupported' }
+  | { kind: 'not-json' }
+  | { kind: 'not-backup' }
+  | { kind: 'future-version'; version: number }
+  | { kind: 'hash' }
+
+/** 還原前的預覽（需求規格 12.2）；schemaVersion 是檔案原本的結構版本 */
+export interface BackupPreview {
+  gameName: string
+  startYear: number
+  currentYear: number
+  exportedAt: string
+  schemaVersion: number
+  appVersion: string
+  counts: RowCounts
+  total: number
+}
+
+/** 驗證過的備份：內容已遷移到目前的結構版本 */
+export interface VerifiedBackup {
+  file: BackupFile
+  preview: BackupPreview
+}
+
+export type BackupReadResult =
+  { status: 'ok'; backup: VerifiedBackup } | { status: 'rejected'; reason: BackupRejection }
+
+/** 讀取備份的步驟：解壓、解析、驗證 */
+export type BackupReadStep = 'decompress' | 'parse' | 'verify'
+
+/** 把某一版的備份內容遷移到下一版 */
+export type BackupMigration = (file: BackupFile) => BackupFile
+
+/** 逐版遷移，鍵是遷移前的結構版本。結構版本 1 是第一版，目前沒有遷移（技術設計 4.3） */
+export const BACKUP_MIGRATIONS: Readonly<Record<number, BackupMigration>> = {}
+
+export interface ReadBackupOptions {
+  /** 遷移表；省略時為 BACKUP_MIGRATIONS */
+  migrations?: Readonly<Record<number, BackupMigration>>
+  /** 目前的結構版本；省略時為 SCHEMA_VERSION */
+  currentVersion?: number
+  /** 每一步開始時收到步驟（需求規格 12.2「大型檔案顯示進度」） */
+  onProgress?: (step: BackupReadStep) => void
+}
+
+/**
+ * 讀取並驗證備份檔（需求規格 12.2、DATA-04、DATA-05）：依序解壓、解析、格式、版本、雜湊、遷移，
+ * 任一步不通過就回傳拒絕與原因，不丟例外（第 5 章的資料來源異常）。開頭是 1F 8B 時當作 gzip，
+ * 其他當作未壓縮的 JSON。雜湊在遷移前比對。只讀，不碰資料庫
+ */
+export async function readBackup(
+  bytes: Uint8Array<ArrayBuffer>,
+  options: ReadBackupOptions = {},
+): Promise<BackupReadResult> {
+  const { migrations = BACKUP_MIGRATIONS, currentVersion = SCHEMA_VERSION, onProgress } = options
+  const reject = (reason: BackupRejection): BackupReadResult => ({ status: 'rejected', reason })
+  let plain = bytes
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    onProgress?.('decompress')
+    if (typeof DecompressionStream !== 'function') return reject({ kind: 'gzip-unsupported' })
+    try {
+      plain = await gunzip(bytes)
+    } catch {
+      return reject({ kind: 'gzip' })
+    }
+  }
+  onProgress?.('parse')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plain))
+  } catch {
+    return reject({ kind: 'not-json' })
+  }
+  onProgress?.('verify')
+  if (!isObject(parsed) || parsed.format !== BACKUP_FORMAT) return reject({ kind: 'not-backup' })
+  const version = parsed.schemaVersion
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
+    return reject({ kind: 'not-backup' })
+  }
+  if (version > currentVersion) return reject({ kind: 'future-version', version })
+  const { sha256, ...body } = parsed
+  if (sha256 !== (await sha256Hex(JSON.stringify(body)))) return reject({ kind: 'hash' })
+  let file = parsed as unknown as BackupFile
+  for (let from = version; from < currentVersion; from++) {
+    const migrate = migrations[from]
+    if (!migrate) throw new Error(`缺少結構版本 ${from} 的遷移`)
+    file = migrate(file)
+  }
+  return { status: 'ok', backup: { file, preview: previewOf(file, version) } }
+}
+
+/** 預覽：局名、起始年與目前遊戲年、匯出時間、檔案原本的結構版本、應用版本、各集合筆數與總筆數 */
+function previewOf(file: BackupFile, schemaVersion: number): BackupPreview {
+  return {
+    gameName: file.game.name,
+    startYear: file.game.startYear,
+    currentYear: file.game.currentYear,
+    exportedAt: file.exportedAt,
+    schemaVersion,
+    appVersion: file.appVersion,
+    counts: file.counts,
+    total: totalRows(file.counts),
+  }
+}
+
+/** 以 DecompressionStream 解開 gzip；錯誤或截斷時丟出例外 */
+async function gunzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+/** 是不是 null 以外的物件；陣列也算，缺少的欄位由之後的檢查擋下 */
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
