@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { addSampleGame } from '../../tests/support/game-data'
 import { addTestGame, testDatabase } from '../../tests/support/database'
+import { addSampleGame } from '../../tests/support/game-data'
 import { GAME, horseRow } from '../../tests/support/rows'
 import { countRows, readGameData } from './game-data'
 import {
