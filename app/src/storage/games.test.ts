@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { addSampleGame } from '../../tests/support/game-data'
-import { GAME, checkpointRow, horseRow } from '../../tests/support/rows'
+import { GAME, archiveRow, checkpointRow, horseRow } from '../../tests/support/rows'
 import { countRows, readGameData } from './game-data'
 import {
   DEFAULT_SETTINGS,
@@ -452,7 +452,7 @@ describe('deleteGame', () => {
 })
 
 describe('deleteAllGames', () => {
-  it('輸入「刪除全部存檔」時清空每一張表（含 meta），回傳遊戲局數與總筆數（需求規格 12.1）', async () => {
+  it('輸入「刪除全部存檔」時清空每一張表（含 meta 與封存索引），回傳遊戲局數與總筆數（需求規格 12.1）', async () => {
     const db = testDatabase()
     await addSampleGame(db)
     await addSampleGame(db, { id: 'G2' })
@@ -463,6 +463,7 @@ describe('deleteAllGames', () => {
       gameId: GAME,
       bytes: new Uint8Array([1]),
     })
+    await db.archives.add(archiveRow('G3'))
     expect(DELETE_ALL_PHRASE).toBe('刪除全部存檔')
     expect(await deleteAllGames(db, ' 刪除全部存檔 ')).toEqual({
       status: 'done',

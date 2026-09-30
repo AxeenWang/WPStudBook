@@ -269,8 +269,9 @@ export interface DeletedAll {
 
 /**
  * 刪除全部存檔（需求規格 12.1、DATA-10）：typedPhrase 去除前後空白後要是「刪除全部存檔」，否則阻止，
- * 什麼都不刪；第二道確認由畫面負責。在一個交易內清空資料庫的每一張表（含 meta），
- * 只保留 meta 的備份資料夾：它是管理器的設定，不是存檔（DATA-19）
+ * 什麼都不刪；第二道確認由畫面負責。在一個交易內清空資料庫的每一張表（含 meta 與封存索引），
+ * 只保留 meta 的備份資料夾：它是管理器的設定，不是存檔（DATA-19）。封存索引記的是被封存的局，
+ * 一併清除（DATA-23）
  */
 export async function deleteAllGames(
   db: WPStudBookDatabase,

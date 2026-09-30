@@ -22,7 +22,7 @@ const SAMPLE_TOTAL = 15
  * 不屬於一局資料的表（技術設計 4.3「整局資料」）：全域的 meta；
  * 檢查點的兩張表不進備份，回溯清掉整局資料時要留下，刪除一局時另外刪
  */
-const EXCLUDED_TABLES = ['meta', 'checkpoints', 'checkpointContents']
+const EXCLUDED_TABLES = ['meta', 'checkpoints', 'checkpointContents', 'archives']
 
 describe('GAME_TABLES', () => {
   it('每一張資料表不是在 GAME_TABLES，就是明示排除', () => {

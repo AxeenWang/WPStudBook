@@ -6,8 +6,9 @@ import type { SisterStatus } from '../core/sisters'
 import type { MarketStallionSystemCheck, StallionStatus } from '../core/stallions'
 import type { SubstituteConflict } from '../core/substitute'
 import type { PedigreeCheck, PedigreeWarningKind } from '../core/vitality'
+import type { RowCounts } from './game-data'
 
-// 資料表的一列（技術設計 4.3）。除了全域的 MetaRow，每一列都以 gameId 歸屬某一局；
+// 資料表的一列（技術設計 4.3）。除了全域的 MetaRow 與 ArchiveRow，每一列都以 gameId 歸屬某一局；
 // 識別一律是 crypto.randomUUID() 產生的字串（需求規格 12.2）。
 
 /** 遊戲局（需求規格 12.1）；各局完全隔離 */
@@ -126,6 +127,32 @@ export interface CheckpointContentRow {
   checkpointId: string
   gameId: string
   bytes: Uint8Array<ArrayBuffer>
+}
+
+/**
+ * 封存索引（需求規格 12.3、技術設計 4.3「封存」）：全域，不屬於任何一局，也不屬於 GAME_TABLES。
+ * 封存後原局已刪除，還原一律換新識別，所以 id 沿用原遊戲局的識別
+ */
+export interface ArchiveRow {
+  /** 原遊戲局的識別 */
+  id: string
+  /** 局名 */
+  name: string
+  /** 封存檔的應用版本 */
+  appVersion: string
+  /** 封存檔的結構版本：決定之後讀不讀得了 */
+  schemaVersion: number
+  /** 年份範圍：起始年～封存時的目前遊戲年 */
+  startYear: number
+  currentYear: number
+  /** 封存檔的匯出時間（ISO 8601），也是檔名裡的時間 */
+  exportedAt: string
+  /** 封存檔的檔名 */
+  fileName: string
+  /** 各表筆數；總筆數由它加總，不另存 */
+  counts: RowCounts
+  /** 驗證摘要：封存檔裡的 sha256 */
+  sha256: string
 }
 
 export type Sex = 'male' | 'female'

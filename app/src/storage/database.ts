@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable, type Table } from 'dexie'
 import type { LinePosition } from '../core/lines'
 import type {
+  ArchiveRow,
   BreedingRow,
   CheckpointContentRow,
   CheckpointRow,
@@ -47,6 +48,8 @@ export type WPStudBookDatabase = Dexie & {
   checkpoints: EntityTable<CheckpointRow, 'id'>
   /** 檢查點的內容，主鍵是 checkpointId */
   checkpointContents: EntityTable<CheckpointContentRow, 'checkpointId'>
+  /** 封存索引；全域，不屬於 GAME_TABLES（技術設計 4.3「封存」） */
+  archives: EntityTable<ArchiveRow, 'id'>
 }
 
 /** 測試時改用 fake-indexeddb；瀏覽器裡留空，使用內建的 IndexedDB */
@@ -58,9 +61,10 @@ export interface DatabaseDependencies {
 /**
  * 建立資料庫物件；Dexie 在第一次查詢時才開啟資料庫。
  * 結構版本：正式發布前維持 1，直接修改版本 1 的結構；第一次發布後才以版本升級變更（技術設計 4.3）。
- * 索引照需求規格 12.5；除了全域的 meta，每張表都能以 gameId 查詢。
+ * 索引照需求規格 12.5；除了全域的 meta 與封存索引，每張表都能以 gameId 查詢。
  * 事件依對象（馬匹、系位置、系統對照表的子系統）與年份查詢；母馬年度資料依年份篩選今年計畫；
- * 總合評價與爆發力依母馬查詢；階段馬番号依馬匹查詢；檢查點的中繼資料與內容分兩張表（技術設計 4.3）。
+ * 總合評價與爆發力依母馬查詢；階段馬番号依馬匹查詢；檢查點的中繼資料與內容分兩張表；
+ * 封存索引以原遊戲局的識別為主鍵（技術設計 4.3）。
  */
 export function createDatabase(
   name: string = DATABASE_NAME,
@@ -85,6 +89,7 @@ export function createDatabase(
     horseNumbers: 'id, gameId, [gameId+horseId]',
     checkpoints: 'id, gameId',
     checkpointContents: 'checkpointId, gameId',
+    archives: 'id',
   })
   return db
 }

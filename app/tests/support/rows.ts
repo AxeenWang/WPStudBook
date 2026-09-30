@@ -1,5 +1,7 @@
 import type { LinePosition } from '../../src/core/lines'
+import { GAME_TABLES, type RowCounts } from '../../src/storage/game-data'
 import type {
+  ArchiveRow,
   CheckpointRow,
   HorseRow,
   LineRow,
@@ -149,6 +151,23 @@ export function checkpointRow(id: string, fields: Partial<CheckpointRow> = {}): 
     createdAt: '2026-09-29T00:00:00.000Z',
     sha256: '0'.repeat(64),
     pinned: false,
+    ...fields,
+  }
+}
+
+/** 封存索引：識別是原遊戲局的識別，1968～1990 年、各表 0 筆 */
+export function archiveRow(id: string, fields: Partial<ArchiveRow> = {}): ArchiveRow {
+  return {
+    id,
+    name: `測試局 ${id}`,
+    appVersion: '0.0.0',
+    schemaVersion: 1,
+    startYear: 1968,
+    currentYear: 1990,
+    exportedAt: '2026-09-30T00:00:00.000Z',
+    fileName: `WPStudBook_測試局 ${id}_1990年_20260930-000000.json.gz`,
+    counts: Object.fromEntries(GAME_TABLES.map((name) => [name, 0])) as RowCounts,
+    sha256: '0'.repeat(64),
     ...fields,
   }
 }
