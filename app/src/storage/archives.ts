@@ -1,4 +1,11 @@
-import { exportBackup, readBackup, type BackupRejection, type ExportedBackup } from './backup'
+import {
+  exportBackup,
+  readBackup,
+  type BackupRejection,
+  type ExportedBackup,
+  type ReadBackupOptions,
+  type VerifiedBackup,
+} from './backup'
 import type { WPStudBookDatabase } from './database'
 import { gameTables, type RowCounts } from './game-data'
 import { deleteGame, loadGame, type DeleteGameBlock } from './games'
@@ -96,4 +103,57 @@ export async function archiveGame(
     await db.archives.add(index)
     return { status: 'done', value: { archive: index, counts: deleted.value }, warnings: [] }
   })
+}
+
+/** 全部封存索引，依匯出時間由新到舊 */
+export async function listArchives(db: WPStudBookDatabase): Promise<ArchiveRow[]> {
+  const rows = await db.archives.toArray()
+  return rows.sort((a, b) => b.exportedAt.localeCompare(a.exportedAt))
+}
+
+/**
+ * 從封存還原前讀取檔案的拒絕原因：備份的拒絕原因（BackupRejection），另加
+ * - archive-mismatch：檔案的 sha256 與索引的驗證摘要不同，選錯檔案（DATA-21）
+ */
+export type ArchiveReadRejection = BackupRejection | { kind: 'archive-mismatch' }
+
+export type ArchiveReadResult =
+  { status: 'ok'; backup: VerifiedBackup } | { status: 'rejected'; reason: ArchiveReadRejection }
+
+/**
+ * 讀取使用者為這一筆封存索引選的檔案（需求規格 12.3、DATA-21）：以 readBackup 驗證（可傳進度回呼），
+ * 拒絕原因原樣回傳；檔案的 sha256 與索引不同時拒絕。通過時回傳驗證過的備份，由畫面以 restoreBackup
+ * 還原成新遊戲局；索引保留，封存檔可以重複還原。只讀；找不到索引時丟出錯誤
+ */
+export async function readArchive(
+  db: WPStudBookDatabase,
+  archiveId: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  options: ReadBackupOptions = {},
+): Promise<ArchiveReadResult> {
+  const index = await loadArchive(db, archiveId)
+  const read = await readBackup(bytes, options)
+  if (read.status === 'rejected') return read
+  if (read.backup.file.sha256 !== index.sha256) {
+    return { status: 'rejected', reason: { kind: 'archive-mismatch' } }
+  }
+  return read
+}
+
+/**
+ * 移除封存索引（需求規格 12.3、DATA-21）：只刪這一筆索引，封存檔不受影響；要不要先確認由畫面決定。
+ * 找不到索引時丟出錯誤
+ */
+export async function removeArchive(db: WPStudBookDatabase, archiveId: string): Promise<void> {
+  await db.transaction('rw', db.archives, async () => {
+    await loadArchive(db, archiveId)
+    await db.archives.delete(archiveId)
+  })
+}
+
+/** 讀取封存索引；找不到時丟出錯誤 */
+async function loadArchive(db: WPStudBookDatabase, archiveId: string): Promise<ArchiveRow> {
+  const index = await db.archives.get(archiveId)
+  if (!index) throw new Error(`找不到封存索引：${archiveId}`)
+  return index
 }

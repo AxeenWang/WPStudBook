@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { testDatabase } from '../../tests/support/database'
 import { addSampleGame } from '../../tests/support/game-data'
-import { GAME, checkpointRow } from '../../tests/support/rows'
-import { archiveGame, prepareArchive, type PreparedArchive } from './archives'
-import { readBackup } from './backup'
+import { GAME, archiveRow, checkpointRow } from '../../tests/support/rows'
+import {
+  archiveGame,
+  listArchives,
+  prepareArchive,
+  readArchive,
+  removeArchive,
+  type PreparedArchive,
+} from './archives'
+import { exportBackup, readBackup, restoreBackup, type BackupReadStep } from './backup'
 import { createCheckpoint } from './checkpoints'
 import { SCHEMA_VERSION, type WPStudBookDatabase } from './database'
 import { countRows, readGameData } from './game-data'
@@ -174,5 +181,76 @@ describe('archiveGame', () => {
     expect((await archiveGame(db, archive, '第一局')).status).toBe('done')
     await expect(archiveGame(db, archive, '第一局')).rejects.toThrow('找不到遊戲局：G')
     expect(await db.archives.count()).toBe(1)
+  })
+})
+
+describe('listArchives', () => {
+  it('全部封存索引，依匯出時間由新到舊', async () => {
+    const db = testDatabase()
+    await db.archives.bulkAdd([
+      archiveRow('A1', { exportedAt: '2026-09-28T00:00:00.000Z' }),
+      archiveRow('A2', { exportedAt: '2026-09-30T00:00:00.000Z' }),
+      archiveRow('A3', { exportedAt: '2026-09-29T00:00:00.000Z' }),
+    ])
+    expect((await listArchives(db)).map((row) => row.id)).toEqual(['A2', 'A3', 'A1'])
+  })
+})
+
+describe('readArchive', () => {
+  /** 測試用：封存樣本局「第一局」，回傳準備好的封存（索引與封存檔） */
+  async function archived(db: WPStudBookDatabase): Promise<PreparedArchive> {
+    await addSampleGame(db, { name: '第一局' })
+    const archive = await prepared(db)
+    const result = await archiveGame(db, archive, '第一局')
+    if (result.status !== 'done') throw new Error(result.status)
+    return archive
+  }
+
+  it('檔案與索引的驗證摘要相符時通過，可以還原成新遊戲局；索引保留（DATA-21）', async () => {
+    const db = testDatabase()
+    const { index, backup } = await archived(db)
+    const steps: BackupReadStep[] = []
+    const onProgress = (step: BackupReadStep) => steps.push(step)
+    const result = await readArchive(db, GAME, backup.bytes, { onProgress })
+    if (result.status !== 'ok') throw new Error(result.status)
+    expect(steps).toEqual(['decompress', 'parse', 'verify'])
+    expect(result.backup.file.sha256).toBe(index.sha256)
+    const game = await restoreBackup(db, result.backup, { fileName: backup.fileName })
+    expect(game.name).toBe('第一局')
+    expect(countRows(await readGameData(db, game.id))).toEqual(index.counts)
+    expect(await db.archives.toArray()).toStrictEqual([index])
+  })
+
+  it('檔案的驗證摘要與索引不同時拒絕：選錯檔案（DATA-21）', async () => {
+    const db = testDatabase()
+    await archived(db)
+    await addSampleGame(db, { id: 'G2', name: '第二局' })
+    const other = await exportBackup(db, 'G2', NOW)
+    expect(await readArchive(db, GAME, other.bytes)).toStrictEqual({
+      status: 'rejected',
+      reason: { kind: 'archive-mismatch' },
+    })
+  })
+
+  it('檔案本身不通過時原樣回傳拒絕原因；找不到索引時丟出錯誤', async () => {
+    const db = testDatabase()
+    const { backup } = await archived(db)
+    expect(await readArchive(db, GAME, backup.bytes.slice(0, 10))).toStrictEqual({
+      status: 'rejected',
+      reason: { kind: 'gzip' },
+    })
+    await expect(readArchive(db, 'missing', backup.bytes)).rejects.toThrow(
+      '找不到封存索引：missing',
+    )
+  })
+})
+
+describe('removeArchive', () => {
+  it('只刪這一筆索引；找不到時丟出錯誤', async () => {
+    const db = testDatabase()
+    await db.archives.bulkAdd([archiveRow('A1'), archiveRow('A2')])
+    await removeArchive(db, 'A1')
+    expect(await db.archives.toArray()).toStrictEqual([archiveRow('A2')])
+    await expect(removeArchive(db, 'A1')).rejects.toThrow('找不到封存索引：A1')
   })
 })
