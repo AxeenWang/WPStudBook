@@ -385,6 +385,12 @@ function checkCollections(file: BackupFile): BackupRejection | undefined {
       return { kind: 'field', path: `collections.games[0].${field}` }
     }
   }
+  // 時間欄位要是 toISOString() 的字串：備份提醒以它們計算；最近備份時間有值時才檢查
+  if (!isIsoTime(file.exportedAt)) return { kind: 'field', path: 'exportedAt' }
+  for (const field of ['createdAt', 'updatedAt', 'lastBackupAt']) {
+    if (field === 'lastBackupAt' && game[field] === undefined) continue
+    if (!isIsoTime(game[field])) return { kind: 'field', path: `collections.games[0].${field}` }
+  }
   const summary: unknown = file.game
   const fields = ['id', 'name', 'startYear', 'currentYear'] as const
   if (!isObject(summary) || fields.some((field) => summary[field] !== game[field])) {
@@ -441,6 +447,13 @@ function previewOf(file: BackupFile, schemaVersion: number): BackupPreview {
     counts: file.counts,
     total: totalRows(file.counts),
   }
+}
+
+/** 是不是 toISOString() 產生的字串：能換成有效的時間，而且轉回去與原字串完全相同 */
+function isIsoTime(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const time = new Date(value)
+  return !Number.isNaN(time.getTime()) && time.toISOString() === value
 }
 
 /** 以 DecompressionStream 解開 gzip；錯誤或截斷時丟出例外 */

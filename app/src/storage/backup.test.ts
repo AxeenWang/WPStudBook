@@ -381,6 +381,30 @@ describe('readBackup：集合的內容', () => {
     }
   })
 
+  it('時間欄位不是 toISOString() 的字串時拒絕：匯出時間，games 那一列的建立、更新與最近備份時間', async () => {
+    const games = (file: BackupFile) => file.collections.games[0]!
+    const cases: [(file: BackupFile) => void, string][] = [
+      [(file) => (file.exportedAt = '2026-09-29T01:02:03Z'), 'exportedAt'],
+      [(file) => (games(file).createdAt = '2026-09-24'), 'collections.games[0].createdAt'],
+      [(file) => (games(file).updatedAt = '昨天'), 'collections.games[0].updatedAt'],
+      [
+        (file) => (games(file).lastBackupAt = '2026-09-24T09:00:00.000+09:00'),
+        'collections.games[0].lastBackupAt',
+      ],
+      [(file) => (loose(games(file)).lastBackupAt = null), 'collections.games[0].lastBackupAt'],
+    ]
+    for (const [change, path] of cases) {
+      expect(await rejectionOf(change)).toEqual({ kind: 'field', path })
+    }
+  })
+
+  it('最近備份時間沒有值時不檢查，有值且是 toISOString() 的字串時通過', async () => {
+    const games = (file: BackupFile) => file.collections.games[0]!
+    expect(await rejectionOf((file) => delete games(file).lastBackupAt)).toBeUndefined()
+    const backedUp = (file: BackupFile) => (games(file).lastBackupAt = '2026-09-28T00:00:00.000Z')
+    expect(await rejectionOf(backedUp)).toBeUndefined()
+  })
+
   it('同一集合的主鍵重複，或 id 跨集合重複時拒絕（DATA-04）', async () => {
     expect(
       await rejectionOf((file) => file.collections.horses.push({ ...file.collections.horses[0]! })),
