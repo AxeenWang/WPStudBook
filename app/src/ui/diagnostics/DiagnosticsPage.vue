@@ -9,6 +9,13 @@ import {
   writeWithStoredFolder,
 } from './browser-checks'
 import { gzipRoundTrip, inspectCp932Samples, readFirstLineCp932, sha256Hex } from './checks'
+import {
+  checkDatabase,
+  chooseFolderMessage,
+  clearFolderMessage,
+  delayedDownload,
+  simulateAutoBackup,
+} from './storage-checks'
 import type { CheckOutcome, CheckRow, CheckStatus, DiagnosticsState } from './types'
 
 const SHA256_OF_ABC = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
@@ -17,6 +24,8 @@ const statusText: Record<CheckStatus, string> = { ok: '成功', ng: '失敗', in
 const rows = ref<CheckRow[]>([])
 const manualMessage = ref('')
 const firstLine = ref('')
+const storageMessage = ref('')
+const storageDb = checkDatabase()
 const state: DiagnosticsState = { done: false, results: [], cp932: [], indexedDb: null }
 window.__wpsbDiagnostics = state
 
@@ -116,6 +125,19 @@ function downloadTest(): void {
   manualMessage.value = '已觸發下載：wpsb-download-test.txt'
 }
 
+// 儲存整合驗證：點擊後的第一個 await 就是儲存層的函式，prepareBackupTarget 才能在使用者剛操作時申請權限
+async function storageAttempt(
+  action: (db: typeof storageDb) => Promise<string>,
+  pending = '',
+): Promise<void> {
+  storageMessage.value = pending
+  try {
+    storageMessage.value = await action(storageDb)
+  } catch (error) {
+    storageMessage.value = `失敗：${errorText(error)}`
+  }
+}
+
 async function onFileSelected(event: Event): Promise<void> {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -181,6 +203,43 @@ async function onFileSelected(event: Event): Promise<void> {
       />
     </label>
     <p data-testid="cp932-first-line">{{ firstLine }}</p>
+
+    <h2>儲存整合驗證</h2>
+    <p>
+      呼叫正式的備份函式，使用另一個資料庫，不碰正式資料。結果記錄到 docs/specs/技術設計.md 第 7
+      節「儲存整合的驗證」。
+    </p>
+    <div class="actions">
+      <button
+        type="button"
+        data-testid="storage-choose-folder"
+        @click="storageAttempt(chooseFolderMessage)"
+      >
+        選擇備份資料夾
+      </button>
+      <button
+        type="button"
+        data-testid="storage-clear-folder"
+        @click="storageAttempt(clearFolderMessage)"
+      >
+        清除資料夾設定
+      </button>
+      <button
+        type="button"
+        data-testid="storage-auto-backup"
+        @click="storageAttempt(simulateAutoBackup, '模擬年度匯入中，6 秒後交付備份…')"
+      >
+        模擬年度匯入的自動備份
+      </button>
+      <button
+        type="button"
+        data-testid="storage-delayed-download"
+        @click="storageAttempt(delayedDownload, '6 秒後下載…')"
+      >
+        延遲下載
+      </button>
+    </div>
+    <p data-testid="storage-message" role="status">{{ storageMessage }}</p>
   </main>
 </template>
 
