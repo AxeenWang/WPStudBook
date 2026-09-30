@@ -41,23 +41,30 @@ describe('createGame', () => {
       seniorAge: 18,
       stallionReminderAge: 26,
       checkpointLimit: 12,
+      backupReminderDays: 7,
     })
     expect(await db.systems.where('gameId').equals(game.id).count()).toBe(0)
   })
 
-  it('預設設定：定年 25、高齡提醒 18、種牡馬提醒 26 歲、檢查點保留 12 個', () => {
+  it('預設設定：定年 25、高齡提醒 18、種牡馬提醒 26 歲、檢查點保留 12 個、備份提醒 7 天', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       retirementAge: 25,
       seniorAge: 18,
       stallionReminderAge: 26,
       checkpointLimit: 12,
+      backupReminderDays: 7,
     })
   })
 
   it('只複製另一局的系統對照表與設定，不複製八系位置與馬匹', async () => {
     const db = testDatabase()
     const source = await createGame(db, { name: '第一局', startYear: 1968 })
-    await db.settings.update(source.id, { retirementAge: 24, seniorAge: 20, checkpointLimit: 6 })
+    await db.settings.update(source.id, {
+      retirementAge: 24,
+      seniorAge: 20,
+      checkpointLimit: 6,
+      backupReminderDays: 3,
+    })
     await db.systems.bulkAdd([
       { gameId: source.id, subsystem: 'マンノウォー', parentSystem: 'マッチェム' },
       {
@@ -84,6 +91,7 @@ describe('createGame', () => {
       seniorAge: 20,
       stallionReminderAge: 26,
       checkpointLimit: 6,
+      backupReminderDays: 3,
     })
     expect(await db.systems.where('gameId').equals(copy.id).sortBy('subsystem')).toEqual([
       {
@@ -286,6 +294,15 @@ describe('updateSettings', () => {
     expect(await loadSettings(db, GAME)).toEqual(expected)
   })
 
+  it('備份提醒天數可以調整（需求規格 12.2）', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const result = await updateSettings(db, GAME, { backupReminderDays: 14 }, { now })
+    const expected = { gameId: GAME, ...DEFAULT_SETTINGS, backupReminderDays: 14 }
+    expect(result).toEqual({ status: 'done', value: expected, warnings: [] })
+    expect(await loadSettings(db, GAME)).toEqual(expected)
+  })
+
   it('不是 1 以上的整數時阻止，列出每一個不符的欄位，設定不變', async () => {
     const db = testDatabase()
     await addTestGame(db)
@@ -294,6 +311,7 @@ describe('updateSettings', () => {
       seniorAge: 18.5,
       stallionReminderAge: 26,
       checkpointLimit: 0,
+      backupReminderDays: 0.5,
     })
     expect(result).toEqual({
       status: 'blocked',
@@ -301,6 +319,7 @@ describe('updateSettings', () => {
         { kind: 'not-positive-integer', field: 'retirementAge' },
         { kind: 'not-positive-integer', field: 'seniorAge' },
         { kind: 'not-positive-integer', field: 'checkpointLimit' },
+        { kind: 'not-positive-integer', field: 'backupReminderDays' },
       ],
     })
     expect(await loadSettings(db, GAME)).toEqual({ gameId: GAME, ...DEFAULT_SETTINGS })

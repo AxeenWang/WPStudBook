@@ -54,6 +54,8 @@ export interface SettingsRow {
   stallionReminderAge: number
   /** 保留的未釘選檢查點個數（12.4），預設 12 個 */
   checkpointLimit: number
+  /** 備份提醒天數（12.2）：有未備份的變更且距上次備份超過這個天數時醒目提示，預設 7 天 */
+  backupReminderDays: number
 }
 
 /** 不屬於任何一局的全域資料 */

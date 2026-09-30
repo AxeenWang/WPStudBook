@@ -7,12 +7,13 @@ import type { GameRow, SettingsRow, SystemRow } from './records'
 import { APP_VERSION } from './version'
 import { gate, runWrite, type WriteOptions, type WriteResult } from './writes'
 
-/** 新局的預設設定（需求規格 7.7、8.5、12.4） */
+/** 新局的預設設定（需求規格 7.7、8.5、12.2、12.4） */
 export const DEFAULT_SETTINGS: Readonly<Omit<SettingsRow, 'gameId'>> = {
   retirementAge: DEFAULT_MARE_AGE_SETTINGS.retirementAge,
   seniorAge: DEFAULT_MARE_AGE_SETTINGS.seniorAge,
   stallionReminderAge: DEFAULT_STALLION_REMINDER_AGE,
   checkpointLimit: 12,
+  backupReminderDays: 7,
 }
 
 /** meta 表中記錄目前遊戲局的鍵 */
@@ -180,6 +181,7 @@ const SETTING_FIELDS: readonly (keyof SettingsChange)[] = [
   'seniorAge',
   'stallionReminderAge',
   'checkpointLimit',
+  'backupReminderDays',
 ]
 
 /** 設定的阻止原因：field 不是 1 以上的整數 */
@@ -189,7 +191,7 @@ export interface SettingsBlock {
 }
 
 /**
- * 修改這一局的設定（需求規格 7.7、8.5、12.4）：只改 change 有填的欄位，每一項都要是 1 以上的整數。
+ * 修改這一局的設定（需求規格 7.7、8.5、12.2、12.4）：只改 change 有填的欄位，每一項都要是 1 以上的整數。
  * 不寫事件；新設定從下一次判斷開始生效（MARE-10）。沒有變更時不寫入。遊戲局或設定不存在時丟出錯誤。
  */
 export async function updateSettings(

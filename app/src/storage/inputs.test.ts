@@ -30,6 +30,7 @@ describe('mareAgeSettings', () => {
         seniorAge: 20,
         stallionReminderAge: 26,
         checkpointLimit: 12,
+        backupReminderDays: 7,
       }),
     ).toEqual({ retirementAge: 24, seniorAge: 20 })
   })
