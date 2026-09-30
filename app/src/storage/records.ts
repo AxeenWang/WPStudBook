@@ -54,12 +54,38 @@ export interface SettingsRow {
   stallionReminderAge: number
   /** 保留的未釘選檢查點個數（12.4），預設 12 個 */
   checkpointLimit: number
+  /** 備份提醒天數（12.2）：有未備份的變更且距上次備份超過這個天數時醒目提示，預設 7 天 */
+  backupReminderDays: number
 }
 
-/** 不屬於任何一局的全域資料 */
-export interface MetaRow {
-  key: string
-  value: string
+/**
+ * 不屬於任何一局的全域資料，依鍵區分：目前的遊戲局存識別，備份資料夾存瀏覽器的資料夾
+ * （技術設計 4.3「瀏覽器整合」）
+ */
+export type MetaRow =
+  { key: 'currentGame'; value: string } | { key: 'backupFolder'; value: BackupFolderHandle }
+
+// 備份資料夾：瀏覽器的檔案系統存取 API。TypeScript 的 DOM 型別還沒有 showDirectoryPicker 與權限的方法，
+// 這裡只宣告用到的部分（技術設計 4.3「瀏覽器整合」）
+
+/** 寫入檔案的串流（FileSystemWritableFileStream） */
+export interface BackupFileWritable {
+  write(data: Uint8Array<ArrayBuffer>): Promise<void>
+  close(): Promise<void>
+  abort(): Promise<void>
+}
+
+/** 資料夾裡的一個檔案（FileSystemFileHandle） */
+export interface BackupFileHandle {
+  createWritable(): Promise<BackupFileWritable>
+}
+
+/** 備份資料夾（FileSystemDirectoryHandle）；存在 IndexedDB，關閉瀏覽器再開啟後仍能沿用 */
+export interface BackupFolderHandle {
+  readonly name: string
+  getFileHandle(name: string, options: { create: true }): Promise<BackupFileHandle>
+  queryPermission(descriptor: { mode: 'readwrite' }): Promise<PermissionState>
+  requestPermission(descriptor: { mode: 'readwrite' }): Promise<PermissionState>
 }
 
 /** 檢查點的建立方式（需求規格 12.4）：年度匯入後自動建立，或手動建立 */

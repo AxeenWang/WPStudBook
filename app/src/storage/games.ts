@@ -1,18 +1,20 @@
 import Dexie from 'dexie'
 import { DEFAULT_MARE_AGE_SETTINGS } from '../core/mares'
 import { DEFAULT_STALLION_REMINDER_AGE } from '../core/stallions'
+import { BACKUP_FOLDER_KEY } from './backup-folder'
 import type { WPStudBookDatabase } from './database'
 import { deleteGameData, gameTables, type RowCounts } from './game-data'
 import type { GameRow, SettingsRow, SystemRow } from './records'
 import { APP_VERSION } from './version'
 import { gate, runWrite, type WriteOptions, type WriteResult } from './writes'
 
-/** 新局的預設設定（需求規格 7.7、8.5、12.4） */
+/** 新局的預設設定（需求規格 7.7、8.5、12.2、12.4） */
 export const DEFAULT_SETTINGS: Readonly<Omit<SettingsRow, 'gameId'>> = {
   retirementAge: DEFAULT_MARE_AGE_SETTINGS.retirementAge,
   seniorAge: DEFAULT_MARE_AGE_SETTINGS.seniorAge,
   stallionReminderAge: DEFAULT_STALLION_REMINDER_AGE,
   checkpointLimit: 12,
+  backupReminderDays: 7,
 }
 
 /** meta 表中記錄目前遊戲局的鍵 */
@@ -88,7 +90,8 @@ export async function loadSettings(db: WPStudBookDatabase, gameId: string): Prom
 
 /** 目前使用的遊戲局；還沒選過時為 undefined（需求規格 12.1：所有操作只作用於目前遊戲局） */
 export async function currentGameId(db: WPStudBookDatabase): Promise<string | undefined> {
-  return (await db.meta.get(CURRENT_GAME_KEY))?.value
+  const row = await db.meta.get(CURRENT_GAME_KEY)
+  return row?.key === CURRENT_GAME_KEY ? row.value : undefined
 }
 
 /** 切換目前遊戲局；遊戲局不存在時丟出錯誤 */
@@ -180,6 +183,7 @@ const SETTING_FIELDS: readonly (keyof SettingsChange)[] = [
   'seniorAge',
   'stallionReminderAge',
   'checkpointLimit',
+  'backupReminderDays',
 ]
 
 /** 設定的阻止原因：field 不是 1 以上的整數 */
@@ -189,7 +193,7 @@ export interface SettingsBlock {
 }
 
 /**
- * 修改這一局的設定（需求規格 7.7、8.5、12.4）：只改 change 有填的欄位，每一項都要是 1 以上的整數。
+ * 修改這一局的設定（需求規格 7.7、8.5、12.2、12.4）：只改 change 有填的欄位，每一項都要是 1 以上的整數。
  * 不寫事件；新設定從下一次判斷開始生效（MARE-10）。沒有變更時不寫入。遊戲局或設定不存在時丟出錯誤。
  */
 export async function updateSettings(
@@ -265,7 +269,8 @@ export interface DeletedAll {
 
 /**
  * 刪除全部存檔（需求規格 12.1、DATA-10）：typedPhrase 去除前後空白後要是「刪除全部存檔」，否則阻止，
- * 什麼都不刪；第二道確認由畫面負責。在一個交易內清空資料庫的每一張表（含 meta）
+ * 什麼都不刪；第二道確認由畫面負責。在一個交易內清空資料庫的每一張表（含 meta），
+ * 只保留 meta 的備份資料夾：它是管理器的設定，不是存檔（DATA-19）
  */
 export async function deleteAllGames(
   db: WPStudBookDatabase,
@@ -278,7 +283,9 @@ export async function deleteAllGames(
     const games = await db.games.count()
     let rows = 0
     for (const table of gameTables(db)) rows += await table.count()
+    const folder = await db.meta.get(BACKUP_FOLDER_KEY)
     for (const table of db.tables) await table.clear()
+    if (folder) await db.meta.add(folder)
     return { status: 'done', value: { games, rows }, warnings: [] }
   })
 }

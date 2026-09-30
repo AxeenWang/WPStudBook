@@ -18,6 +18,7 @@ import {
   setCurrentYear,
   updateSettings,
 } from './games'
+import type { BackupFolderHandle } from './records'
 import { APP_VERSION } from './version'
 
 describe('createGame', () => {
@@ -41,23 +42,30 @@ describe('createGame', () => {
       seniorAge: 18,
       stallionReminderAge: 26,
       checkpointLimit: 12,
+      backupReminderDays: 7,
     })
     expect(await db.systems.where('gameId').equals(game.id).count()).toBe(0)
   })
 
-  it('預設設定：定年 25、高齡提醒 18、種牡馬提醒 26 歲、檢查點保留 12 個', () => {
+  it('預設設定：定年 25、高齡提醒 18、種牡馬提醒 26 歲、檢查點保留 12 個、備份提醒 7 天', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       retirementAge: 25,
       seniorAge: 18,
       stallionReminderAge: 26,
       checkpointLimit: 12,
+      backupReminderDays: 7,
     })
   })
 
   it('只複製另一局的系統對照表與設定，不複製八系位置與馬匹', async () => {
     const db = testDatabase()
     const source = await createGame(db, { name: '第一局', startYear: 1968 })
-    await db.settings.update(source.id, { retirementAge: 24, seniorAge: 20, checkpointLimit: 6 })
+    await db.settings.update(source.id, {
+      retirementAge: 24,
+      seniorAge: 20,
+      checkpointLimit: 6,
+      backupReminderDays: 3,
+    })
     await db.systems.bulkAdd([
       { gameId: source.id, subsystem: 'マンノウォー', parentSystem: 'マッチェム' },
       {
@@ -84,6 +92,7 @@ describe('createGame', () => {
       seniorAge: 20,
       stallionReminderAge: 26,
       checkpointLimit: 6,
+      backupReminderDays: 3,
     })
     expect(await db.systems.where('gameId').equals(copy.id).sortBy('subsystem')).toEqual([
       {
@@ -286,6 +295,15 @@ describe('updateSettings', () => {
     expect(await loadSettings(db, GAME)).toEqual(expected)
   })
 
+  it('備份提醒天數可以調整（需求規格 12.2）', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const result = await updateSettings(db, GAME, { backupReminderDays: 14 }, { now })
+    const expected = { gameId: GAME, ...DEFAULT_SETTINGS, backupReminderDays: 14 }
+    expect(result).toEqual({ status: 'done', value: expected, warnings: [] })
+    expect(await loadSettings(db, GAME)).toEqual(expected)
+  })
+
   it('不是 1 以上的整數時阻止，列出每一個不符的欄位，設定不變', async () => {
     const db = testDatabase()
     await addTestGame(db)
@@ -294,6 +312,7 @@ describe('updateSettings', () => {
       seniorAge: 18.5,
       stallionReminderAge: 26,
       checkpointLimit: 0,
+      backupReminderDays: 0.5,
     })
     expect(result).toEqual({
       status: 'blocked',
@@ -301,6 +320,7 @@ describe('updateSettings', () => {
         { kind: 'not-positive-integer', field: 'retirementAge' },
         { kind: 'not-positive-integer', field: 'seniorAge' },
         { kind: 'not-positive-integer', field: 'checkpointLimit' },
+        { kind: 'not-positive-integer', field: 'backupReminderDays' },
       ],
     })
     expect(await loadSettings(db, GAME)).toEqual({ gameId: GAME, ...DEFAULT_SETTINGS })
@@ -450,6 +470,17 @@ describe('deleteAllGames', () => {
       warnings: [],
     })
     for (const table of db.tables) expect(await table.count()).toBe(0)
+  })
+
+  it('只保留 meta 的備份資料夾：它是管理器的設定，不是存檔（需求規格 12.1）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    await setCurrentGame(db, GAME)
+    const folder = { name: '備份' } as BackupFolderHandle
+    await db.meta.put({ key: 'backupFolder', value: folder })
+    expect((await deleteAllGames(db, '刪除全部存檔')).status).toBe('done')
+    expect(await db.meta.toArray()).toStrictEqual([{ key: 'backupFolder', value: folder }])
+    expect(await db.games.count()).toBe(0)
   })
 
   it('文字不符時阻止，什麼都不刪', async () => {

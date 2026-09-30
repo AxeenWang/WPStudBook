@@ -1,28 +1,41 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { exportBackup, readBackup, restoreBackup, type BackupFile } from '../../src/storage/backup'
-import { SCHEMA_VERSION } from '../../src/storage/database'
+import {
+  chooseBackupFolder,
+  loadBackupFolder,
+  prepareBackupTarget,
+} from '../../src/storage/backup-folder'
+import { backupReminder } from '../../src/storage/backup-reminder'
+import { SCHEMA_VERSION, type WPStudBookDatabase } from '../../src/storage/database'
 import { countRows, readGameData, type GameData } from '../../src/storage/game-data'
 import {
   createGame,
+  currentGameId,
   deleteAllGames,
   deleteGame,
   loadGame,
   loadSettings,
+  setCurrentGame,
   setCurrentYear,
 } from '../../src/storage/games'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
+import { requestPersistence } from '../../src/storage/persistence'
 import type { HorseRow } from '../../src/storage/records'
+import { saveBackup } from '../../src/storage/save-backup'
 import { APP_VERSION } from '../../src/storage/version'
 import { sampleBackup, signedBytes } from '../support/backup'
 import { addTestGame, testDatabase } from '../support/database'
+import { stubDownloads } from '../support/download'
+import { fakeFolder, storeFakeFolder } from '../support/folder'
 import { addSampleGame } from '../support/game-data'
 import { GAME, lineRow, ownFoalRow, ownMareRow } from '../support/rows'
 
 // 需求規格第 15 章「資料保存（DATA）」中由儲存層負責的部分；
-// 封存、持久保存、自動備份與備份提醒由儲存子計畫 3-3 補上
+// 畫面的顯示由畫面計畫負責；封存（DATA-09）由儲存子計畫 3-4 補上
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('資料保存（DATA）', () => {
@@ -292,5 +305,153 @@ describe('資料保存（DATA）', () => {
     expect((await deleteAllGames(db, '刪除全部存檔')).status).toBe('done')
     expect(await db.games.count()).toBe(0)
     expect(await db.horses.count()).toBe(0)
+  })
+
+  it('DATA-14 開啟管理器 → 申請持久保存並顯示結果；未取得時提醒區常駐顯示未取得的說明，加強備份提醒', async () => {
+    const db = testDatabase()
+    const game = await addTestGame(db)
+    const settings = await loadSettings(db, GAME)
+    const now = new Date('2026-09-25T00:00:00.000Z')
+    vi.stubGlobal('navigator', {
+      storage: { persisted: async () => false, persist: async () => false },
+    })
+    const denied = await requestPersistence()
+    expect(denied).toStrictEqual({ supported: true, persisted: false })
+    expect(backupReminder(game, settings, denied.persisted, now)).toMatchObject({
+      notPersisted: true,
+      unbacked: false,
+      overdue: false,
+    })
+    vi.stubGlobal('navigator', {
+      storage: { persisted: async () => false, persist: async () => true },
+    })
+    const granted = await requestPersistence()
+    expect(granted).toStrictEqual({ supported: true, persisted: true })
+    expect(backupReminder(game, settings, granted.persisted, now).notPersisted).toBe(false)
+  })
+
+  it('DATA-15 已指定備份資料夾並授權，年度匯入套用成功 → 自動在該資料夾寫入完整備份；未指定、不支援、未授權或寫入失敗 → 自動下載備份檔', async () => {
+    // 年度匯入以「按下套用時先取得交付目標 → 寫入資料 → saveBackup」代表，實際的串接由 CE 匯入計畫接上
+    const now = new Date('2026-09-30T09:00:00.000Z')
+    async function applyImport(db: WPStudBookDatabase) {
+      const target = await prepareBackupTarget(db)
+      await setCurrentYear(db, GAME, 1991, { now })
+      return saveBackup(db, GAME, target, now)
+    }
+
+    const authorized = testDatabase()
+    await addTestGame(authorized)
+    vi.stubGlobal('showDirectoryPicker', async () => ({}))
+    const folder = fakeFolder('備份')
+    storeFakeFolder(authorized, folder.folder)
+    const none = stubDownloads()
+    const saved = await applyImport(authorized)
+    expect(saved.delivery).toStrictEqual({ kind: 'folder', folderName: '備份' })
+    expect(none).toHaveLength(0)
+    const written = await readBackup(folder.files.get(saved.summary.fileName)!)
+    if (written.status !== 'ok') throw new Error(written.status)
+    expect(written.backup.file.game.currentYear).toBe(1991)
+    expect((await loadGame(authorized, GAME)).lastBackupAt).toBe(now.toISOString())
+
+    const fallbacks = [
+      { reason: 'not-set', supported: true, folder: undefined },
+      { reason: 'unsupported', supported: false, folder: fakeFolder() },
+      {
+        reason: 'denied',
+        supported: true,
+        folder: fakeFolder('備份', { query: 'prompt', request: 'denied' }),
+      },
+      {
+        reason: 'write-failed',
+        supported: true,
+        folder: fakeFolder('備份', { writeError: new Error('磁碟已滿') }),
+      },
+    ]
+    for (const fallback of fallbacks) {
+      vi.restoreAllMocks()
+      const db = testDatabase()
+      await addTestGame(db)
+      vi.stubGlobal('showDirectoryPicker', fallback.supported ? async () => ({}) : undefined)
+      if (fallback.folder) storeFakeFolder(db, fallback.folder.folder)
+      const downloads = stubDownloads()
+      const result = await applyImport(db)
+      expect(result.delivery).toMatchObject({ kind: 'download', reason: fallback.reason })
+      expect(downloads.map((download) => download.fileName)).toStrictEqual([
+        result.summary.fileName,
+      ])
+      expect(fallback.folder?.files.size ?? 0).toBe(0)
+      expect((await loadGame(db, GAME)).lastBackupAt).toBe(now.toISOString())
+    }
+  })
+
+  it('DATA-16 上次備份後有變更且超過 7 天 → 提醒區醒目顯示距上次備份的天數', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    stubDownloads()
+    await saveBackup(db, GAME, { kind: 'download' }, new Date('2026-09-24T12:00:00.000Z'))
+    await setCurrentYear(db, GAME, 1991, { now: new Date('2026-09-25T00:00:00.000Z') })
+    const game = await loadGame(db, GAME)
+    const settings = await loadSettings(db, GAME)
+    expect(
+      backupReminder(game, settings, true, new Date('2026-10-01T12:00:00.000Z')),
+    ).toMatchObject({
+      unbacked: true,
+      days: 7,
+      overdue: false,
+    })
+    expect(
+      backupReminder(game, settings, true, new Date('2026-10-02T00:00:00.000Z')),
+    ).toMatchObject({
+      unbacked: true,
+      days: 7,
+      overdue: true,
+    })
+  })
+
+  it('DATA-18 從未備份過的局 → 剛建立時不提醒；第一次寫入後提醒「尚未備份」，天數從建立時間算，超過設定天數時醒目提示', async () => {
+    const db = testDatabase()
+    const created = await createGame(
+      db,
+      { name: '新局', startYear: 1968 },
+      new Date('2026-09-01T00:00:00.000Z'),
+    )
+    const settings = await loadSettings(db, created.id)
+    expect(
+      backupReminder(created, settings, true, new Date('2026-09-20T00:00:00.000Z')),
+    ).toMatchObject({
+      neverBackedUp: true,
+      unbacked: false,
+      overdue: false,
+    })
+    await setCurrentYear(db, created.id, 1969, { now: new Date('2026-09-02T00:00:00.000Z') })
+    const written = await loadGame(db, created.id)
+    expect(
+      backupReminder(written, settings, true, new Date('2026-09-05T00:00:00.000Z')),
+    ).toStrictEqual({
+      neverBackedUp: true,
+      unbacked: true,
+      days: 4,
+      overdue: false,
+      notPersisted: false,
+    })
+    expect(
+      backupReminder(written, settings, true, new Date('2026-09-20T00:00:00.000Z')),
+    ).toMatchObject({
+      days: 19,
+      overdue: true,
+    })
+  })
+
+  it('DATA-19 刪除全部存檔 → 備份資料夾的設定保留，之後的自動備份仍寫入同一個資料夾', async () => {
+    // 之後的自動備份沿用讀出的資料夾（DATA-15）；fake-indexeddb 存不了方法，這裡只確認資料夾還在
+    const db = testDatabase()
+    await addTestGame(db)
+    await setCurrentGame(db, GAME)
+    vi.stubGlobal('showDirectoryPicker', async () => ({ name: '備份' }))
+    expect(await chooseBackupFolder(db)).toStrictEqual({ status: 'chosen', folderName: '備份' })
+    expect((await deleteAllGames(db, '刪除全部存檔')).status).toBe('done')
+    expect(await loadBackupFolder(db)).toStrictEqual({ name: '備份' })
+    expect(await currentGameId(db)).toBeUndefined()
+    expect(await db.games.count()).toBe(0)
   })
 })
