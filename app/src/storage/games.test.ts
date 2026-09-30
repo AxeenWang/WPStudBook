@@ -18,6 +18,7 @@ import {
   setCurrentYear,
   updateSettings,
 } from './games'
+import type { BackupFolderHandle } from './records'
 import { APP_VERSION } from './version'
 
 describe('createGame', () => {
@@ -469,6 +470,17 @@ describe('deleteAllGames', () => {
       warnings: [],
     })
     for (const table of db.tables) expect(await table.count()).toBe(0)
+  })
+
+  it('只保留 meta 的備份資料夾：它是管理器的設定，不是存檔（需求規格 12.1）', async () => {
+    const db = testDatabase()
+    await addSampleGame(db)
+    await setCurrentGame(db, GAME)
+    const folder = { name: '備份' } as BackupFolderHandle
+    await db.meta.put({ key: 'backupFolder', value: folder })
+    expect((await deleteAllGames(db, '刪除全部存檔')).status).toBe('done')
+    expect(await db.meta.toArray()).toStrictEqual([{ key: 'backupFolder', value: folder }])
+    expect(await db.games.count()).toBe(0)
   })
 
   it('文字不符時阻止，什麼都不刪', async () => {

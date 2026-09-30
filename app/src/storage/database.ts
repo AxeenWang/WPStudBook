@@ -28,7 +28,8 @@ export const SCHEMA_VERSION = 1
 export type WPStudBookDatabase = Dexie & {
   games: EntityTable<GameRow, 'id'>
   settings: EntityTable<SettingsRow, 'gameId'>
-  meta: EntityTable<MetaRow, 'key'>
+  /** 全域資料依鍵區分型別；EntityTable 的新增型別會把聯合攤平，所以用 Table */
+  meta: Table<MetaRow, string>
   horses: EntityTable<HorseRow, 'id'>
   lines: Table<LineRow, [string, LinePosition]>
   systems: Table<SystemRow, [string, string]>
