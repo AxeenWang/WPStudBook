@@ -30,6 +30,7 @@ import { fakeFolder, storeFakeFolder } from '../support/folder'
 import { addSampleGame } from '../support/game-data'
 import { GAME, lineRow, ownFoalRow, ownMareRow } from '../support/rows'
 
+// 需求規格第 15 章「資料保存（DATA）」中由儲存層負責的部分；
 // 畫面的顯示由畫面計畫負責；封存（DATA-09）由儲存子計畫 3-4 補上
 
 afterEach(() => {
