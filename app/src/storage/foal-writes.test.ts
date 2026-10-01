@@ -114,7 +114,7 @@ describe('addFoal', () => {
   it('父母名與父系的來源依事件的來源：匯入時為經匯入確認', async () => {
     const db = await foalingHerd()
     const result = await addFoal(db, GAME, filly('D11'), {
-      source: { kind: 'import', importType: 'april-foals' },
+      source: { kind: 'import', importType: 'april-foals', importId: 'I1' },
     })
     expect(result.status === 'done' && result.value.pedigreeSource).toBe('import')
   })
@@ -479,7 +479,7 @@ describe('relinkFoal', () => {
 
     const imported = await unlinkedFoal('D11', 'F89')
     const linked = await relinkFoal(imported.db, GAME, imported.foalId, {
-      source: { kind: 'import', importType: 'april-foals' },
+      source: { kind: 'import', importType: 'april-foals', importId: 'I1' },
     })
     if (linked.status !== 'done') throw new Error(linked.status)
     expect(linked.value.pedigreeSource).toBe('import')
@@ -491,7 +491,7 @@ describe('relinkFoal', () => {
       sireSystem: 'ノーザンダンサー',
     })
     const result = await relinkFoal(db, GAME, foalId, {
-      source: { kind: 'import', importType: 'april-foals' },
+      source: { kind: 'import', importType: 'april-foals', importId: 'I1' },
     })
     if (result.status !== 'done') throw new Error(result.status)
     expect(result.value).toMatchObject({ sireName: 'ノーザンダンサー', pedigreeSource: 'manual' })

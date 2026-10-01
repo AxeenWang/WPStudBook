@@ -69,7 +69,7 @@ describe('exportBackup', () => {
       fileName,
       gameName: '第一局',
       counts: countRows(data),
-      total: 15,
+      total: 16,
       size: exported.bytes.length,
       schemaVersion: SCHEMA_VERSION,
       appVersion: APP_VERSION,
@@ -173,7 +173,7 @@ describe('readBackup', () => {
       schemaVersion: SCHEMA_VERSION,
       appVersion: APP_VERSION,
       counts: file.counts,
-      total: 15,
+      total: 16,
     })
     expect(steps).toEqual(['decompress', 'parse', 'verify'])
   })
@@ -443,6 +443,25 @@ describe('readBackup：集合的內容', () => {
       [(file) => (file.collections.matingRatings[0]!.sireId = 'X'), 'matingRatings[0].sireId'],
       [(file) => (file.collections.horseNumbers[0]!.horseId = 'X'), 'horseNumbers[0].horseId'],
       [(file) => (loose(file.collections.events[0]!).horseId = 'X'), 'events[0].horseId'],
+      [(file) => (file.collections.imports[0]!.corrects = 'X'), 'imports[0].corrects'],
+      [
+        (file) =>
+          (file.collections.events[0]!.source = {
+            kind: 'import',
+            importType: 'may-herd',
+            importId: 'X',
+          }),
+        'events[0].source.importId',
+      ],
+      [
+        (file) =>
+          (file.collections.horseNumbers[0]!.source = {
+            kind: 'import',
+            importType: 'may-herd',
+            importId: 'X',
+          }),
+        'horseNumbers[0].source.importId',
+      ],
     ]
     for (const [change, path] of cases) {
       expect(await rejectionOf(change)).toEqual({
@@ -451,6 +470,24 @@ describe('readBackup：集合的內容', () => {
         value: 'X',
       })
     }
+  })
+
+  it('匯入紀錄的引用接得上時通過：被更正的那一筆、事件與階段馬番号的來源', async () => {
+    const source = { kind: 'import' as const, importType: 'may-herd' as const, importId: 'G-I' }
+    expect(
+      await rejectionOf((file) => {
+        const [record] = file.collections.imports
+        file.collections.imports.push({
+          ...record!,
+          id: 'G-K',
+          mode: 'correction',
+          corrects: 'G-I',
+        })
+        file.counts.imports = 2
+        file.collections.events[0]!.source = source
+        file.collections.horseNumbers[0]!.source = source
+      }),
+    ).toBeUndefined()
   })
 
   it('母馬年度資料、配種與評價的母馬要在 mares：只有馬匹不夠', async () => {
@@ -618,8 +655,8 @@ describe('restoreBackup', () => {
       fileName: 'b.json.gz',
       onProgress: (written, total) => progress.push([written, total]),
     })
-    expect(progress).toHaveLength(13)
-    expect(progress[12]).toEqual([15, 15])
+    expect(progress).toHaveLength(14)
+    expect(progress[13]).toEqual([16, 16])
   })
 
   it('寫入途中失敗時整筆回復，什麼都不寫', async () => {

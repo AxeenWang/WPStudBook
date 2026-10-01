@@ -6,6 +6,7 @@ import type {
   GameRow,
   HorseNumberRow,
   HorseRow,
+  ImportRecord,
   LineRow,
   MareRow,
   MareYearRow,
@@ -33,6 +34,7 @@ export interface GameData {
   matingRatings: MatingRatingRow[]
   events: EventRow[]
   horseNumbers: HorseNumberRow[]
+  imports: ImportRecord[]
 }
 
 export type GameTableName = keyof GameData
@@ -56,6 +58,7 @@ export const GAME_TABLES: readonly GameTableName[] = [
   'matingRatings',
   'events',
   'horseNumbers',
+  'imports',
 ]
 
 /** 各表的筆數 */
@@ -170,7 +173,7 @@ export function countRows(data: GameData): RowCounts {
   return counts
 }
 
-/** 各表筆數的合計 */
-export function totalRows(counts: RowCounts): number {
-  return GAME_TABLES.reduce((sum, name) => sum + counts[name], 0)
+/** 各表筆數的合計；缺少的鍵當作 0：加表前建立的封存索引沒有新表的鍵（技術設計 4.3「封存」） */
+export function totalRows(counts: Partial<RowCounts>): number {
+  return GAME_TABLES.reduce((sum, name) => sum + (counts[name] ?? 0), 0)
 }

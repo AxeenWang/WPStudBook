@@ -164,6 +164,7 @@ describe('資料保存（DATA）', () => {
       'matingRatings',
       'events',
       'horseNumbers',
+      'imports',
     ] as const
     for (const name of single) ids.set(original[name][0]!.id, restored[name][0]!.id)
     const expected: GameData = JSON.parse(JSON.stringify(original), (_key, value) =>
@@ -291,7 +292,7 @@ describe('資料保存（DATA）', () => {
       fileName: exported.fileName,
       gameName: '第一局',
       counts: countRows(original),
-      total: 15,
+      total: 16,
       size: exported.bytes.length,
       schemaVersion: SCHEMA_VERSION,
       appVersion: APP_VERSION,

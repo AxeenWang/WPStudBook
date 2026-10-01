@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
 import { addSampleGame } from '../../tests/support/game-data'
+import { importRecord } from '../../tests/support/imports'
 import { GAME, archiveRow, checkpointRow, horseRow } from '../../tests/support/rows'
 import { countRows, readGameData } from './game-data'
 import {
@@ -251,6 +252,22 @@ describe('setCurrentYear', () => {
     expect((await loadGame(db, GAME)).currentYear).toBe(1987)
   })
 
+  it('匯入紀錄的年份也算最後紀錄年，免得遊戲年落在目前進度之前（需求規格 12.1）', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.imports.bulkAdd([
+      importRecord('I1', 'may-herd', 1986),
+      importRecord('I2', 'january-two-year-olds', 1988),
+      importRecord('I3', 'may-herd', 1989, { gameId: 'G2' }),
+    ])
+    expect(await setCurrentYear(db, GAME, 1987, { now })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'before-records', earliest: 1988 }],
+    })
+    expect((await setCurrentYear(db, GAME, 1988, { now })).status).toBe('done')
+  })
+
   it('沒有任何紀錄時，往回不能早於起始年', async () => {
     const db = testDatabase()
     await addTestGame(db)
@@ -467,7 +484,7 @@ describe('deleteAllGames', () => {
     expect(DELETE_ALL_PHRASE).toBe('刪除全部存檔')
     expect(await deleteAllGames(db, ' 刪除全部存檔 ')).toEqual({
       status: 'done',
-      value: { games: 2, rows: 30 },
+      value: { games: 2, rows: 32 },
       warnings: [],
     })
     for (const table of db.tables) expect(await table.count()).toBe(0)

@@ -15,6 +15,7 @@ describe('createDatabase', () => {
       'games',
       'horseNumbers',
       'horses',
+      'imports',
       'lines',
       'mareYears',
       'mares',

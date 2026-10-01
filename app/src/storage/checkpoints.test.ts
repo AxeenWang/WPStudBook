@@ -41,6 +41,7 @@ const SAMPLE_COUNTS: RowCounts = {
   matingRatings: 1,
   events: 1,
   horseNumbers: 1,
+  imports: 1,
 }
 
 /** 讀取並驗證這一局的檢查點；不通過時讓測試失敗 */
