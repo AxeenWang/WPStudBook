@@ -1,12 +1,17 @@
 import type { RestorationSlot } from '../core/board'
 import type { SubAbilities } from '../core/foal'
 import type { DamRole } from '../core/generation'
+import type { Conception, Sex, SurfaceAptitude, Vigor } from '../core/horse'
+import type { GameTiming, ImportType } from '../core/imports'
 import type { LineGeneration, LinePosition, PairingDistance } from '../core/lines'
 import type { SisterStatus } from '../core/sisters'
 import type { MarketStallionSystemCheck, StallionStatus } from '../core/stallions'
 import type { SubstituteConflict } from '../core/substitute'
 import type { PedigreeCheck, PedigreeWarningKind } from '../core/vitality'
 import type { RowCounts } from './game-data'
+
+// 匯入與儲存共用的型別定義在核心（技術設計 4.2）；儲存層的其他檔案照舊從這裡引用
+export type { Conception, GameTiming, ImportType, Sex, SurfaceAptitude, Vigor }
 
 // 資料表的一列（技術設計 4.3）。除了全域的 MetaRow 與 ArchiveRow，每一列都以 gameId 歸屬某一局；
 // 識別一律是 crypto.randomUUID() 產生的字串（需求規格 12.2）。
@@ -154,11 +159,6 @@ export interface ArchiveRow {
   /** 驗證摘要：封存檔裡的 sha256 */
   sha256: string
 }
-
-export type Sex = 'male' | 'female'
-
-/** 芝、ダート適性（需求規格 4.7）：◎ > ○ > △ > × */
-export type SurfaceAptitude = '◎' | '○' | '△' | '×'
 
 /** 馬匹的能力（需求規格 4.7、9.3）；每一項都可以留空，空白是還沒取得，不是 0 */
 export interface HorseAbility {
@@ -314,12 +314,6 @@ export type DepartedStatus = Exclude<HerdStatus, 'in-herd'>
 /** 母馬的用途與所屬母馬群；待指定用途與自由配種所生沒有系與代數 */
 export type MarePlacement = Pick<MareRow, 'usage' | 'groupLine' | 'groupGeneration'>
 
-/** 活力快照（需求規格 8.7）：0～100 的總活力與是否増強；只有前置 `*` 才是増強，100 不代表増強 */
-export interface Vigor {
-  value: number
-  boosted: boolean
-}
-
 /** 活力快照的月份：五月繁殖圈名單、七月受胎名單 */
 export type VigorMonth = 5 | 7
 
@@ -388,9 +382,6 @@ export interface RestorationRow {
   /** 使用者更正（撤銷）宣告時設為 true；紀錄保留（5.3） */
   revoked: boolean
 }
-
-/** 受胎狀態，原樣保存匯入文字（需求規格 9.1） */
-export type Conception = '空胎' | '受胎' | '不受胎' | '未確認'
 
 /** 八系指定配種的規則快照（需求規格 7.4） */
 export interface BreedingRule {
@@ -545,26 +536,6 @@ export type WriteWarning =
 
 /** 系統對照表一筆的內容：親系統與分出來源 */
 export type SystemValue = Pick<SystemRow, 'parentSystem' | 'origin'>
-
-/** 遊戲內的時點（需求規格 4.1、11.1）：month 月 week 週，每月 4 週 */
-export interface GameTiming {
-  month: number
-  week: number
-}
-
-/**
- * 匯入的種類（需求規格 11.1）：一月二歲馬總表、四月誕生幼駒名單、五月繁殖圈名單、七月受胎名單、
- * 候選 TXT、目標種牡馬 TXT、十月全世界繁殖牝馬總表、種牡馬總表
- */
-export type ImportType =
-  | 'january-two-year-olds'
-  | 'april-foals'
-  | 'may-herd'
-  | 'july-conception'
-  | 'candidates'
-  | 'target-stallion'
-  | 'october-mares'
-  | 'stallion-list'
 
 /** 事件的來源：手動，或哪一種匯入；連到匯入紀錄的識別由 CE 匯入計畫加入（技術設計 4.3） */
 export type EventSource = { kind: 'manual' } | { kind: 'import'; importType: ImportType }
