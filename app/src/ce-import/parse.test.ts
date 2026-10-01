@@ -313,3 +313,154 @@ describe('parseImportFile：欄數、欄名與分隔', () => {
     })
   })
 })
+
+describe('parseImportFile：整份停止的檢查', () => {
+  const foal = SAMPLES.foal
+  const mare = SAMPLES.broodmare
+
+  it('四月誕生幼駒名單：馬主 46、47，繋牧 32～35，年 0 時可以解析', () => {
+    const text = exportText('foal', [foal, { ...foal, 52: '47', 53: '35', 58: '0x0a21' }])
+    expect(parseImportFile(text, 'april-foals', 1968)).toMatchObject({ status: 'ok' })
+  })
+
+  it('四月誕生幼駒名單：年不是 0 時拒絕；馬主或繋牧超出範圍或空白時是範圍異常', () => {
+    const text = exportText('foal', [
+      { ...foal, 3: '1' },
+      { ...foal, 52: '45', 53: '31', 58: '0x0a21' },
+      { ...foal, 52: '', 53: '', 58: '0x0a22' },
+    ])
+    expect(parseImportFile(text, 'april-foals', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [
+        { reason: 'value', line: 2, header: '年', value: '1' },
+        { reason: 'scope', line: 3, header: '馬主', value: '45' },
+        { reason: 'scope', line: 3, header: '繋牧', value: '31' },
+        { reason: 'scope', line: 4, header: '馬主', value: '' },
+        { reason: 'scope', line: 4, header: '繋牧', value: '' },
+      ],
+    })
+  })
+
+  it('五月、七月名單：牧場不在 32～35 或空白時是範圍異常', () => {
+    const text = exportText('broodmare', [
+      { ...mare, 48: '35' },
+      { ...mare, 48: '36', 57: '0x0b02' },
+      { ...mare, 48: '', 57: '0x0b03' },
+    ])
+    for (const type of ['may-herd', 'july-conception'] as const) {
+      expect(parseImportFile(text, type, 1970)).toStrictEqual({
+        status: 'rejected',
+        problems: [
+          { reason: 'scope', line: 3, header: '牧場', value: '36' },
+          { reason: 'scope', line: 4, header: '牧場', value: '' },
+        ],
+      })
+    }
+  })
+
+  it('十月總表與候選 TXT 不檢查牧場的範圍', () => {
+    const text = exportText('broodmare', [
+      { ...mare, 48: '0' },
+      { ...mare, 48: '240', 57: '0x0b02' },
+      { ...mare, 48: '', 57: '0x0b03' },
+    ])
+    for (const type of ['october-mares', 'candidates'] as const) {
+      expect(parseImportFile(text, type, 1970)).toMatchObject({ status: 'ok' })
+    }
+  })
+
+  it('七月名單的状態要是空胎、受胎、不受胎、未確認之一；五月名單不檢查', () => {
+    const states = ['空胎', '受胎', '不受胎', '未確認'].map((status, index) => ({
+      ...mare,
+      49: status,
+      57: `0x0c0${index}`,
+    }))
+    expect(parseImportFile(exportText('broodmare', states), 'july-conception', 1970)).toMatchObject(
+      { status: 'ok' },
+    )
+    const text = exportText('broodmare', [{ ...mare, 49: '流産' }])
+    expect(parseImportFile(text, 'july-conception', 1970)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'value', line: 2, header: '状態', value: '流産' }],
+    })
+    expect(parseImportFile(text, 'may-herd', 1970)).toMatchObject({ status: 'ok' })
+  })
+
+  it('目標種牡馬 TXT 要剛好一筆；種牡馬總表不限', () => {
+    const stallion = SAMPLES.stallion
+    const two = exportText('stallion', [stallion, { ...stallion, 59: '0x0011' }])
+    expect(parseImportFile(exportText('stallion', []), 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'row-count', value: '0' }],
+    })
+    expect(parseImportFile(two, 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'row-count', value: '2' }],
+    })
+    expect(parseImportFile(two, 'stallion-list', 1968)).toMatchObject({ status: 'ok' })
+  })
+
+  it('檔內能力番号重複時拒絕並列出每一行；寫法不同但統一後相同也算重複', () => {
+    const text = exportText('broodmare', [
+      mare,
+      { ...mare, 57: '0x0b02' },
+      { ...mare, 57: '0x0B01' },
+    ])
+    expect(parseImportFile(text, 'candidates', 1970)).toStrictEqual({
+      status: 'rejected',
+      problems: [
+        { reason: 'duplicate', line: 2, header: '能力番号', value: '0x0B01' },
+        { reason: 'duplicate', line: 4, header: '能力番号', value: '0x0B01' },
+      ],
+    })
+  })
+
+  it('格式錯誤與整份檢查的問題一起列出', () => {
+    const text = exportText('broodmare', [
+      { ...mare, 3: 'x' },
+      { ...mare, 48: '36' },
+    ])
+    expect(parseImportFile(text, 'may-herd', 1970)).toStrictEqual({
+      status: 'rejected',
+      problems: [
+        { reason: 'value', line: 2, column: 3, header: '年', value: 'x' },
+        { reason: 'scope', line: 3, header: '牧場', value: '36' },
+      ],
+    })
+  })
+
+  it('有格式錯誤的列不做整份檢查，不會多報範圍異常或重複', () => {
+    const text = exportText('broodmare', [
+      { ...mare, 48: 'x', 57: 'abc' },
+      { ...mare, 48: 'y', 57: 'abd' },
+    ])
+    expect(parseImportFile(text, 'may-herd', 1970)).toStrictEqual({
+      status: 'rejected',
+      problems: [
+        { reason: 'value', line: 2, column: 48, header: '牧場', value: 'x' },
+        { reason: 'value', line: 2, column: 57, header: '能力番号', value: 'abc' },
+        { reason: 'value', line: 3, column: 48, header: '牧場', value: 'y' },
+        { reason: 'value', line: 3, column: 57, header: '能力番号', value: 'abd' },
+      ],
+    })
+  })
+
+  it('表頭不能用時不做整份檢查', () => {
+    expect(parseImportFile('\r\n', 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'empty' }],
+    })
+    expect(parseImportFile('"馬名,国\r\n', 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'quote', line: 1 }],
+    })
+    const twoYearOld = exportText('two-year-old', [SAMPLES['two-year-old']])
+    expect(parseImportFile(twoYearOld, 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'field-count', line: 1, value: '78' }],
+    })
+    const result = parseImportFile(exportText('foal', [SAMPLES.foal]), 'target-stallion', 1968)
+    if (result.status !== 'rejected') throw new Error('應該拒絕')
+    expect(result.problems.every((problem) => problem.reason === 'header')).toBe(true)
+  })
+})

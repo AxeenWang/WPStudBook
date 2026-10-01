@@ -1,3 +1,5 @@
+import type { Conception } from '../core/horse'
+import { duplicateAbilityNumbers } from '../core/identity'
 import type { ImportType } from '../core/imports'
 import { headerCells, rowCells, type ImportProblem } from './cells'
 import { parseImportFileName, type ImportFileName } from './file-name'
@@ -49,11 +51,12 @@ export type ParseResult =
 
 /**
  * 解析（技術設計 4.4「解析」第二步）：依確認後的類型驗證欄數與欄名，依位置讀成該格式的列，
- * 出生年＝年份減馬齡。格式錯誤都是阻擋錯誤（IMP-06），不略過有問題的列
+ * 出生年＝年份減馬齡；表頭可用時再做整份停止的檢查。格式錯誤都是阻擋錯誤（IMP-06），不略過有問題的列
  */
 export function parseImportFile(text: string, type: ImportType, year: number): ParseResult {
   const problems: ImportProblem[] = []
   const parsed = readEntries(text, FORMAT_OF[type], year, problems)
+  if (parsed !== null) checkFile(type, text, parsed, problems)
   return parsed === null || problems.length > 0
     ? { status: 'rejected', problems }
     : { status: 'ok', ...parsed }
@@ -128,4 +131,57 @@ function readLines<E extends ExportEntry>(
     }
   }
   return entries
+}
+
+/** 受胎名單的 `状態`（需求規格 11.6、附錄 A.3） */
+const CONCEPTIONS: readonly string[] = ['空胎', '受胎', '不受胎', '未確認'] satisfies Conception[]
+
+/** 自家牧場的繋養牧場番号 32～35（第 3 章「據點」） */
+function isOwnFarm(code: number | null): boolean {
+  return code !== null && code >= 32 && code <= 35
+}
+
+/**
+ * 整份停止的檢查（技術設計 4.4「解析」）：四月誕生幼駒名單的馬齡、馬主與繋牧（需求規格 11.4、APR-04），
+ * 五月與七月名單的牧場（11.5、11.6、MAY-01），七月名單的 `状態`（JUL-06），目標種牡馬 TXT 的筆數
+ * （11.9、STL-04），以及任何類型的檔內能力番号重複（6.2）。只檢查讀得出來的列，有問題的列已另外回報
+ */
+function checkFile(
+  type: ImportType,
+  text: string,
+  parsed: ParsedEntries,
+  problems: ImportProblem[],
+): void {
+  if (parsed.format === 'foal') {
+    for (const { line, age, owner, stable } of parsed.entries) {
+      if (age !== 0) problems.push({ reason: 'value', line, header: '年', value: String(age) })
+      if (owner !== 46 && owner !== 47) {
+        problems.push({ reason: 'scope', line, header: '馬主', value: String(owner ?? '') })
+      }
+      if (!isOwnFarm(stable)) {
+        problems.push({ reason: 'scope', line, header: '繋牧', value: String(stable ?? '') })
+      }
+    }
+  }
+  if (parsed.format === 'broodmare' && (type === 'may-herd' || type === 'july-conception')) {
+    for (const { line, farm, status } of parsed.entries) {
+      if (!isOwnFarm(farm)) {
+        problems.push({ reason: 'scope', line, header: '牧場', value: String(farm ?? '') })
+      }
+      if (type === 'july-conception' && !CONCEPTIONS.includes(status)) {
+        problems.push({ reason: 'value', line, header: '状態', value: status })
+      }
+    }
+  }
+  if (type === 'target-stallion') {
+    const rows = splitRecords(text).length - 1
+    if (rows !== 1) problems.push({ reason: 'row-count', value: String(rows) })
+  }
+  const entries: readonly ExportEntry[] = parsed.entries
+  const duplicates = duplicateAbilityNumbers(entries.map((entry) => entry.abilityNumber))
+  for (const { line, abilityNumber } of entries) {
+    if (duplicates.includes(abilityNumber)) {
+      problems.push({ reason: 'duplicate', line, header: '能力番号', value: abilityNumber })
+    }
+  }
 }
