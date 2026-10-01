@@ -43,7 +43,7 @@ docs/plans/        實作計畫
 app/               npm 專案根
   src/core/        領域模型與規則（純函式）
   src/ce-import/   CE 匯出檔解碼、解析與匯入流程
-  src/storage/     Dexie 資料庫、備份、檢查點
+  src/storage/     Dexie 資料庫、備份、檢查點、封存
   src/ui/          Vue 元件、頁面、Pinia store
   tests/acceptance/  依需求規格情境代號前綴分組的驗收測試
   tests/e2e/       對建置出的單檔執行 Playwright 測試

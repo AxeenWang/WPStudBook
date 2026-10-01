@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  archiveGame,
+  listArchives,
+  prepareArchive,
+  readArchive,
+  removeArchive,
+} from '../../src/storage/archives'
 import { exportBackup, readBackup, restoreBackup, type BackupFile } from '../../src/storage/backup'
 import {
   chooseBackupFolder,
@@ -7,6 +14,7 @@ import {
 } from '../../src/storage/backup-folder'
 import { backupReminder } from '../../src/storage/backup-reminder'
 import { SCHEMA_VERSION, type WPStudBookDatabase } from '../../src/storage/database'
+import { downloadBackup } from '../../src/storage/download'
 import { countRows, readGameData, type GameData } from '../../src/storage/game-data'
 import {
   createGame,
@@ -25,13 +33,13 @@ import { saveBackup } from '../../src/storage/save-backup'
 import { APP_VERSION } from '../../src/storage/version'
 import { sampleBackup, signedBytes } from '../support/backup'
 import { addTestGame, testDatabase } from '../support/database'
-import { stubDownloads } from '../support/download'
+import { blobBytes, stubDownloads } from '../support/download'
 import { fakeFolder, storeFakeFolder } from '../support/folder'
 import { addSampleGame } from '../support/game-data'
 import { GAME, lineRow, ownFoalRow, ownMareRow } from '../support/rows'
 
 // 需求規格第 15 章「資料保存（DATA）」中由儲存層負責的部分；
-// 畫面的顯示由畫面計畫負責；封存（DATA-09）由儲存子計畫 3-4 補上
+// 畫面的顯示與封存時「確認已下載」的勾選由畫面計畫負責
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -453,5 +461,110 @@ describe('資料保存（DATA）', () => {
     expect(await loadBackupFolder(db)).toStrictEqual({ name: '備份' })
     expect(await currentGameId(db)).toBeUndefined()
     expect(await db.games.count()).toBe(0)
+  })
+
+  it('DATA-09 封存檔未驗證或未確認下載 → 不移除本機資料；封存後保留輕量索引並可還原', async () => {
+    // 儲存層保證沒通過驗證就拿不到準備好的封存，局名不符就刪不掉；「確認已下載」的勾選由畫面負責
+    const db = testDatabase()
+    const original = await addSampleGame(db, { name: '第一局' })
+    vi.stubGlobal('DecompressionStream', undefined)
+    const unverified = await prepareArchive(db, GAME)
+    expect(unverified.status === 'rejected' && unverified.reason.kind).toBe('gzip-unsupported')
+    vi.unstubAllGlobals()
+
+    const downloads = stubDownloads()
+    const prepared = await prepareArchive(db, GAME)
+    if (prepared.status !== 'ok') throw new Error(prepared.status)
+    const { archive } = prepared
+    downloadBackup(archive.backup)
+    expect(downloads.map((download) => download.fileName)).toEqual([archive.index.fileName])
+    expect((await archiveGame(db, archive, '')).status).toBe('blocked')
+    expect(await readGameData(db, GAME)).toStrictEqual(original)
+
+    expect((await archiveGame(db, archive, '第一局')).status).toBe('done')
+    expect(await db.games.count()).toBe(0)
+    expect(await listArchives(db)).toStrictEqual([archive.index])
+    expect(archive.index).toMatchObject({ name: '第一局', startYear: 1968, currentYear: 1990 })
+    const read = await readArchive(db, GAME, await blobBytes(downloads[0]!.blob))
+    if (read.status !== 'ok') throw new Error(read.status)
+    const game = await restoreBackup(db, read.backup, { fileName: archive.index.fileName })
+    expect(countRows(await readGameData(db, game.id))).toEqual(countRows(original))
+  })
+
+  it('DATA-20 封存檔產生後這一局有異動 → 不移除本機資料，須重新產生封存檔', async () => {
+    const db = testDatabase()
+    await addSampleGame(db, { name: '第一局' })
+    const first = await prepareArchive(db, GAME)
+    if (first.status !== 'ok') throw new Error(first.status)
+    expect((await setCurrentYear(db, GAME, 1991)).status).toBe('done')
+    const changed = await readGameData(db, GAME)
+    expect(await archiveGame(db, first.archive, '第一局')).toStrictEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'changed-since-archive' }],
+    })
+    expect(await readGameData(db, GAME)).toStrictEqual(changed)
+    expect(await listArchives(db)).toStrictEqual([])
+
+    const second = await prepareArchive(db, GAME)
+    if (second.status !== 'ok') throw new Error(second.status)
+    expect((await archiveGame(db, second.archive, '第一局')).status).toBe('done')
+    expect((await listArchives(db)).map((row) => row.currentYear)).toEqual([1991])
+  })
+
+  it('DATA-21 從封存還原，選擇的檔案與索引的驗證摘要不符 → 拒絕，資料不變；還原成新遊戲局後索引保留，可以手動移除', async () => {
+    const db = testDatabase()
+    await addSampleGame(db, { name: '第一局' })
+    await addSampleGame(db, { id: 'G2', name: '第二局' })
+    const wrong = await exportBackup(db, 'G2')
+    const prepared = await prepareArchive(db, GAME)
+    if (prepared.status !== 'ok') throw new Error(prepared.status)
+    const { archive } = prepared
+    expect((await archiveGame(db, archive, '第一局')).status).toBe('done')
+
+    expect(await readArchive(db, GAME, wrong.bytes)).toStrictEqual({
+      status: 'rejected',
+      reason: { kind: 'archive-mismatch' },
+    })
+    expect(await db.games.count()).toBe(1)
+    const read = await readArchive(db, GAME, archive.backup.bytes)
+    if (read.status !== 'ok') throw new Error(read.status)
+    await restoreBackup(db, read.backup, { fileName: archive.index.fileName })
+    expect(await db.games.count()).toBe(2)
+    expect(await listArchives(db)).toStrictEqual([archive.index])
+
+    await removeArchive(db, GAME)
+    expect(await listArchives(db)).toStrictEqual([])
+    expect(await db.games.count()).toBe(2)
+  })
+
+  it('DATA-22 瀏覽器不支援壓縮 → 不能封存，本機資料不變', async () => {
+    const db = testDatabase()
+    const original = await addSampleGame(db)
+    vi.stubGlobal('CompressionStream', undefined)
+    expect(await prepareArchive(db, GAME)).toStrictEqual({
+      status: 'rejected',
+      reason: { kind: 'compression-unsupported' },
+    })
+    expect(await readGameData(db, GAME)).toStrictEqual(original)
+    expect(await listArchives(db)).toStrictEqual([])
+  })
+
+  it('DATA-23 刪除全部存檔 → 封存索引一併清除', async () => {
+    // 封存檔在外部，之後仍可用匯入備份還原
+    const db = testDatabase()
+    await addSampleGame(db, { name: '第一局' })
+    await addSampleGame(db, { id: 'G2', name: '第二局' })
+    const prepared = await prepareArchive(db, GAME)
+    if (prepared.status !== 'ok') throw new Error(prepared.status)
+    const { archive } = prepared
+    expect((await archiveGame(db, archive, '第一局')).status).toBe('done')
+    expect(await listArchives(db)).toHaveLength(1)
+
+    expect((await deleteAllGames(db, '刪除全部存檔')).status).toBe('done')
+    expect(await listArchives(db)).toStrictEqual([])
+    const read = await readBackup(archive.backup.bytes)
+    if (read.status !== 'ok') throw new Error(read.status)
+    const game = await restoreBackup(db, read.backup, { fileName: archive.index.fileName })
+    expect(game.name).toBe('第一局')
   })
 })

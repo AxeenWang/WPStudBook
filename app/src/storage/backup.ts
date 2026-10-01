@@ -342,7 +342,8 @@ const RELATIONS: readonly (readonly [GameTableName, string, GameTableName])[] = 
 ]
 
 /**
- * 集合的內容檢查（技術設計 4.3「讀取與驗證」的欄位、重複、關聯與筆數），通過時回傳 undefined。
+ * 集合的內容檢查（技術設計 4.3「讀取與驗證」的欄位、重複、關聯與筆數；欄位也包含頂層的匯出時間），
+ * 通過時回傳 undefined。
  * 不逐欄驗證型別與列舉值：檔案完整性由雜湊保證
  */
 function checkCollections(file: BackupFile): BackupRejection | undefined {
@@ -384,6 +385,12 @@ function checkCollections(file: BackupFile): BackupRejection | undefined {
     if (!Number.isInteger(game[field])) {
       return { kind: 'field', path: `collections.games[0].${field}` }
     }
+  }
+  // 時間欄位要是 toISOString() 的字串：備份提醒以它們計算；最近備份時間有值時才檢查
+  if (!isIsoTime(file.exportedAt)) return { kind: 'field', path: 'exportedAt' }
+  for (const field of ['createdAt', 'updatedAt', 'lastBackupAt']) {
+    if (field === 'lastBackupAt' && game[field] === undefined) continue
+    if (!isIsoTime(game[field])) return { kind: 'field', path: `collections.games[0].${field}` }
   }
   const summary: unknown = file.game
   const fields = ['id', 'name', 'startYear', 'currentYear'] as const
@@ -441,6 +448,13 @@ function previewOf(file: BackupFile, schemaVersion: number): BackupPreview {
     counts: file.counts,
     total: totalRows(file.counts),
   }
+}
+
+/** 是不是 toISOString() 產生的字串：能換成有效的時間，而且轉回去與原字串完全相同 */
+function isIsoTime(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const time = new Date(value)
+  return !Number.isNaN(time.getTime()) && time.toISOString() === value
 }
 
 /** 以 DecompressionStream 解開 gzip；錯誤或截斷時丟出例外 */

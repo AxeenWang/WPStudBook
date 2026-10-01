@@ -38,7 +38,7 @@ export interface GameData {
 export type GameTableName = keyof GameData
 
 /**
- * 屬於一局的資料表：全域的 meta 與檢查點的兩張表以外的每一張。games 以 id 歸屬，其他以 gameId 歸屬。
+ * 屬於一局的資料表：全域的 meta、檢查點的兩張表與封存索引以外的每一張。games 以 id 歸屬，其他以 gameId 歸屬。
  * 匯出、還原、回溯、檢查點的內容、刪除與計算筆數都用這份清單；加表時一併更新，
  * 不屬於一局資料的表在測試裡明示排除（技術設計 4.3「整局資料」）
  */

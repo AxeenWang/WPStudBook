@@ -7,6 +7,7 @@ describe('createDatabase', () => {
     await db.open()
     expect(db.verno).toBe(1)
     expect(db.tables.map((table) => table.name).sort()).toEqual([
+      'archives',
       'breedings',
       'checkpointContents',
       'checkpoints',
