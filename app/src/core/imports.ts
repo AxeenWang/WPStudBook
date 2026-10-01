@@ -137,3 +137,27 @@ export interface ImportSnapshot {
   imports: ImportRecord[]
   checkpoints: ImportCheckpoint[]
 }
+
+/** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作；這一塊還沒有項目，從 4-3 一月起加入 */
+export type ImportPlanItem = never
+
+/** 套用計畫（技術設計 4.4「流程」）：storage 的 applyImport 依它在一個交易內套用 */
+export interface ImportPlan {
+  gameId: string
+  /** 快照當下遊戲局的更新時間；套用時不同就回傳 changed-since-preview */
+  expectedUpdatedAt: string
+  type: ImportType
+  year: number
+  timing?: GameTiming
+  fileName: string
+  sha256: string
+  mode: ImportMode
+  /** 資料更正時，被更正的那一筆 */
+  corrects?: string
+  /** 使用者確認要推進到的年份；不推進時留空 */
+  advanceYear?: number
+  /** 使用者確認過的匯入層級警告；沒有時留空 */
+  confirmedWarnings?: ImportWarning[]
+  summary: ImportSummary
+  items: ImportPlanItem[]
+}

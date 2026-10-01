@@ -480,3 +480,13 @@ describe('parseImportFile：整份停止的檢查', () => {
     expect(result.problems.every((problem) => problem.reason === 'header')).toBe(true)
   })
 })
+
+describe('parseImportFile：年份', () => {
+  it('年份不是整數時丟出 RangeError（技術設計 4.4「流程」）', () => {
+    const text = exportText('two-year-old', [SAMPLES['two-year-old']])
+    expect(() => parseImportFile(text, 'january-two-year-olds', 1968.5)).toThrow(RangeError)
+    expect(() => parseImportFile(text, 'january-two-year-olds', 1968.5)).toThrow(
+      '年份不是整數：1968.5',
+    )
+  })
+})

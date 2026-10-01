@@ -54,9 +54,11 @@ export type ParseResult =
 
 /**
  * 解析（技術設計 4.4「解析」第二步）：依確認後的類型驗證欄數與欄名，依位置讀成該格式的列，
- * 出生年＝年份減馬齡；表頭可用時再做整份停止的檢查。格式錯誤都是阻擋錯誤（IMP-06），不略過有問題的列
+ * 出生年＝年份減馬齡；表頭可用時再做整份停止的檢查。格式錯誤都是阻擋錯誤（IMP-06），不略過有問題的列。
+ * 年份不是整數時丟出 RangeError：畫面在「確認類型與年份」時驗證（技術設計 4.4「流程」）
  */
 export function parseImportFile(text: string, type: ImportType, year: number): ParseResult {
+  if (!Number.isInteger(year)) throw new RangeError(`年份不是整數：${year}`)
   const problems: ImportProblem[] = []
   const parsed = readEntries(text, FORMAT_OF[type], year, problems)
   if (parsed !== null) checkFile(type, text, parsed, problems)
