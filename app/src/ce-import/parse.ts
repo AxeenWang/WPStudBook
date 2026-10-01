@@ -1,4 +1,4 @@
-import type { Conception } from '../core/horse'
+import { isBase, isConception } from '../core/horse'
 import { duplicateAbilityNumbers } from '../core/identity'
 import type { ImportType } from '../core/imports'
 import { headerCells, rowCells, type ImportProblem } from './cells'
@@ -54,9 +54,11 @@ export type ParseResult =
 
 /**
  * 解析（技術設計 4.4「解析」第二步）：依確認後的類型驗證欄數與欄名，依位置讀成該格式的列，
- * 出生年＝年份減馬齡；表頭可用時再做整份停止的檢查。格式錯誤都是阻擋錯誤（IMP-06），不略過有問題的列
+ * 出生年＝年份減馬齡；表頭可用時再做整份停止的檢查。格式錯誤都是阻擋錯誤（IMP-06），不略過有問題的列。
+ * 年份不是整數時丟出 RangeError：畫面在「確認類型與年份」時驗證（技術設計 4.4「流程」）
  */
 export function parseImportFile(text: string, type: ImportType, year: number): ParseResult {
+  if (!Number.isInteger(year)) throw new RangeError(`年份不是整數：${year}`)
   const problems: ImportProblem[] = []
   const parsed = readEntries(text, FORMAT_OF[type], year, problems)
   if (parsed !== null) checkFile(type, text, parsed, problems)
@@ -136,14 +138,6 @@ function readLines<E extends ExportEntry>(
   return entries
 }
 
-/** 受胎名單的 `状態`（需求規格 11.6、附錄 A.3） */
-const CONCEPTIONS: readonly string[] = ['空胎', '受胎', '不受胎', '未確認'] satisfies Conception[]
-
-/** 自家牧場的繋養牧場番号 32～35（第 3 章「據點」） */
-function isOwnFarm(code: number | null): boolean {
-  return code !== null && code >= 32 && code <= 35
-}
-
 /**
  * 整份停止的檢查（技術設計 4.4「解析」）：四月誕生幼駒名單的馬齡、馬主與繋牧（需求規格 11.4、APR-04），
  * 五月與七月名單的牧場（11.5、11.6、MAY-01），七月名單的 `状態`（JUL-06），目標種牡馬 TXT 的筆數
@@ -161,17 +155,17 @@ function checkFile(
       if (owner !== 46 && owner !== 47) {
         problems.push({ reason: 'scope', line, header: '馬主', value: String(owner ?? '') })
       }
-      if (!isOwnFarm(stable)) {
+      if (!isBase(stable)) {
         problems.push({ reason: 'scope', line, header: '繋牧', value: String(stable ?? '') })
       }
     }
   }
   if (parsed.format === 'broodmare' && (type === 'may-herd' || type === 'july-conception')) {
     for (const { line, farm, status } of parsed.entries) {
-      if (!isOwnFarm(farm)) {
+      if (!isBase(farm)) {
         problems.push({ reason: 'scope', line, header: '牧場', value: String(farm ?? '') })
       }
-      if (type === 'july-conception' && !CONCEPTIONS.includes(status)) {
+      if (type === 'july-conception' && !isConception(status)) {
         problems.push({ reason: 'value', line, header: '状態', value: status })
       }
     }

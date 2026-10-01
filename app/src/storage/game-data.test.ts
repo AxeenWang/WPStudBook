@@ -16,7 +16,7 @@ import {
 import type { EventRow } from './records'
 
 /** addSampleGame 一局的總筆數：horses 3 列，其他每張表 1 列 */
-const SAMPLE_TOTAL = 15
+const SAMPLE_TOTAL = 16
 
 /**
  * 不屬於一局資料的表（技術設計 4.3「整局資料」）：全域的 meta；
@@ -201,6 +201,7 @@ describe('countGameRows', () => {
       matingRatings: 1,
       events: 1,
       horseNumbers: 1,
+      imports: 1,
     })
     expect(countRows(data)).toEqual(counts)
     expect(totalRows(counts)).toBe(SAMPLE_TOTAL)
@@ -208,5 +209,9 @@ describe('countGameRows', () => {
 
   it('遊戲局不存在時丟出錯誤', async () => {
     await expect(countGameRows(testDatabase(), 'missing')).rejects.toThrow('找不到遊戲局：missing')
+  })
+
+  it('加總時缺少的鍵當作 0：加表前建立的封存索引沒有新表的鍵（技術設計 4.3「封存」）', () => {
+    expect(totalRows({ games: 1, horses: 3, events: 2 })).toBe(6)
   })
 })

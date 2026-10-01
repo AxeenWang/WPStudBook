@@ -41,7 +41,7 @@ describe('recordHorseNumber', () => {
   it('匯入時記匯入的來源與時點', async () => {
     const db = testDatabase()
     await addTestGame(db)
-    const source = { kind: 'import' as const, importType: 'may-herd' as const }
+    const source = { kind: 'import' as const, importType: 'may-herd' as const, importId: 'I1' }
     const row = await record(db, 'M', 'broodmare', '0x0000', {
       source,
       timing: { month: 5, week: 1 },

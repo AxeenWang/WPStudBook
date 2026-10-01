@@ -1,8 +1,8 @@
 import type { RestorationSlot } from '../core/board'
 import type { SubAbilities } from '../core/foal'
 import type { DamRole } from '../core/generation'
-import type { Conception, Sex, SurfaceAptitude, Vigor } from '../core/horse'
-import type { GameTiming, ImportType } from '../core/imports'
+import type { Base, Conception, Sex, SurfaceAptitude, Vigor } from '../core/horse'
+import type { GameTiming, ImportRecord, ImportType } from '../core/imports'
 import type { LineGeneration, LinePosition, PairingDistance } from '../core/lines'
 import type { SisterStatus } from '../core/sisters'
 import type { MarketStallionSystemCheck, StallionStatus } from '../core/stallions'
@@ -11,7 +11,7 @@ import type { PedigreeCheck, PedigreeWarningKind } from '../core/vitality'
 import type { RowCounts } from './game-data'
 
 // 匯入與儲存共用的型別定義在核心（技術設計 4.2）；儲存層的其他檔案照舊從這裡引用
-export type { Conception, GameTiming, ImportType, Sex, SurfaceAptitude, Vigor }
+export type { Base, Conception, GameTiming, ImportRecord, ImportType, Sex, SurfaceAptitude, Vigor }
 
 // 資料表的一列（技術設計 4.3）。除了全域的 MetaRow 與 ArchiveRow，每一列都以 gameId 歸屬某一局；
 // 識別一律是 crypto.randomUUID() 產生的字串（需求規格 12.2）。
@@ -279,9 +279,6 @@ export interface MareSource {
   note?: string
 }
 
-/** 據點（第 3 章）：繋養牧場番号 32 日本、33 分場、34 美國、35 歐洲 */
-export type Base = 32 | 33 | 34 | 35
-
 /** 進過自家繁殖圈的母馬（需求規格 8.1）；離圈後這一列仍然保留 */
 export interface MareRow {
   horseId: string
@@ -537,8 +534,9 @@ export type WriteWarning =
 /** 系統對照表一筆的內容：親系統與分出來源 */
 export type SystemValue = Pick<SystemRow, 'parentSystem' | 'origin'>
 
-/** 事件的來源：手動，或哪一種匯入；連到匯入紀錄的識別由 CE 匯入計畫加入（技術設計 4.3） */
-export type EventSource = { kind: 'manual' } | { kind: 'import'; importType: ImportType }
+/** 事件的來源：手動，或哪一種匯入與它的匯入紀錄（技術設計 4.3、4.4「流程」） */
+export type EventSource =
+  { kind: 'manual' } | { kind: 'import'; importType: ImportType; importId: string }
 
 /** 手動資料更正的欄位（需求規格 6.4）；事件記原值與新值，沒有值時記 null */
 export interface HorseFieldValues {

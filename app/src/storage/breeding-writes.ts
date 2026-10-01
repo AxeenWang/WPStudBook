@@ -1,6 +1,7 @@
 import { listBoard } from '../core/board'
 import { checkDesignatedBreeding, type BreedingBlock } from '../core/check'
 import type { DesignatedPairing } from '../core/designated'
+import { isConception } from '../core/horse'
 import type { LineGeneration } from '../core/lines'
 import { checkPedigree } from '../core/vitality'
 import type { WPStudBookDatabase } from './database'
@@ -100,9 +101,6 @@ export type CorrectBreedingBlock =
  * 受胎狀態的阻止原因：已有產駒或被尚未出生的預定後繼引用，卻要改成 `受胎` 以外（含清空）；和目前相同
  */
 export type ConceptionBlock = FoalExistsBlock | SuccessorDesignatedBlock | UnchangedBlock
-
-/** 受胎狀態的四種文字（需求規格 9.1） */
-const CONCEPTIONS: readonly Conception[] = ['空胎', '受胎', '不受胎', '未確認']
 
 /** 登記或更正後的配種紀錄；parentSystemUnknown 為 true 時提示 8.3 無法判斷 */
 export interface SavedBreeding {
@@ -246,7 +244,7 @@ export async function setConception(
   conception: Conception | null,
   options: WriteOptions = {},
 ): Promise<WriteResult<BreedingRow, ConceptionBlock>> {
-  if (conception !== null && !CONCEPTIONS.includes(conception)) {
+  if (conception !== null && !isConception(conception)) {
     throw new Error(`受胎狀態不符：${conception}`)
   }
   return runWrite(db, gameId, [db.breedings, db.horses, db.stallions], options, async (context) => {

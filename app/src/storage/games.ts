@@ -112,7 +112,7 @@ export type YearBlock = { kind: 'not-integer' } | { kind: 'before-records'; earl
 /**
  * 更新目前遊戲年（需求規格 12.1）：只由使用者更新，更新前的影響與確認由畫面負責。
  * 往後可以改成任何年份；往回不能早於起始年，也不能早於最後紀錄年，
- * 也就是這一局事件的最大年份與馬的最大出生年（使用者 2026-09-26 決定）。
+ * 也就是這一局事件的最大年份、馬的最大出生年與匯入紀錄的最大年份（使用者 2026-09-26、2026-10-01 決定）。
  * 和目前相同時不寫入；遊戲年變更本身不寫事件。遊戲局不存在時丟出錯誤。
  */
 export async function setCurrentYear(
@@ -121,7 +121,7 @@ export async function setCurrentYear(
   year: number,
   options: WriteOptions = {},
 ): Promise<WriteResult<GameRow, YearBlock>> {
-  return runWrite(db, gameId, [db.horses], options, async (context) => {
+  return runWrite(db, gameId, [db.horses, db.imports], options, async (context) => {
     const { game } = context
     const blocks: YearBlock[] = []
     if (!Number.isInteger(year)) {
@@ -162,7 +162,7 @@ export async function recordBackup(
   })
 }
 
-/** 最後紀錄年：這一局事件的最大年份與馬的最大出生年；兩者都沒有時為 -Infinity */
+/** 最後紀錄年：這一局事件的最大年份、馬的最大出生年與匯入紀錄的最大年份；都沒有時為 -Infinity */
 async function latestRecordYear(db: WPStudBookDatabase, gameId: string): Promise<number> {
   const lastEvent = await db.events
     .where('[gameId+year]')
@@ -172,7 +172,12 @@ async function latestRecordYear(db: WPStudBookDatabase, gameId: string): Promise
     .where('[gameId+birthYear]')
     .between([gameId, Dexie.minKey], [gameId, Dexie.maxKey])
     .last()
-  return Math.max(lastEvent?.year ?? -Infinity, lastBorn?.birthYear ?? -Infinity)
+  const imports = await db.imports.where('gameId').equals(gameId).toArray()
+  return Math.max(
+    lastEvent?.year ?? -Infinity,
+    lastBorn?.birthYear ?? -Infinity,
+    ...imports.map((row) => row.year),
+  )
 }
 
 /** 可以修改的設定 */

@@ -1,5 +1,5 @@
 import { isSubAbilityGrade, type SubAbilityGrade } from '../core/foal'
-import type { Sex, SurfaceAptitude, Vigor } from '../core/horse'
+import { isSurfaceAptitude, type Sex, type SurfaceAptitude, type Vigor } from '../core/horse'
 import { normalizeAbilityNumber } from '../core/identity'
 import { normalizeSystemName } from '../core/systems'
 
@@ -123,10 +123,8 @@ function toGrade(text: string): SubAbilityGrade | undefined {
   return isSubAbilityGrade(main) ? main : undefined
 }
 
-const APTITUDES: readonly SurfaceAptitude[] = ['◎', '○', '△', '×']
-
 function toAptitude(text: string): SurfaceAptitude | undefined {
-  return APTITUDES.find((aptitude) => aptitude === text)
+  return isSurfaceAptitude(text) ? text : undefined
 }
 
 function toSex(text: string): Sex | undefined {

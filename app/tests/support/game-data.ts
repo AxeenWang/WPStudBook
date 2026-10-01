@@ -3,6 +3,7 @@ import type { GameData } from '../../src/storage/game-data'
 import { DEFAULT_SETTINGS } from '../../src/storage/games'
 import type { GameRow } from '../../src/storage/records'
 import { addTestGame } from './database'
+import { importRecord } from './imports'
 import { horseRow, lineRow, restorationRow, stallionRow, startMareRow } from './rows'
 
 /**
@@ -90,9 +91,10 @@ export function sampleRows(gameId: string): Omit<GameData, 'games' | 'settings'>
         stage: 'broodmare',
         number: '0x1A2B',
         year: 1989,
-        source: { kind: 'manual' },
+        source: { kind: 'import', importType: 'may-herd', importId: id('I') },
       },
     ],
+    imports: [importRecord(id('I'), 'may-herd', 1989, { gameId })],
   }
 }
 

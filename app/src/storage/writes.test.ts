@@ -279,7 +279,7 @@ describe('runWrite 的來源與時點（技術設計 4.3）', () => {
     const db = testDatabase()
     await addTestGame(db)
     await writeEvent(db)
-    const source = { kind: 'import' as const, importType: 'may-herd' as const }
+    const source = { kind: 'import' as const, importType: 'may-herd' as const, importId: 'I1' }
     await runWrite(
       db,
       GAME,
@@ -303,7 +303,11 @@ describe('runWrite 的來源與時點（技術設計 4.3）', () => {
   it('寫入操作可以從上下文取得這次的來源與時點；沒有時點時不帶這個欄位', async () => {
     const db = testDatabase()
     await addTestGame(db)
-    const source = { kind: 'import' as const, importType: 'july-conception' as const }
+    const source = {
+      kind: 'import' as const,
+      importType: 'july-conception' as const,
+      importId: 'I1',
+    }
     const read = (options: WriteOptions) =>
       runWrite(db, GAME, [], options, async (context) =>
         context.done({

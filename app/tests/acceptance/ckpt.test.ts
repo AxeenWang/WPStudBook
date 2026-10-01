@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readBackup, sha256Hex } from '../../src/storage/backup'
 import {
   createCheckpoint,
@@ -15,11 +15,13 @@ import { loadGame, loadSettings, setCurrentYear, updateSettings } from '../../sr
 import { addSystem } from '../../src/storage/system-writes'
 import { gunzipText } from '../support/backup'
 import { addTestGame, testDatabase } from '../support/database'
+import { stubDownloads } from '../support/download'
 import { addSampleGame } from '../support/game-data'
+import { applyFile, importFile } from '../support/import-flow'
 import { GAME } from '../support/rows'
 
-// 需求規格第 15 章「檢查點（CKPT）」中由儲存層負責的部分；
-// 年度匯入後自動建立與「回溯後再套用」由 CE 匯入計畫接上，預覽的顯示與確認由畫面計畫負責
+// 需求規格第 15 章「檢查點（CKPT）」中由儲存層負責的部分；年度匯入後自動建立（CKPT-01、CKPT-08）
+// 經由 CE 匯入的流程（回溯後再套用見 IMP-09），預覽的顯示與確認由畫面計畫負責
 
 /** 2026-09-29 00:00（UTC）起第 n 分鐘 */
 function minute(n: number): Date {
@@ -41,17 +43,21 @@ async function verifiedOf(
 }
 
 describe('檢查點（CKPT）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
   it('CKPT-01 年度匯入套用成功 → 自動建立檢查點，記錄年、時點、時間與雜湊', async () => {
     const db = testDatabase()
-    await addSampleGame(db, { currentYear: 1970 })
-    const { checkpoint } = await createCheckpoint(db, GAME, {
-      origin: 'auto',
-      timing: { month: 5, week: 1 },
-      now: minute(1),
-    })
+    await addSampleGame(db)
+    stubDownloads()
+    const applied = await applyFile(db, importFile('may-herd', 1990), undefined, minute(1))
+    if (applied.checkpoint?.status !== 'done') throw new Error('沒有建立檢查點')
+    const { checkpoint } = applied.checkpoint.value
     expect(checkpoint).toMatchObject({
       origin: 'auto',
-      year: 1970,
+      year: 1990,
       timing: { month: 5, week: 1 },
       createdAt: '2026-09-29T00:01:00.000Z',
     })
@@ -247,17 +253,17 @@ describe('檢查點（CKPT）', () => {
   it('CKPT-08 直接補匯後 → 檢查點記為目前進度，並註明補匯的年與時點', async () => {
     const db = testDatabase()
     await addTestGame(db, { currentYear: 1971 })
-    const { checkpoint } = await createCheckpoint(db, GAME, {
-      origin: 'auto',
-      timing: { month: 7, week: 1 },
-      catchUp: { year: 1970, timing: { month: 4, week: 1 } },
-      now: minute(1),
-    })
+    stubDownloads()
+    await applyFile(db, importFile('july-conception', 1971), undefined, minute(1))
+    const april = importFile('april-foals', 1970)
+    const applied = await applyFile(db, april, { mode: 'catch-up' }, minute(2))
+    if (applied.checkpoint?.status !== 'done') throw new Error('沒有建立檢查點')
+    const { checkpoint } = applied.checkpoint.value
     expect(checkpoint).toMatchObject({
       year: 1971,
       timing: { month: 7, week: 1 },
       catchUp: { year: 1970, timing: { month: 4, week: 1 } },
     })
-    expect(await listCheckpoints(db, GAME)).toStrictEqual([checkpoint])
+    expect((await listCheckpoints(db, GAME))[0]).toStrictEqual(checkpoint)
   })
 })

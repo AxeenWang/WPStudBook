@@ -318,6 +318,7 @@ export const PRIMARY_KEYS: Record<
   matingRatings: [['id', 'string']],
   events: [['id', 'string']],
   horseNumbers: [['id', 'string']],
+  imports: [['id', 'string']],
 }
 
 /**
@@ -339,6 +340,9 @@ const RELATIONS: readonly (readonly [GameTableName, string, GameTableName])[] = 
   ['matingRatings', 'sireId', 'horses'],
   ['horseNumbers', 'horseId', 'horses'],
   ['events', 'horseId', 'horses'],
+  ['imports', 'corrects', 'imports'],
+  ['events', 'source.importId', 'imports'],
+  ['horseNumbers', 'source.importId', 'imports'],
 ]
 
 /**
