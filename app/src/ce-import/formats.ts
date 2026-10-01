@@ -29,7 +29,7 @@ export const FIELD_COUNTS: Record<ImportFormat, number> = {
   stallion: 63,
 }
 
-/** 各格式共有的欄位（附錄 A 的主要欄位）；馬名與父母名原樣保留，基本馬名由比對階段取得 */
+/** 各格式共有的欄位（附錄 A 的主要欄位）；馬名與父母名原樣保留，基本馬名讀最後一個 `馬名` 欄 */
 export interface ExportEntry {
   /** 檔案的第幾行，表頭是第 1 行 */
   line: number

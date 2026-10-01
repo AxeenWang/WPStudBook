@@ -206,7 +206,7 @@ describe('parseImportFile：依位置讀出各欄', () => {
           active: '○',
           historical: '○',
           abilityNumber: '0x0010',
-          horseNumber: '0x0010',
+          horseNumber: '0x0210',
           baseName: 'テストチチ',
         },
       ],
@@ -398,6 +398,22 @@ describe('parseImportFile：整份停止的檢查', () => {
       problems: [{ reason: 'row-count', value: '2' }],
     })
     expect(parseImportFile(two, 'stallion-list', 1968)).toMatchObject({ status: 'ok' })
+  })
+
+  it('目標種牡馬 TXT 的筆數以資料列數計，不論那一列讀不讀得出來', () => {
+    const bad = { ...SAMPLES.stallion, 3: 'x', 59: '0x0011' }
+    const two = exportText('stallion', [SAMPLES.stallion, bad])
+    expect(parseImportFile(two, 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [
+        { reason: 'value', line: 3, column: 3, header: '年', value: 'x' },
+        { reason: 'row-count', value: '2' },
+      ],
+    })
+    expect(parseImportFile(exportText('stallion', [bad]), 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'value', line: 2, column: 3, header: '年', value: 'x' }],
+    })
   })
 
   it('檔內能力番号重複時拒絕並列出每一行；寫法不同但統一後相同也算重複', () => {

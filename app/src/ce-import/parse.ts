@@ -20,6 +20,9 @@ import {
 } from './formats'
 import { decodeImportText, splitRecords } from './text'
 
+// 呼叫端（之後的匯入流程與畫面）只引用這個檔案，問題的型別也從這裡取得
+export type { ImportProblem, ImportProblemReason } from './cells'
+
 /** 讀檔的結果：解碼後的文字與從檔名讀出的年、時點與類型；解碼失敗時拒絕 */
 export type ReadImportFileResult =
   | { status: 'ok'; text: string; nameInfo: ImportFileName | null }

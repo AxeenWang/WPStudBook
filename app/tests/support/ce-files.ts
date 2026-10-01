@@ -156,9 +156,9 @@ export const SAMPLES: Record<ImportFormat, ExportValues> = {
     54: '稲妻',
     56: '○',
     57: '○',
-    58: '0x0010',
+    58: '0x000F',
     59: '0x0010',
-    60: '0x0010',
+    60: '0x0210',
     62: 'テストチチ',
   },
 }
