@@ -115,3 +115,25 @@ export function importProgress(records: readonly ImportRecord[]): GamePoint | un
   }
   return progress
 }
+
+/** 檢查點的摘要（技術設計 4.4「流程」）：推薦回溯的檢查點用；年是建立當下的目前遊戲年，手動建立的可能沒有時點 */
+export interface ImportCheckpoint {
+  id: string
+  year: number
+  timing?: GameTiming
+  /** 建立時間（ISO 8601） */
+  createdAt: string
+}
+
+/**
+ * 匯入比對快照（技術設計 4.4「資料流」第 4 步）的通用部分：遊戲局、這一局的匯入紀錄與檢查點的摘要。
+ * 各類型比對要用的資料由之後的計畫加入
+ */
+export interface ImportSnapshot {
+  gameId: string
+  currentYear: number
+  /** 遊戲局的更新時間；套用時核對，不同時回傳 changed-since-preview */
+  updatedAt: string
+  imports: ImportRecord[]
+  checkpoints: ImportCheckpoint[]
+}
