@@ -207,11 +207,11 @@ describe('countGameRows', () => {
     expect(totalRows(counts)).toBe(SAMPLE_TOTAL)
   })
 
-  it('加總時缺少的鍵當作 0：加表前建立的封存索引沒有新表的鍵（技術設計 4.3「封存」）', () => {
-    expect(totalRows({ games: 1, horses: 3, events: 2 })).toBe(6)
-  })
-
   it('遊戲局不存在時丟出錯誤', async () => {
     await expect(countGameRows(testDatabase(), 'missing')).rejects.toThrow('找不到遊戲局：missing')
+  })
+
+  it('加總時缺少的鍵當作 0：加表前建立的封存索引沒有新表的鍵（技術設計 4.3「封存」）', () => {
+    expect(totalRows({ games: 1, horses: 3, events: 2 })).toBe(6)
   })
 })
