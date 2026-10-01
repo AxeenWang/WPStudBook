@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { parseImportFile } from '../../src/ce-import/parse'
 import { returnMare } from '../../src/storage/herd-writes'
+import { SAMPLES, exportText } from '../support/ce-files'
 import { addTestGame, testDatabase } from '../support/database'
 import {
   GAME,
@@ -49,5 +51,24 @@ describe('候選 TXT（CAND）：儲存層寫入', () => {
       },
     ])
     expect(await eventsOf('A')).toMatchObject([{ kind: 'mare-returned' }])
+  })
+})
+
+// 解析負責的部分（CE 匯入子計畫 4-1）；分頁、搜尋、篩選與勾選由畫面計畫補上
+
+describe('候選 TXT（CAND）：解析', () => {
+  it('CAND-01 候選 TXT → 以 61 欄格式解析，原牧場不套用範圍檢查', () => {
+    const text = exportText('broodmare', [
+      { ...SAMPLES.broodmare, 48: '120' },
+      { ...SAMPLES.broodmare, 48: '32', 57: '0x0b02' },
+    ])
+    expect(parseImportFile(text, 'candidates', 1970)).toMatchObject({
+      status: 'ok',
+      format: 'broodmare',
+      entries: [
+        { line: 2, fullName: '[地]テストハハ', farm: 120 },
+        { line: 3, abilityNumber: '0x0B02', farm: 32 },
+      ],
+    })
   })
 })

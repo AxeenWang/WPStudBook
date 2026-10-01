@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { parseImportFile } from '../../src/ce-import/parse'
 import { duplicateAbilityNumbers, matchHorse } from '../../src/core/identity'
 import { correctHorse } from '../../src/storage/horse-writes'
 import { returnMare } from '../../src/storage/herd-writes'
 import { openLine } from '../../src/storage/line-writes'
 import { loadKnownHorses } from '../../src/storage/loaders'
 import { addMarketMare } from '../../src/storage/mare-writes'
+import { SAMPLES, exportText } from '../support/ce-files'
 import { addTestGame, testDatabase } from '../support/database'
 import { GAME, horseRow, ungroupedMareRow } from '../support/rows'
 
@@ -172,5 +174,24 @@ describe('馬匹身分（ID）：儲存層寫入', () => {
       pedigreeSource: 'manual',
     })
     expect(await db.horses.get(id)).not.toHaveProperty('damName')
+  })
+})
+
+// 解析負責的部分（CE 匯入子計畫 4-1）
+
+describe('馬匹身分（ID）：解析', () => {
+  it('ID-06 同一檔案內能力番号重複 → 解析時整份停止，列出重複的每一行', () => {
+    const text = exportText('broodmare', [
+      SAMPLES.broodmare,
+      { ...SAMPLES.broodmare, 57: '0x0b02' },
+      { ...SAMPLES.broodmare, 57: '0x0b01' },
+    ])
+    expect(parseImportFile(text, 'october-mares', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [
+        { reason: 'duplicate', line: 2, header: '能力番号', value: '0x0B01' },
+        { reason: 'duplicate', line: 4, header: '能力番号', value: '0x0B01' },
+      ],
+    })
   })
 })

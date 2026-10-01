@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { parseImportFile, readImportFile } from '../../src/ce-import/parse'
 import { checkMarketStallionSystem } from '../../src/core/stallions'
 import { openLine } from '../../src/storage/line-writes'
 import { loadRuleSnapshot } from '../../src/storage/loaders'
 import { assignZeroStallion, setStallionStatus } from '../../src/storage/stallion-writes'
 import { appointStallion } from '../../src/storage/successor-writes'
+import { cp932 } from '../support/ce-bytes'
+import { SAMPLES, exportText } from '../support/ce-files'
 import { addTestGame, testDatabase } from '../support/database'
 import { GAME, horseRow, lineRow, stallionRow } from '../support/rows'
 import { successorHerd } from '../support/successor'
@@ -112,5 +115,43 @@ describe('種牡馬匯入（STL）：儲存層寫入', () => {
     expect(await db.horseNumbers.toArray()).toEqual([
       expect.objectContaining({ horseId: 'C87', stage: 'stallion', number: '0x0123' }),
     ])
+  })
+})
+
+// 解析負責的部分（CE 匯入子計畫 4-1）；實檔的筆數在 tests/local/ce-samples.test.ts
+
+describe('種牡馬匯入（STL）：解析', () => {
+  it('STL-04 目標種牡馬 TXT 含 0 匹或 2 匹以上 → 停止，不寫入', () => {
+    const none = exportText('stallion', [])
+    const two = exportText('stallion', [SAMPLES.stallion, { ...SAMPLES.stallion, 59: '0x0011' }])
+    expect(parseImportFile(none, 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'row-count', value: '0' }],
+    })
+    expect(parseImportFile(two, 'target-stallion', 1968)).toStrictEqual({
+      status: 'rejected',
+      problems: [{ reason: 'row-count', value: '2' }],
+    })
+  })
+
+  it('STL-08 匯入 1968年5月1週_種牡馬.txt → 檔名解析為 1968 年 5 月 1 週；63 欄，出生年為 1968 減 年，牧場不套用範圍檢查，種付料的逗號不影響分隔', () => {
+    const text = exportText('stallion', [
+      SAMPLES.stallion,
+      { ...SAMPLES.stallion, 3: '12', 37: '12,000', 53: '2', 59: '0x0011' },
+    ])
+    const read = readImportFile(cp932(text), '1968年5月1週_種牡馬.txt')
+    if (read.status !== 'ok') throw new Error('應該讀得出來')
+    expect(read.nameInfo).toStrictEqual({
+      year: 1968,
+      timing: { month: 5, week: 1 },
+      type: 'stallion-list',
+    })
+    expect(parseImportFile(read.text, 'stallion-list', 1968)).toMatchObject({
+      status: 'ok',
+      entries: [
+        { birthYear: 1962, farm: 240, studFee: '1,500', abilityNumber: '0x0010' },
+        { birthYear: 1956, farm: 2, studFee: '12,000', abilityNumber: '0x0011' },
+      ],
+    })
   })
 })
