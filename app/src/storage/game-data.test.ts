@@ -20,7 +20,8 @@ const SAMPLE_TOTAL = 15
 
 /**
  * 不屬於一局資料的表（技術設計 4.3「整局資料」）：全域的 meta；
- * 檢查點的兩張表不進備份，回溯清掉整局資料時要留下，刪除一局時另外刪
+ * 檢查點的兩張表不進備份，回溯清掉整局資料時要留下，刪除一局時另外刪；
+ * 封存索引不屬於任何一局，刪除一局時保留
  */
 const EXCLUDED_TABLES = ['meta', 'checkpoints', 'checkpointContents', 'archives']
 

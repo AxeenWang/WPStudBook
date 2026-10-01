@@ -43,7 +43,7 @@ docs/plans/        implementation plans
 app/               npm project root
   src/core/        domain model and rules (pure functions)
   src/ce-import/   CE export decoding, parsing, and import flow
-  src/storage/     Dexie database, backups, checkpoints
+  src/storage/     Dexie database, backups, checkpoints, archives
   src/ui/          Vue components, pages, Pinia stores
   tests/acceptance/  acceptance tests grouped by requirement scenario prefix
   tests/e2e/       Playwright tests against the built file

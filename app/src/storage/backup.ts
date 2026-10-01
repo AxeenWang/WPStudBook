@@ -342,7 +342,8 @@ const RELATIONS: readonly (readonly [GameTableName, string, GameTableName])[] = 
 ]
 
 /**
- * 集合的內容檢查（技術設計 4.3「讀取與驗證」的欄位、重複、關聯與筆數），通過時回傳 undefined。
+ * 集合的內容檢查（技術設計 4.3「讀取與驗證」的欄位、重複、關聯與筆數；欄位也包含頂層的匯出時間），
+ * 通過時回傳 undefined。
  * 不逐欄驗證型別與列舉值：檔案完整性由雜湊保證
  */
 function checkCollections(file: BackupFile): BackupRejection | undefined {
