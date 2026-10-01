@@ -1,5 +1,6 @@
 import { listBoard } from '../core/board'
 import type { DesignatedPairing } from '../core/designated'
+import { isBase } from '../core/horse'
 import type { LinePosition } from '../core/lines'
 import { checkSubstituteMare } from '../core/substitute'
 import { buildSubstituteMares } from './inputs'
@@ -167,11 +168,9 @@ function sourceKindOf(pairing: DesignatedPairing, rows: RuleRows): MareSourceKin
   return pairing.kind === 'cycle' ? 'market-supplement' : 'market-founding'
 }
 
-const BASES: readonly Base[] = [32, 33, 34, 35]
-
 /** 據點要是繋養牧場番号 32～35（第 3 章）；畫面只提供這四個，其他值丟出錯誤 */
 export function assertBase(location: Base): void {
-  if (!BASES.includes(location)) throw new Error(`據點不符：${location}`)
+  if (!isBase(location)) throw new Error(`據點不符：${location}`)
 }
 
 /** 母馬目前的用途與所屬母馬群 */

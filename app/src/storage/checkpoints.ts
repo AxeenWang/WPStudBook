@@ -1,3 +1,4 @@
+import { isGameTiming } from '../core/imports'
 import {
   encodeBackup,
   exportBackup,
@@ -25,7 +26,7 @@ import type {
   GameTiming,
 } from './records'
 import { APP_VERSION } from './version'
-import { isGameTiming, type WriteResult } from './writes'
+import type { WriteResult } from './writes'
 
 // 檢查點與回溯（需求規格 11.1、12.4，技術設計 4.3「檢查點與回溯」）
 

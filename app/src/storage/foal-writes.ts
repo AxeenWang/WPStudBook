@@ -1,4 +1,5 @@
 import { checkSubAbilityTotal, isSubAbilityGrade } from '../core/foal'
+import { isSurfaceAptitude } from '../core/horse'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
 import { normalizeSystemName } from '../core/systems'
 import type { WPStudBookDatabase } from './database'
@@ -8,7 +9,6 @@ import type {
   HorseAbility,
   HorseRow,
   Sex,
-  SurfaceAptitude,
   WriteWarning,
 } from './records'
 import {
@@ -78,9 +78,6 @@ export type FoalBlock =
   | AbilityBlock
   | SireNameBlock
   | { kind: 'sire-mismatch'; breedingId: string }
-
-/** 芝、ダート適性的四種符號 */
-const SURFACES: readonly SurfaceAptitude[] = ['◎', '○', '△', '×']
 
 /**
  * 正式馬名的阻止原因：
@@ -393,7 +390,7 @@ function checkAbility(
   integer('subTotal', ability.subTotal, 105)
   for (const field of ['turf', 'dirt'] as const) {
     const value = ability[field]
-    if (value !== undefined && !SURFACES.includes(value)) blocks.push({ kind: 'ability', field })
+    if (value !== undefined && !isSurfaceAptitude(value)) blocks.push({ kind: 'ability', field })
   }
   integer('offspringQuality', ability.offspringQuality, 15)
   if (blocks.length > 0) return { ok: false, blocks }

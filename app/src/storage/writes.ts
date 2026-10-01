@@ -1,5 +1,6 @@
 import type { Table } from 'dexie'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
+import { isGameTiming } from '../core/imports'
 import type { LineGeneration } from '../core/lines'
 import { verifySuccessor, type SuccessorBlock, type SuccessorCandidate } from '../core/successor'
 import {
@@ -118,14 +119,6 @@ export async function runWrite<T, B>(
       },
     })
   })
-}
-
-/** 遊戲內的時點：1～12 月、每月 1～4 週 */
-export function isGameTiming(timing: GameTiming): boolean {
-  const { month, week } = timing
-  const inRange = (value: number, max: number) =>
-    Number.isInteger(value) && value >= 1 && value <= max
-  return inRange(month, 12) && inRange(week, 4)
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { GameTiming, ImportType } from '../core/imports'
+import { isGameTiming, type GameTiming, type ImportType } from '../core/imports'
 
 /** 從檔名讀出的年、時點與預選的類型（需求規格 11.1） */
 export interface ImportFileName {
@@ -26,11 +26,10 @@ const BROODMARE_TYPES: Partial<Record<number, ImportType>> = {
 export function parseImportFileName(fileName: string): ImportFileName | null {
   const match = NAME_PATTERN.exec(fileName)
   if (match === null) return null
-  const month = Number(match[2])
-  const week = Number(match[3])
-  if (month < 1 || month > 12 || week < 1 || week > 4) return null
+  const timing = { month: Number(match[2]), week: Number(match[3]) }
+  if (!isGameTiming(timing)) return null
   const typeName = match[4] === undefined ? '' : fileName.slice(match[0].length)
-  return { year: Number(match[1]), timing: { month, week }, type: presetType(typeName, month) }
+  return { year: Number(match[1]), timing, type: presetType(typeName, timing.month) }
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { Conception } from '../core/horse'
+import { isBase, isConception } from '../core/horse'
 import { duplicateAbilityNumbers } from '../core/identity'
 import type { ImportType } from '../core/imports'
 import { headerCells, rowCells, type ImportProblem } from './cells'
@@ -136,14 +136,6 @@ function readLines<E extends ExportEntry>(
   return entries
 }
 
-/** 受胎名單的 `状態`（需求規格 11.6、附錄 A.3） */
-const CONCEPTIONS: readonly string[] = ['空胎', '受胎', '不受胎', '未確認'] satisfies Conception[]
-
-/** 自家牧場的繋養牧場番号 32～35（第 3 章「據點」） */
-function isOwnFarm(code: number | null): boolean {
-  return code !== null && code >= 32 && code <= 35
-}
-
 /**
  * 整份停止的檢查（技術設計 4.4「解析」）：四月誕生幼駒名單的馬齡、馬主與繋牧（需求規格 11.4、APR-04），
  * 五月與七月名單的牧場（11.5、11.6、MAY-01），七月名單的 `状態`（JUL-06），目標種牡馬 TXT 的筆數
@@ -161,17 +153,17 @@ function checkFile(
       if (owner !== 46 && owner !== 47) {
         problems.push({ reason: 'scope', line, header: '馬主', value: String(owner ?? '') })
       }
-      if (!isOwnFarm(stable)) {
+      if (!isBase(stable)) {
         problems.push({ reason: 'scope', line, header: '繋牧', value: String(stable ?? '') })
       }
     }
   }
   if (parsed.format === 'broodmare' && (type === 'may-herd' || type === 'july-conception')) {
     for (const { line, farm, status } of parsed.entries) {
-      if (!isOwnFarm(farm)) {
+      if (!isBase(farm)) {
         problems.push({ reason: 'scope', line, header: '牧場', value: String(farm ?? '') })
       }
-      if (type === 'july-conception' && !CONCEPTIONS.includes(status)) {
+      if (type === 'july-conception' && !isConception(status)) {
         problems.push({ reason: 'value', line, header: '状態', value: status })
       }
     }
