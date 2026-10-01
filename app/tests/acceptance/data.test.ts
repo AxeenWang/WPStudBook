@@ -7,11 +7,7 @@ import {
   removeArchive,
 } from '../../src/storage/archives'
 import { exportBackup, readBackup, restoreBackup, type BackupFile } from '../../src/storage/backup'
-import {
-  chooseBackupFolder,
-  loadBackupFolder,
-  prepareBackupTarget,
-} from '../../src/storage/backup-folder'
+import { chooseBackupFolder, loadBackupFolder } from '../../src/storage/backup-folder'
 import { backupReminder } from '../../src/storage/backup-reminder'
 import { SCHEMA_VERSION, type WPStudBookDatabase } from '../../src/storage/database'
 import { downloadBackup } from '../../src/storage/download'
@@ -36,6 +32,7 @@ import { addTestGame, testDatabase } from '../support/database'
 import { blobBytes, stubDownloads } from '../support/download'
 import { fakeFolder, storeFakeFolder } from '../support/folder'
 import { addSampleGame } from '../support/game-data'
+import { applyFile, importFile } from '../support/import-flow'
 import { GAME, lineRow, ownFoalRow, ownMareRow } from '../support/rows'
 
 // 需求規格第 15 章「資料保存（DATA）」中由儲存層負責的部分；
@@ -340,12 +337,13 @@ describe('資料保存（DATA）', () => {
   })
 
   it('DATA-15 已指定備份資料夾並授權，年度匯入套用成功 → 自動在該資料夾寫入完整備份；未指定、不支援、未授權或寫入失敗 → 自動下載備份檔', async () => {
-    // 年度匯入以「按下套用時先取得交付目標 → 寫入資料 → saveBackup」代表，實際的串接由 CE 匯入計畫接上
+    // 年度匯入經由 CE 匯入的流程套用（技術設計 4.4「流程」）：推進到 1991 年再套用，回傳自動備份的結果
     const now = new Date('2026-09-30T09:00:00.000Z')
     async function applyImport(db: WPStudBookDatabase) {
-      const target = await prepareBackupTarget(db)
-      await setCurrentYear(db, GAME, 1991, { now })
-      return saveBackup(db, GAME, target, now)
+      const january = importFile('january-two-year-olds', 1991)
+      const applied = await applyFile(db, january, { mode: 'normal', advanceConfirmed: true }, now)
+      if (applied.backup?.status !== 'done') throw new Error('自動備份沒有完成')
+      return applied.backup.value
     }
 
     const authorized = testDatabase()
