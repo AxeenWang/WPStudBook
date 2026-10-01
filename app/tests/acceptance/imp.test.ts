@@ -265,6 +265,7 @@ describe('匯入共通（IMP）：判斷與套用', () => {
     expect(judgment.advanceYear).toBe(1969)
     expect(() => buildImportPlan(judgment, { mode: 'normal' }, EMPTY_CONTENT)).toThrow(RangeError)
     expect(await db.imports.count()).toBe(0)
+    expect((await loadGame(db, GAME)).currentYear).toBe(1968)
     await applyFile(db, file, { mode: 'normal', advanceConfirmed: true }, minute(1))
     expect((await loadGame(db, GAME)).currentYear).toBe(1969)
     expect(await db.imports.count()).toBe(1)

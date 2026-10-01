@@ -91,7 +91,7 @@ export function sampleRows(gameId: string): Omit<GameData, 'games' | 'settings'>
         stage: 'broodmare',
         number: '0x1A2B',
         year: 1989,
-        source: { kind: 'manual' },
+        source: { kind: 'import', importType: 'may-herd', importId: id('I') },
       },
     ],
     imports: [importRecord(id('I'), 'may-herd', 1989, { gameId })],
