@@ -191,8 +191,8 @@ export interface FoalNameItem {
   horseNumber: string
 }
 
-/** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作；這一塊還沒有項目，從 4-3 一月起加入 */
-export type ImportPlanItem = never
+/** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作，各類型的項目加進這個聯合型別 */
+export type ImportPlanItem = FoalNameItem
 
 /** 套用計畫（技術設計 4.4「流程」）：storage 的 applyImport 依它在一個交易內套用 */
 export interface ImportPlan {

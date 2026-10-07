@@ -6,6 +6,7 @@ import {
   type ImportFoal,
   type ImportParentNames,
   type ImportPlan,
+  type ImportPlanItem,
   type ImportRecord,
   type ImportSnapshot,
   type ImportType,
@@ -14,6 +15,7 @@ import {
 import { prepareBackupTarget } from './backup-folder'
 import { createCheckpoint, type CreatedCheckpoint } from './checkpoints'
 import type { WPStudBookDatabase } from './database'
+import { importFoalName, type FoalImportBlock } from './foal-writes'
 import { gameTables } from './game-data'
 import { loadGame, setCurrentYear } from './games'
 import type { EventSource, HorseRow } from './records'
@@ -130,10 +132,17 @@ function parentNames(
   }
 }
 
-/** 套用的阻止原因：預覽之後遊戲局有變更，由畫面重新預覽（技術設計 4.4「資料流」第 7 步） */
-export interface ImportApplyBlock {
-  kind: 'changed-since-preview'
-}
+/** 計畫的項目被寫入操作阻止的原因（技術設計 4.4「流程」）：各類型寫入操作的阻止原因 */
+export type ImportItemBlock = FoalImportBlock
+
+/**
+ * 套用的阻止原因（技術設計 4.4「資料流」第 7 步、「流程」），什麼都不寫：
+ * - changed-since-preview：預覽之後遊戲局有變更，由畫面重新預覽
+ * - item-blocked：計畫的第 index 項（從 0 起算）被寫入操作阻止，整筆回復；blocks 是寫入操作的阻止原因
+ */
+export type ImportApplyBlock =
+  | { kind: 'changed-since-preview' }
+  | { kind: 'item-blocked'; index: number; item: ImportPlanItem; blocks: ImportItemBlock[] }
 
 /** 交易提交後的一步：完成時附結果，失敗時附錯誤訊息；失敗不撤銷匯入 */
 export type AfterImport<T> = { status: 'done'; value: T } | { status: 'failed'; error: string }
@@ -155,7 +164,8 @@ export interface ApplyImportOptions {
  * 年度匯入的第一個 await 是 prepareBackupTarget：瀏覽器只在使用者剛操作後的短時間內允許申請權限
  * （技術設計第 7 節）；累加與選用匯入不備份，不呼叫。接著在一個 rw 交易內（GAME_TABLES）：遊戲局的
  * 更新時間不等於計畫的 expectedUpdatedAt 時阻止（changed-since-preview），什麼都不寫；有 advanceYear 時
- * 先推進年份；套用計畫的項目（4-3 起加入）；最後寫入匯入紀錄，遊戲局的更新時間跟著更新。
+ * 先推進年份；逐項套用計畫的項目，某一項被阻止時整筆回復並回傳 item-blocked；最後寫入匯入紀錄，
+ * 遊戲局的更新時間跟著更新。
  * 交易提交後，年度匯入先建立檢查點（auto，時點是套用後的目前進度，直接補匯另記補匯的年與時點），
  * 再以取得的目標儲存備份；兩步各自失敗時不撤銷匯入，結果附上錯誤訊息。遊戲局不存在時丟出錯誤
  */
@@ -166,10 +176,11 @@ export async function applyImport(
 ): Promise<WriteResult<AppliedImport, ImportApplyBlock>> {
   const target = isAnnualImport(plan.type) ? await prepareBackupTarget(db) : undefined
   const now = options.now ?? new Date()
-  const committed = await commitImport(db, plan, now)
-  if (committed === undefined) {
-    return { status: 'blocked', blocks: [{ kind: 'changed-since-preview' }] }
-  }
+  const committed = await commitImport(db, plan, now).catch((error: unknown) => {
+    if (error instanceof ItemStopped) return error.block
+    throw error
+  })
+  if (committed.kind !== 'committed') return { status: 'blocked', blocks: [committed] }
   const { record, progress } = committed
   // target 只在年度匯入時取得；累加與選用匯入不建立檢查點、不備份（需求規格 11.1、IMP-12）
   if (target === undefined || !isAnnualImport(plan.type)) {
@@ -188,15 +199,34 @@ export async function applyImport(
   return { status: 'done', value: { record, checkpoint, backup }, warnings: [] }
 }
 
+/** 套用的交易已提交：匯入紀錄與套用後的目前進度 */
+interface Committed {
+  kind: 'committed'
+  record: ImportRecord
+  progress: GamePoint | undefined
+}
+
+/** 計畫的某一項被阻止：在交易內丟出，讓整筆回復；applyImport 在交易外接住 */
+class ItemStopped extends Error {
+  readonly block: ImportApplyBlock
+
+  constructor(block: ImportApplyBlock) {
+    super('計畫的項目被阻止')
+    this.block = block
+  }
+}
+
 /**
- * 套用的交易：更新時間不等於計畫的 expectedUpdatedAt 時回傳 undefined，什麼都不寫；
- * 否則推進年份、寫入匯入紀錄，回傳匯入紀錄與套用後的目前進度。計畫的項目從 4-3 起在這裡逐項套用
+ * 套用的交易：更新時間不等於計畫的 expectedUpdatedAt 時回傳 changed-since-preview，什麼都不寫；
+ * 否則推進年份、逐項套用計畫的項目、寫入匯入紀錄，回傳匯入紀錄與套用後的目前進度。
+ * 某一項被阻止時丟出 ItemStopped 讓整筆回復，由 applyImport 接住；寫入操作回傳待確認時丟出錯誤
+ * （一月沒有要確認的警告，項目的確認由之後的計畫加入）
  */
 async function commitImport(
   db: WPStudBookDatabase,
   plan: ImportPlan,
   now: Date,
-): Promise<{ record: ImportRecord; progress: GamePoint | undefined } | undefined> {
+): Promise<Committed | ImportApplyBlock> {
   const id = crypto.randomUUID()
   const source: EventSource = { kind: 'import', importType: plan.type, importId: id }
   const write: WriteOptions = {
@@ -204,12 +234,19 @@ async function commitImport(
     source,
     ...(plan.timing === undefined ? {} : { timing: plan.timing }),
   }
-  return db.transaction('rw', gameTables(db), async () => {
+  return db.transaction('rw', gameTables(db), async (): Promise<Committed | ImportApplyBlock> => {
     const game = await loadGame(db, plan.gameId)
-    if (game.updatedAt !== plan.expectedUpdatedAt) return undefined
+    if (game.updatedAt !== plan.expectedUpdatedAt) return { kind: 'changed-since-preview' }
     if (plan.advanceYear !== undefined) {
       const advanced = await setCurrentYear(db, plan.gameId, plan.advanceYear, write)
       if (advanced.status !== 'done') throw new Error(`推進年份失敗：${plan.advanceYear} 年`)
+    }
+    for (const [index, item] of plan.items.entries()) {
+      const result = await applyItem(db, plan, item, write)
+      if (result.status === 'blocked') {
+        throw new ItemStopped({ kind: 'item-blocked', index, item, blocks: result.blocks })
+      }
+      if (result.status === 'unconfirmed') throw new Error(`計畫的第 ${index} 項有待確認的警告`)
     }
     const record: ImportRecord = {
       id,
@@ -232,8 +269,24 @@ async function commitImport(
       return context.done(record)
     })
     const records = await db.imports.where('gameId').equals(plan.gameId).toArray()
-    return { record, progress: importProgress(records) }
+    return { kind: 'committed', record, progress: importProgress(records) }
   })
+}
+
+/** 依項目的種類呼叫對應的寫入操作（技術設計 4.4「流程」）；資料更正時讓寫入操作改經匯入確認的馬名 */
+async function applyItem(
+  db: WPStudBookDatabase,
+  plan: ImportPlan,
+  item: ImportPlanItem,
+  write: WriteOptions,
+): Promise<WriteResult<unknown, ImportItemBlock>> {
+  switch (item.kind) {
+    case 'foal-name':
+      return importFoalName(db, plan.gameId, item, {
+        ...write,
+        correction: plan.mode === 'correction',
+      })
+  }
 }
 
 /** 交易提交後的一步：丟出例外時記下錯誤訊息，不撤銷匯入 */

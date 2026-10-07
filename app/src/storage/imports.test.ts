@@ -4,10 +4,10 @@ import { stubDownloads } from '../../tests/support/download'
 import { fakeFolder, storeFakeFolder } from '../../tests/support/folder'
 import { importRecord } from '../../tests/support/imports'
 import { GAME, checkpointRow, horseRow } from '../../tests/support/rows'
-import type { ImportPlan } from '../core/imports'
+import type { FoalNameItem, ImportPlan } from '../core/imports'
 import { listCheckpoints } from './checkpoints'
 import { loadGame } from './games'
-import type { HorseNumberRow, HorseStage } from './records'
+import type { GameRow, HorseNumberRow, HorseStage } from './records'
 import { applyImport, loadImportSnapshot } from './imports'
 import { APP_VERSION } from './version'
 
@@ -382,6 +382,115 @@ describe('applyImport', () => {
     })
     expect(await offline.imports.count()).toBe(1)
     expect((await loadGame(offline, GAME)).lastBackupAt).toBeUndefined()
+  })
+
+  /** 一月二歲馬總表的計畫：1990 年 1 月 1 週 */
+  function januaryPlan(items: FoalNameItem[], fields: Partial<ImportPlan> = {}): ImportPlan {
+    return plan({
+      type: 'january-two-year-olds',
+      timing: { month: 1, week: 1 },
+      fileName: '1990年 1月1週._二歲新馬.txt',
+      items,
+      ...fields,
+    })
+  }
+
+  /** 1988 年生的自家產駒：F1 是手動名タロ，F2 已由總表填入ハナコ */
+  async function januaryGame(fields: Partial<GameRow> = {}) {
+    const db = testDatabase()
+    await addTestGame(db, fields)
+    await db.horses.bulkAdd([
+      horseRow('F1', {
+        birthYear: 1988,
+        birth: {},
+        fullName: 'タロ',
+        baseName: 'タロ',
+        nameSource: 'manual',
+      }),
+      horseRow('F2', {
+        birthYear: 1988,
+        birth: {},
+        fullName: 'ハナコ',
+        baseName: 'ハナコ',
+        nameSource: 'import',
+        abilityNumber: '0x0002',
+      }),
+    ])
+    return db
+  }
+
+  /** 總表的一列：1988 年生，基本馬名與完整馬名相同 */
+  function foalItem(horseId: string, name: string, abilityNumber: string, horseNumber: string) {
+    const item: FoalNameItem = {
+      kind: 'foal-name',
+      horseId,
+      birthYear: 1988,
+      fullName: name,
+      baseName: name,
+      abilityNumber,
+      horseNumber,
+    }
+    return item
+  }
+
+  const ITEMS = [
+    foalItem('F1', 'タロウ', '0x0001', '0x1001'),
+    foalItem('F2', 'ハナヨ', '0x0002', '0x1002'),
+  ]
+
+  it('逐項套用計畫的項目：事件與馬番号帶這次的匯入紀錄與時點；資料更正時經匯入確認的馬名也改', async () => {
+    const db = await januaryGame()
+    stubDownloads()
+    const correction = januaryPlan(ITEMS, { mode: 'correction', corrects: 'J0' })
+    const result = await applyImport(db, correction, { now: NOW })
+    if (result.status !== 'done') throw new Error(result.status)
+    const source = {
+      kind: 'import',
+      importType: 'january-two-year-olds',
+      importId: result.value.record.id,
+    }
+    const timing = { month: 1, week: 1 }
+    expect(await db.horses.get('F1')).toMatchObject({
+      fullName: 'タロウ',
+      nameSource: 'import',
+      aliases: ['タロ'],
+      abilityNumber: '0x0001',
+    })
+    expect(await db.horses.get('F2')).toMatchObject({ fullName: 'ハナヨ', nameSource: 'import' })
+    const events = await db.events.toArray()
+    expect(events).toHaveLength(2)
+    for (const event of events) {
+      expect(event).toMatchObject({
+        kind: 'foal-name-imported',
+        source,
+        timing,
+        recordedAt: NOW.toISOString(),
+      })
+    }
+    const numbers = await db.horseNumbers.toArray()
+    expect(numbers).toHaveLength(2)
+    for (const row of numbers) expect(row).toMatchObject({ stage: 'racehorse', source, timing })
+  })
+
+  it('某一項被阻止時整筆回復：推進年份、前面的項目與匯入紀錄都不留，回傳 item-blocked 指出第幾項與原因；不建檢查點、不備份', async () => {
+    const db = await januaryGame({ currentYear: 1989 })
+    const game = await loadGame(db, GAME)
+    const horses = await db.horses.toArray()
+    const downloads = stubDownloads()
+    const result = await applyImport(db, januaryPlan(ITEMS, { advanceYear: 1990 }), { now: NOW })
+    expect(result).toStrictEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'item-blocked', index: 1, item: ITEMS[1], blocks: [{ kind: 'name-confirmed' }] },
+      ],
+    })
+    expect(await loadGame(db, GAME)).toStrictEqual(game)
+    expect(await db.horses.toArray()).toStrictEqual(horses)
+    expect(await db.imports.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+    expect(await db.horseNumbers.count()).toBe(0)
+    expect(await listCheckpoints(db, GAME)).toEqual([])
+    expect(downloads).toHaveLength(0)
   })
 
   it('遊戲局不存在時丟出錯誤', async () => {
