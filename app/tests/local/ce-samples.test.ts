@@ -2,7 +2,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { previewJanuary } from '../../src/ce-import/january'
 import { parseImportFile, readImportFile, type ParsedEntries } from '../../src/ce-import/parse'
+import type { ImportSnapshot } from '../../src/core/imports'
 
 // 讀 .references/ 的實際匯出檔（不進版控）驗證解析；檔案不在時略過（AGENTS.md「tests/local」）
 
@@ -108,6 +110,31 @@ describe('實檔：解析', () => {
         欧: 181,
       })
       expect(parsed.entries.every((entry) => entry.birthYear === 1968 - entry.age)).toBe(true)
+    },
+  )
+})
+
+describe('實檔：一月的配對', () => {
+  it.skipIf(missing(JANUARY))(
+    'JAN-08 1968 年的一月總表對沒有自家產駒的局預覽 → 0 對、0 待核對，1,160 列全部略過',
+    () => {
+      const parsed = parseSample(JANUARY)
+      if (parsed.format !== 'two-year-old') throw new Error('格式不符')
+      const snapshot: ImportSnapshot = {
+        gameId: 'G',
+        currentYear: 1968,
+        updatedAt: '2026-10-08T00:00:00.000Z',
+        imports: [],
+        checkpoints: [],
+        january: { birthYear: 1966, foals: [] },
+      }
+      expect(previewJanuary(parsed.entries, snapshot, 'normal').counts).toStrictEqual({
+        applicable: 0,
+        skipped: 1160,
+        errors: 0,
+        pending: 0,
+        warnings: 0,
+      })
     },
   )
 })

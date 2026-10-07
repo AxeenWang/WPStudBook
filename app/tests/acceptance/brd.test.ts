@@ -14,10 +14,12 @@ import { loadSuccessorCandidate } from '../../src/storage/loaders'
 import { rateMating } from '../../src/storage/rating-writes'
 import { cancelSuccessor, designateSuccessor } from '../../src/storage/successor-writes'
 import { buildPhaseHerd, designatedTo, foalingHerd } from '../support/breeding'
+import { applyJanuaryFile, januaryGame, januaryRow, ownFoal } from '../support/import-flow'
 import { GAME, horseRow, restorationRow, stallionRow } from '../support/rows'
 import { successorHerd } from '../support/successor'
 
-// 需求規格第 15 章「配種與產駒（BRD）」中由 core 與儲存層負責的部分；匯入與畫面由後續計畫補上
+// 需求規格第 15 章「配種與產駒（BRD）」中由 core 與儲存層負責的部分，以及一月匯入取代手動名（BRD-09）；
+// 其他匯入與畫面由後續計畫補上
 
 describe('配種與產駒（BRD）', () => {
   it('BRD-07 1990 年出生未命名的產駒 → 顯示 オオトリモナーコス1990', () => {
@@ -357,5 +359,43 @@ describe('配種與產駒（BRD）', () => {
     expect(await setConception(db, GAME, 'B90', '不受胎')).toEqual(blocked)
     expect((await cancelSuccessor(db, GAME, designated.value.id)).status).toBe('done')
     expect((await setConception(db, GAME, 'B90', '不受胎')).status).toBe('done')
+  })
+
+  it('BRD-09 一月總表唯一配對的名稱 → 取代手動名稱，手動名稱保留為別名與歷程（走完匯入流程）', async () => {
+    const db = await januaryGame([
+      ownFoal('F1', { fullName: 'ハイセイコ', baseName: 'ハイセイコ', nameSource: 'manual' }),
+    ])
+    const row = januaryRow({
+      fullName: 'ハイセイコー',
+      sire: 'チチ',
+      dam: 'ハハ',
+      abilityNumber: '0x0101',
+      horseNumber: '0x2101',
+    })
+    const { applied } = await applyJanuaryFile(db, [row])
+    expect(await db.horses.get('F1')).toMatchObject({
+      fullName: 'ハイセイコー',
+      baseName: 'ハイセイコー',
+      nameSource: 'import',
+      aliases: ['ハイセイコ'],
+    })
+    expect(await db.events.toArray()).toEqual([
+      expect.objectContaining({
+        kind: 'foal-name-imported',
+        horseId: 'F1',
+        from: 'ハイセイコ',
+        to: 'ハイセイコー',
+        source: {
+          kind: 'import',
+          importType: 'january-two-year-olds',
+          importId: applied.record.id,
+        },
+      }),
+    ])
+    // 經匯入確認後不能再手動修改（9.4）
+    expect(await nameFoal(db, GAME, 'F1', 'ハイセイコ')).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'name-confirmed' }],
+    })
   })
 })

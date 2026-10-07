@@ -10,18 +10,28 @@ import {
 } from '../../src/storage/checkpoints'
 import type { WPStudBookDatabase } from '../../src/storage/database'
 import { downloadBackup } from '../../src/storage/download'
-import { readGameData } from '../../src/storage/game-data'
+import { GAME_TABLES, readGameData } from '../../src/storage/game-data'
 import { loadGame, setCurrentYear } from '../../src/storage/games'
 import { applyImport } from '../../src/storage/imports'
 import { cp932, utf8WithBom } from '../support/ce-bytes'
 import { SAMPLES, excelCsv, exportText } from '../support/ce-files'
 import { addTestGame, testDatabase } from '../support/database'
 import { stubDownloads } from '../support/download'
-import { EMPTY_CONTENT, applyFile, importFile, judgeFile } from '../support/import-flow'
-import { GAME } from '../support/rows'
+import {
+  EMPTY_CONTENT,
+  applyFile,
+  applyJanuaryFile,
+  importFile,
+  januaryGame,
+  januaryRow,
+  judgeFile,
+  ownFoal,
+  previewJanuaryFile,
+} from '../support/import-flow'
+import { GAME, startMareRow } from '../support/rows'
 
-// 需求規格第 15 章「匯入共通（IMP）」：解析的部分（CE 匯入子計畫 4-1），以及判斷、套用、重複與進度
-// （4-2，計畫一律沒有項目，各類型的預覽與套用由 4-3 以後補上）；選檔、拖放與多檔拒絕由畫面計畫補上
+// 需求規格第 15 章「匯入共通（IMP）」：解析的部分（CE 匯入子計畫 4-1），判斷、套用、重複與進度
+// （4-2，計畫沒有項目），以及一月的預覽、資料更正與匯入分權（4-3）；選檔、拖放與多檔拒絕由畫面計畫補上
 
 describe('匯入共通（IMP）：解析', () => {
   it('IMP-01 CP932 無 BOM、Tab 分隔的 .txt → 可以直接讀取與解析', () => {
@@ -340,5 +350,126 @@ describe('匯入共通（IMP）：判斷與套用', () => {
       options: ['rollback', 'correction'],
       corrects: january.record.id,
     })
+  })
+
+  it('IMP-05 匯入預覽 → 分列可套用、略過、待核對、警告、錯誤筆數（一月二歲馬總表）', async () => {
+    const db = await januaryGame([
+      ownFoal('F1', { abilityNumber: '0x0101' }),
+      ownFoal('F2', {
+        abilityNumber: '0x0102',
+        fullName: 'ハナコ',
+        baseName: 'ハナコ',
+        nameSource: 'import',
+      }),
+      ownFoal('F3', { abilityNumber: '0x0FFF' }),
+    ])
+    const rows = [
+      // 可套用，帶第 77 欄的警告
+      januaryRow({
+        fullName: '(市)ジブン',
+        baseName: 'ジブン',
+        sire: 'チチ',
+        dam: 'ハハ',
+        abilityNumber: '0x0101',
+        horseNumber: '0x2101',
+      }),
+      // 經匯入確認的馬名不同：錯誤
+      januaryRow({
+        fullName: 'ハナヨ',
+        sire: 'チチ',
+        dam: 'ハハ',
+        abilityNumber: '0x0102',
+        horseNumber: '0x2102',
+      }),
+      // 非管理的馬：略過
+      januaryRow({
+        fullName: 'タニン',
+        sire: 'ベツ',
+        dam: 'ベツハハ',
+        abilityNumber: '0x0103',
+        horseNumber: '0x2103',
+      }),
+    ]
+    const { preview } = await previewJanuaryFile(db, rows)
+    expect(preview.counts).toStrictEqual({
+      applicable: 1,
+      skipped: 1,
+      errors: 1,
+      pending: 1,
+      warnings: 1,
+    })
+  })
+
+  it('IMP-08 一月二歲馬總表的資料更正 → 原值與新值在事件裡，事件連到這次的匯入紀錄，被更正的那一筆的檔名、雜湊與時間都在', async () => {
+    const db = await januaryGame([ownFoal('F1', { abilityNumber: '0x0101' })])
+    const row = (fullName: string) =>
+      januaryRow({
+        fullName,
+        sire: 'チチ',
+        dam: 'ハハ',
+        abilityNumber: '0x0101',
+        horseNumber: '0x2101',
+      })
+    const first = await applyJanuaryFile(db, [row('アオバ')])
+    const second = await applyJanuaryFile(db, [row('アオバオー')])
+    const corrected = second.applied.record
+    expect(corrected.mode).toBe('correction')
+    const original = await db.imports.get(corrected.corrects!)
+    expect(original).toStrictEqual(first.applied.record)
+    expect(original?.sha256).not.toBe(corrected.sha256)
+    const events = (await db.events.toArray()).filter(
+      (event) => event.source.kind === 'import' && event.source.importId === corrected.id,
+    )
+    expect(events).toEqual([
+      expect.objectContaining({
+        kind: 'foal-name-imported',
+        horseId: 'F1',
+        from: 'アオバ',
+        to: 'アオバオー',
+      }),
+    ])
+  })
+
+  it('IMP-10 一月二歲馬總表 → 只更新自己負責的欄位：正式馬名、別名、能力番号與競走馬馬番号；父母、出生年、能力、牧場處置與其他資料不變', async () => {
+    const foal = ownFoal('F1', {
+      fullName: 'テガキ',
+      baseName: 'テガキ',
+      nameSource: 'manual',
+      sireName: 'チチ',
+      damName: 'ハハ',
+      sireSystem: 'エクリプス',
+      pedigreeSource: 'import',
+      ability: { speed: 70, stamina: 40, turf: '◎', offspringQuality: 3 },
+      femaleLine: 'ヒンケイ',
+      disposition: 'sold',
+      note: '一歲時售出',
+    })
+    const db = await januaryGame([foal])
+    await db.mares.add(startMareRow('M1'))
+    const before = await readGameData(db, GAME)
+    const row = januaryRow({
+      fullName: 'ジブン',
+      sire: 'チチ',
+      dam: 'ハハ',
+      abilityNumber: '0x0101',
+      horseNumber: '0x2101',
+    })
+    await applyJanuaryFile(db, [row])
+    const after = await readGameData(db, GAME)
+    expect(after.horses.find((horse) => horse.id === 'F1')).toStrictEqual({
+      ...foal,
+      fullName: 'ジブン',
+      baseName: 'ジブン',
+      nameSource: 'import',
+      aliases: ['テガキ'],
+      abilityNumber: '0x0101',
+    })
+    const others = (horses: typeof before.horses) => horses.filter((horse) => horse.id !== 'F1')
+    expect(others(after.horses)).toStrictEqual(others(before.horses))
+    // 變動的只有遊戲局的更新時間、這匹產駒、事件、階段馬番号與匯入紀錄
+    const changed = new Set(['games', 'horses', 'events', 'horseNumbers', 'imports'])
+    for (const name of GAME_TABLES) {
+      if (!changed.has(name)) expect(after[name]).toStrictEqual(before[name])
+    }
   })
 })
