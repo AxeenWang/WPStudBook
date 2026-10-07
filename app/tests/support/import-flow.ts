@@ -28,7 +28,7 @@ export function importFile(
 
 /** 畫面串接的前半（技術設計 4.4「流程」）：組出這一局的快照再判斷 */
 export async function judgeFile(db: WPStudBookDatabase, file: ImportFile): Promise<ImportJudgment> {
-  return judgeImport(file, await loadImportSnapshot(db, GAME))
+  return judgeImport(file, await loadImportSnapshot(db, GAME, file))
 }
 
 /**

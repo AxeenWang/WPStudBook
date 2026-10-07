@@ -126,8 +126,42 @@ export interface ImportCheckpoint {
 }
 
 /**
- * 匯入比對快照（技術設計 4.4「資料流」第 4 步）的通用部分：遊戲局、這一局的匯入紀錄與檢查點的摘要。
- * 各類型比對要用的資料由之後的計畫加入
+ * 自家產駒父母的基本馬名（技術設計 4.4「一月」），不知道時留空：
+ * - confirmed：經匯入確認的名稱，保存的匯入名稱優先，沒有時用連結馬匹經匯入確認的基本馬名；判斷父母明顯不符用
+ * - known：任何已知的名稱，保存的名稱優先，沒有時用連結馬匹的基本馬名，手動輸入的也算；以父母退回配對用
+ */
+export interface ImportParentNames {
+  confirmed?: string
+  known?: string
+}
+
+/** 一月比對用的自家產駒（技術設計 4.4「一月」）：有出生紀錄的馬 */
+export interface ImportFoal {
+  id: string
+  birthYear: number
+  /** 能力番号；還沒有時留空 */
+  abilityNumber?: string
+  /** 完整馬名；還沒有正式馬名時留空 */
+  fullName?: string
+  /** 基本馬名；還沒有正式馬名時留空 */
+  baseName?: string
+  /** 馬名的來源：import 為經匯入確認，manual 為手動輸入；沒有馬名時留空 */
+  nameSource?: 'import' | 'manual'
+  sire: ImportParentNames
+  dam: ImportParentNames
+  /** 已記的競走馬馬番号 */
+  racehorseNumbers: string[]
+}
+
+/** 一月二歲馬總表的快照（技術設計 4.4「一月」）：birthYear 是年份減 2，foals 是那一年出生的自家產駒 */
+export interface JanuarySnapshot {
+  birthYear: number
+  foals: ImportFoal[]
+}
+
+/**
+ * 匯入比對快照（技術設計 4.4「資料流」第 4 步）：遊戲局、這一局的匯入紀錄與檢查點的摘要；
+ * 各類型比對要用的資料依類型另外帶（4-3 起）
  */
 export interface ImportSnapshot {
   gameId: string
@@ -136,6 +170,8 @@ export interface ImportSnapshot {
   updatedAt: string
   imports: ImportRecord[]
   checkpoints: ImportCheckpoint[]
+  /** 一月二歲馬總表的資料；其他類型沒有 */
+  january?: JanuarySnapshot
 }
 
 /** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作；這一塊還沒有項目，從 4-3 一月起加入 */

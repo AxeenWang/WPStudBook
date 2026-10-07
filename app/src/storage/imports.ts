@@ -3,33 +3,50 @@ import {
   importProgress,
   isAnnualImport,
   type GamePoint,
+  type ImportFoal,
+  type ImportParentNames,
   type ImportPlan,
   type ImportRecord,
   type ImportSnapshot,
+  type ImportType,
+  type JanuarySnapshot,
 } from '../core/imports'
 import { prepareBackupTarget } from './backup-folder'
 import { createCheckpoint, type CreatedCheckpoint } from './checkpoints'
 import type { WPStudBookDatabase } from './database'
 import { gameTables } from './game-data'
 import { loadGame, setCurrentYear } from './games'
-import type { EventSource } from './records'
+import type { EventSource, HorseRow } from './records'
 import { saveBackup, type SavedBackup } from './save-backup'
 import { runWrite, type WriteOptions, type WriteResult } from './writes'
 
 // CE 匯入的快照與套用（技術設計 4.4「資料流」「流程」）
 
+/** 快照的範圍：使用者確認的類型與年份（技術設計 4.4「流程」）；ce-import 的 ImportFile 也符合這個形狀 */
+export interface ImportScope {
+  type: ImportType
+  year: number
+}
+
 /**
- * 讀出匯入比對快照（技術設計 4.4「資料流」第 4 步）：在一個唯讀交易內讀遊戲局、這一局的匯入紀錄與檢查點的摘要。
- * 遊戲局不存在時丟出錯誤
+ * 讀出匯入比對快照（技術設計 4.4「資料流」第 4 步）：在一個唯讀交易內讀遊戲局、這一局的匯入紀錄與檢查點的摘要；
+ * 一月二歲馬總表另讀出生年為年份減 2 的自家產駒（4.4「一月」）。
+ * 遊戲局不存在，或產駒連結的父母不在 horses 中時丟出錯誤
  */
 export async function loadImportSnapshot(
   db: WPStudBookDatabase,
   gameId: string,
+  scope: ImportScope,
 ): Promise<ImportSnapshot> {
-  return db.transaction('r', [db.games, db.imports, db.checkpoints], async () => {
+  const tables = [db.games, db.imports, db.checkpoints, db.horses, db.horseNumbers]
+  return db.transaction('r', tables, async () => {
     const game = await loadGame(db, gameId)
     const imports = await db.imports.where('gameId').equals(gameId).toArray()
     const checkpoints = await db.checkpoints.where('gameId').equals(gameId).toArray()
+    const january =
+      scope.type === 'january-two-year-olds'
+        ? await loadJanuary(db, gameId, scope.year - 2)
+        : undefined
     return {
       gameId,
       currentYear: game.currentYear,
@@ -41,8 +58,76 @@ export async function loadImportSnapshot(
         ...(timing === undefined ? {} : { timing }),
         createdAt,
       })),
+      ...(january === undefined ? {} : { january }),
     }
   })
+}
+
+/**
+ * 一月的快照（技術設計 4.4「一月」）：出生年為 birthYear 的自家產駒（有出生紀錄），帶父母名的兩種值與
+ * 已記的競走馬馬番号。在 loadImportSnapshot 的交易內呼叫
+ */
+async function loadJanuary(
+  db: WPStudBookDatabase,
+  gameId: string,
+  birthYear: number,
+): Promise<JanuarySnapshot> {
+  const rows = await db.horses
+    .where('[gameId+birthYear]')
+    .equals([gameId, birthYear])
+    .filter((horse) => horse.birth !== undefined)
+    .toArray()
+  const parentIds = new Set<string>()
+  for (const horse of rows) {
+    if (horse.sireId !== undefined) parentIds.add(horse.sireId)
+    if (horse.damId !== undefined) parentIds.add(horse.damId)
+  }
+  const parents = new Map<string, HorseRow>()
+  for (const parent of await db.horses.bulkGet([...parentIds])) {
+    if (parent) parents.set(parent.id, parent)
+  }
+  const numbers = await db.horseNumbers
+    .where('[gameId+horseId]')
+    .anyOf(rows.map((horse) => [gameId, horse.id]))
+    .filter((row) => row.stage === 'racehorse')
+    .toArray()
+  const foals = rows.map((horse): ImportFoal => {
+    const manual = horse.pedigreeSource === 'manual'
+    return {
+      id: horse.id,
+      birthYear,
+      ...(horse.abilityNumber === undefined ? {} : { abilityNumber: horse.abilityNumber }),
+      ...(horse.fullName === undefined ? {} : { fullName: horse.fullName }),
+      ...(horse.baseName === undefined ? {} : { baseName: horse.baseName }),
+      ...(horse.nameSource === undefined ? {} : { nameSource: horse.nameSource }),
+      sire: parentNames(parents, horse.sireName, horse.sireId, manual),
+      dam: parentNames(parents, horse.damName, horse.damId, manual),
+      racehorseNumbers: numbers.filter((row) => row.horseId === horse.id).map((row) => row.number),
+    }
+  })
+  return { birthYear, foals }
+}
+
+/**
+ * 父馬或母馬的兩種名稱（技術設計 4.4「一月」）：經匯入確認的名稱同 4.3 的既有馬匹（buildKnownHorses），
+ * 保存的名稱是手動輸入時不算；任何已知的名稱是保存的名稱，沒有時用連結馬匹的基本馬名。
+ * 連結的馬匹不在 parents 中時丟出錯誤
+ */
+function parentNames(
+  parents: ReadonlyMap<string, HorseRow>,
+  name: string | undefined,
+  id: string | undefined,
+  manual: boolean,
+): ImportParentNames {
+  const parent = id === undefined ? undefined : parents.get(id)
+  if (id !== undefined && parent === undefined) throw new Error(`找不到馬匹：${id}`)
+  const linked = parent?.nameSource === 'import' ? parent.baseName : undefined
+  const confirmed = manual || name === undefined ? linked : name
+  const known = name ?? parent?.baseName
+  return {
+    ...(confirmed === undefined ? {} : { confirmed }),
+    ...(known === undefined ? {} : { known }),
+  }
 }
 
 /** 套用的阻止原因：預覽之後遊戲局有變更，由畫面重新預覽（技術設計 4.4「資料流」第 7 步） */
