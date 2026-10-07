@@ -201,6 +201,8 @@ export interface HorseRow {
   baseName?: string
   /** 馬名的來源：import 為經匯入確認，manual 為手動輸入、尚未經匯入確認（6.4）；沒有馬名時留空 */
   nameSource?: 'import' | 'manual'
+  /** 別名：被一月總表取代的手動完整馬名，依先後排列（9.4）；沒有時留空 */
+  aliases?: string[]
   /** 能力番号：`0x` 開頭的十六進位文字，`0x0000` 是有效值 */
   abilityNumber?: string
   birthYear?: number
@@ -589,6 +591,8 @@ interface EventBase {
  * - conception-set：受胎狀態（9.1）；原本沒有結果時沒有 from，清空時沒有 to
  * - foal-added：建立產駒（9.3），記連結的配種紀錄與牧場處置
  * - foal-named：自家產駒正式馬名的填入、更正與清空（9.4）；原本沒有馬名時沒有 from，清空時沒有 to
+ * - foal-name-imported：一月總表填入自家產駒的正式馬名（9.4、11.3）；原本沒有馬名時沒有 from，
+ *   與新名相同時也記（經匯入確認）；abilityNumber 是這次補上的能力番号
  * - foal-disposition-changed：牧場處置（9.3）
  * - mating-rated：總合評價與爆發力（9.2）；同一組同一年第一次登記時沒有 from
  * - mare-transferred：自家母駒轉入繁殖圈（8.4、8.9、9.6），記用途與母馬群、接替狀態與據點
@@ -708,6 +712,13 @@ export type EventRow = EventBase &
       }
     | { kind: 'foal-added'; horseId: string; breedingId?: string; disposition: FoalDisposition }
     | { kind: 'foal-named'; horseId: string; from?: string; to?: string }
+    | {
+        kind: 'foal-name-imported'
+        horseId: string
+        from?: string
+        to: string
+        abilityNumber?: string
+      }
     | {
         kind: 'foal-disposition-changed'
         horseId: string

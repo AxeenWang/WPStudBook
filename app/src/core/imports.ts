@@ -174,6 +174,23 @@ export interface ImportSnapshot {
   january?: JanuarySnapshot
 }
 
+/**
+ * 一月二歲馬總表的一項（技術設計 4.4「一月」）：替自家產駒填入總表的正式馬名、補能力番号、記競走馬馬番号。
+ * 帶這一列的值，要改什麼由寫入操作在交易內與目前的資料比對
+ */
+export interface FoalNameItem {
+  kind: 'foal-name'
+  horseId: string
+  birthYear: number
+  /** 第 1 欄的完整馬名 */
+  fullName: string
+  /** 第 77 欄的基本馬名 */
+  baseName: string
+  abilityNumber: string
+  /** 競走馬馬番号 */
+  horseNumber: string
+}
+
 /** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作；這一塊還沒有項目，從 4-3 一月起加入 */
 export type ImportPlanItem = never
 

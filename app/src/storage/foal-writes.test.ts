@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { foalingHerd } from '../../tests/support/breeding'
-import { addTestGame } from '../../tests/support/database'
+import { addTestGame, testDatabase } from '../../tests/support/database'
 import { GAME, horseRow, substituteMareRow } from '../../tests/support/rows'
+import type { FoalNameItem } from '../core/imports'
 import { loadGame } from './games'
-import { addFoal, nameFoal, relinkFoal, setFoalDisposition } from './foal-writes'
+import { addFoal, importFoalName, nameFoal, relinkFoal, setFoalDisposition } from './foal-writes'
 import { transferFilly } from './own-mare-writes'
 import type { Conception, HorseRow } from './records'
 
@@ -562,5 +563,233 @@ describe('relinkFoal', () => {
     await expect(relinkFoal(db, GAME, 'NODAM')).rejects.toThrow(RangeError)
     expect((await relinkFoal(db, GAME, foalId)).status).toBe('done')
     await expect(relinkFoal(db, GAME, foalId)).rejects.toThrow(`產駒已經連結配種紀錄：${foalId}`)
+  })
+})
+
+describe('importFoalName', () => {
+  const source = {
+    kind: 'import',
+    importType: 'january-two-year-olds',
+    importId: 'I1',
+  } as const
+  const timing = { month: 1, week: 1 }
+  const options = { now, source, timing }
+
+  /** 1990 年的局與 1988 年生、已售出的自家產駒 F1（父母名經匯入確認）；其他欄位依需要覆寫 */
+  async function foalGame(fields: Partial<HorseRow> = {}) {
+    const db = testDatabase()
+    await addTestGame(db)
+    const foal = horseRow('F1', {
+      birthYear: 1988,
+      sex: 'male',
+      sireName: 'チチ',
+      damName: 'ハハ',
+      pedigreeSource: 'import',
+      birth: {},
+      disposition: 'sold',
+      ...fields,
+    })
+    await db.horses.add(foal)
+    return { db, foal }
+  }
+
+  /** 總表的一列：(外)ハイセイコー，能力番号 0x0A1F，競走馬馬番号 0x1B2C */
+  function item(fields: Partial<FoalNameItem> = {}): FoalNameItem {
+    return {
+      kind: 'foal-name',
+      horseId: 'F1',
+      birthYear: 1988,
+      fullName: '(外)ハイセイコー',
+      baseName: 'ハイセイコー',
+      abilityNumber: '0x0A1F',
+      horseNumber: '0x1B2C',
+      ...fields,
+    }
+  }
+
+  it('手動名被總表取代：馬名改用總表、來源為匯入，手動名加到別名的最後；補上能力番号並記競走馬馬番号；其他欄位不變（BRD-09、JAN-05、IMP-10）', async () => {
+    const { db, foal } = await foalGame({
+      fullName: 'ハイセイコ',
+      baseName: 'ハイセイコ',
+      nameSource: 'manual',
+      aliases: ['ハイセ'],
+    })
+    const result = await importFoalName(db, GAME, item(), options)
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value).toStrictEqual({
+      ...foal,
+      fullName: '(外)ハイセイコー',
+      baseName: 'ハイセイコー',
+      nameSource: 'import',
+      aliases: ['ハイセ', 'ハイセイコ'],
+      abilityNumber: '0x0A1F',
+    })
+    expect(await db.horses.get('F1')).toStrictEqual(result.value)
+    expect(await db.horseNumbers.toArray()).toStrictEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        horseId: 'F1',
+        stage: 'racehorse',
+        number: '0x1B2C',
+        year: 1990,
+        source,
+        timing,
+      },
+    ])
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        year: 1990,
+        recordedAt: now.toISOString(),
+        source,
+        timing,
+        kind: 'foal-name-imported',
+        horseId: 'F1',
+        from: 'ハイセイコ',
+        to: '(外)ハイセイコー',
+        abilityNumber: '0x0A1F',
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe(now.toISOString())
+  })
+
+  it('原本沒有馬名：填入，不留別名，事件沒有 from；手動名和總表相同：只改來源、不留別名，事件的 from 與 to 相同', async () => {
+    const { db, foal } = await foalGame()
+    const named = await importFoalName(db, GAME, item(), options)
+    if (named.status !== 'done') throw new Error(named.status)
+    expect(named.value).toStrictEqual({
+      ...foal,
+      fullName: '(外)ハイセイコー',
+      baseName: 'ハイセイコー',
+      nameSource: 'import',
+      abilityNumber: '0x0A1F',
+    })
+    const [filled] = await db.events.toArray()
+    expect(filled).toMatchObject({ to: '(外)ハイセイコー', abilityNumber: '0x0A1F' })
+    expect(filled).not.toHaveProperty('from')
+
+    const same = await foalGame({
+      fullName: '(外)ハイセイコー',
+      baseName: 'ハイセイコー',
+      nameSource: 'manual',
+      abilityNumber: '0x0A1F',
+    })
+    const confirmed = await importFoalName(same.db, GAME, item(), options)
+    if (confirmed.status !== 'done') throw new Error(confirmed.status)
+    expect(confirmed.value).toStrictEqual({ ...same.foal, nameSource: 'import' })
+    const [event] = await same.db.events.toArray()
+    expect(event).toMatchObject({ from: '(外)ハイセイコー', to: '(外)ハイセイコー' })
+    expect(event).not.toHaveProperty('abilityNumber')
+  })
+
+  it('資料更正：經匯入確認的馬名改用新名，不留別名，事件記原名與新名；新的競走馬馬番号另記一筆，舊的留著（JAN-12）', async () => {
+    const { db, foal } = await foalGame({
+      fullName: 'ハイセイコ',
+      baseName: 'ハイセイコ',
+      nameSource: 'import',
+      abilityNumber: '0x0A1F',
+    })
+    await db.horseNumbers.add({
+      id: 'N0',
+      gameId: GAME,
+      horseId: 'F1',
+      stage: 'racehorse',
+      number: '0x1B2B',
+      year: 1990,
+      source: { kind: 'import', importType: 'january-two-year-olds', importId: 'I0' },
+    })
+    expect(await importFoalName(db, GAME, item(), options)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'name-confirmed' }],
+    })
+    const result = await importFoalName(db, GAME, item(), { ...options, correction: true })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value).toStrictEqual({
+      ...foal,
+      fullName: '(外)ハイセイコー',
+      baseName: 'ハイセイコー',
+    })
+    const numbers = (await db.horseNumbers.toArray()).map((row) => row.number)
+    expect(numbers.sort()).toEqual(['0x1B2B', '0x1B2C'])
+    const [event] = await db.events.toArray()
+    expect(event).toMatchObject({ from: 'ハイセイコ', to: '(外)ハイセイコー' })
+    expect(event).not.toHaveProperty('abilityNumber')
+  })
+
+  it('出生年不同、已有不同的能力番号、另一匹馬已有相同的能力番号與出生年時阻止，原因一次列全；什麼都不寫', async () => {
+    const { db, foal } = await foalGame({ abilityNumber: '0x0001' })
+    await db.horses.add(horseRow('X1', { abilityNumber: '0x0A1F', birthYear: 1989 }))
+    expect(await importFoalName(db, GAME, item({ birthYear: 1989 }), options)).toEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'birth-year' },
+        { kind: 'ability-number' },
+        { kind: 'same-horse', horseId: 'X1' },
+      ],
+    })
+    expect(await db.horses.get('F1')).toStrictEqual(foal)
+    expect(await db.horseNumbers.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+
+    const other = await foalGame()
+    await other.db.horses.add(horseRow('X2', { abilityNumber: '0x0A1F', birthYear: 1988 }))
+    expect(await importFoalName(other.db, GAME, item(), options)).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'same-horse', horseId: 'X2' }],
+    })
+  })
+
+  it('只有前綴或基本馬名空白時阻止；經匯入確認的馬名不同（基本馬名不同也算）而不是資料更正時阻止', async () => {
+    const { db } = await foalGame()
+    const horseName = { status: 'blocked', blocks: [{ kind: 'horse-name' }] }
+    expect(await importFoalName(db, GAME, item({ fullName: '(外)' }), options)).toEqual(horseName)
+    expect(await importFoalName(db, GAME, item({ baseName: ' ' }), options)).toEqual(horseName)
+    const named = await foalGame({
+      fullName: '(外)ハイセイコー',
+      baseName: 'ハイセイコー',
+      nameSource: 'import',
+      abilityNumber: '0x0A1F',
+    })
+    expect(await importFoalName(named.db, GAME, item({ baseName: 'ハイセイコ' }), options)).toEqual(
+      { status: 'blocked', blocks: [{ kind: 'name-confirmed' }] },
+    )
+    expect(await named.db.events.count()).toBe(0)
+  })
+
+  it('只差競走馬馬番号：記一筆馬番号，不寫事件，馬匹不變；什麼都不用改時阻止，什麼都不寫', async () => {
+    const { db, foal } = await foalGame({
+      fullName: '(外)ハイセイコー',
+      baseName: 'ハイセイコー',
+      nameSource: 'import',
+      abilityNumber: '0x0A1F',
+    })
+    expect(await importFoalName(db, GAME, item(), options)).toEqual({
+      status: 'done',
+      value: foal,
+      warnings: [],
+    })
+    expect(await db.horseNumbers.count()).toBe(1)
+    expect(await db.events.count()).toBe(0)
+    const later = new Date('2026-09-28T00:00:00.000Z')
+    expect(await importFoalName(db, GAME, item(), { ...options, now: later })).toEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    expect(await db.horseNumbers.count()).toBe(1)
+    expect((await loadGame(db, GAME)).updatedAt).toBe(now.toISOString())
+  })
+
+  it('馬匹找不到、屬於其他局或不是自家產駒時丟出錯誤', async () => {
+    const { db } = await foalGame()
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([horseRow('F2', { gameId: 'G2', birth: {} }), horseRow('X1')])
+    const missing = importFoalName(db, GAME, item({ horseId: 'X' }), options)
+    await expect(missing).rejects.toThrow('找不到馬匹：X')
+    const otherGame = importFoalName(db, GAME, item({ horseId: 'F2' }), options)
+    await expect(otherGame).rejects.toThrow('找不到馬匹：F2')
+    const market = importFoalName(db, GAME, item({ horseId: 'X1' }), options)
+    await expect(market).rejects.toThrow('不是自家產駒：X1')
   })
 })

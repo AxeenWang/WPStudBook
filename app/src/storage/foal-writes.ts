@@ -1,8 +1,10 @@
 import { checkSubAbilityTotal, isSubAbilityGrade } from '../core/foal'
 import { isSurfaceAptitude } from '../core/horse'
 import { normalizeAbilityNumber, splitHorseName } from '../core/identity'
+import type { FoalNameItem } from '../core/imports'
 import { normalizeSystemName } from '../core/systems'
 import type { WPStudBookDatabase } from './database'
+import { recordHorseNumber } from './horse-numbers'
 import type {
   Conception,
   FoalDisposition,
@@ -86,6 +88,28 @@ export type FoalBlock =
  * - unchanged：和目前相同
  */
 export type FoalNameBlock = { kind: 'name-confirmed' } | { kind: 'horse-name' } | UnchangedBlock
+
+/**
+ * 一月總表填入正式馬名的阻止原因（技術設計 4.3「一月總表的正式馬名」）：
+ * - birth-year：產駒的出生年和項目不同
+ * - ability-number：產駒已有不同的能力番号（6.2）
+ * - same-horse：這一局另一匹馬已有相同的能力番号與出生年（6.2），horseId 是那一匹
+ * - name-confirmed：馬名已經匯入確認、和項目不同，而這次不是資料更正（6.4）
+ * - horse-name：完整馬名只有前綴、沒有馬名，或基本馬名空白（6.4）
+ * - unchanged：馬名、馬名來源與能力番号都相同，競走馬馬番号也已記過
+ */
+export type FoalImportBlock =
+  | { kind: 'birth-year' }
+  | { kind: 'ability-number' }
+  | { kind: 'same-horse'; horseId: string }
+  | { kind: 'name-confirmed' }
+  | { kind: 'horse-name' }
+  | UnchangedBlock
+
+/** importFoalName 的選項：correction 表示這次是資料更正，經匯入確認的馬名可以改成新檔的名稱（9.4） */
+export interface FoalImportOptions extends WriteOptions {
+  correction?: boolean
+}
 
 /** 牧場處置的阻止原因：free-foal 是出生紀錄沒有系與代數的產駒不能改為保留（9.5）；和目前相同 */
 export type DispositionBlock = { kind: 'free-foal' } | UnchangedBlock
@@ -222,7 +246,7 @@ export async function addFoal(
  * 填入、更正或清空自家產駒的正式馬名（需求規格 9.4、BRD-08、BRD-10）：只限自家產駒（有出生紀錄）；
  * 市場馬的手動馬名用 correctHorse。馬名經匯入確認時阻止；fullName 是 null 或只有空白時清空，
  * 清空後沒有馬名，顯示回退追蹤名。基本馬名跟著完整馬名，馬名來源為手動輸入；牧場處置不變。
- * 事件 foal-named 記原名與新名；一月總表取代手動名時的別名由 CE 匯入計畫處理。
+ * 事件 foal-named 記原名與新名；一月總表取代手動名時的別名見 importFoalName。
  * 馬匹找不到、屬於其他局或不是自家產駒時丟出錯誤。
  */
 export async function nameFoal(
@@ -257,6 +281,67 @@ export async function nameFoal(
       horseId,
       ...(current.fullName === undefined ? {} : { from: current.fullName }),
       ...(name ? { to: name.fullName } : {}),
+    })
+    return context.done(foal)
+  })
+}
+
+/**
+ * 一月總表的正式馬名（需求規格 9.4、11.3、BRD-09、JAN-05、IMP-10；技術設計 4.3「一月總表的正式馬名」）：
+ * 一月二歲馬總表的計畫項目，由 applyImport 在匯入的交易內呼叫。完整馬名與基本馬名改用項目的值，馬名來源為
+ * 經匯入確認；原本是手動輸入的馬名而且和新的完整馬名不同時，原本的完整馬名加到別名的最後；沒有能力番号時補上；
+ * 以 recordHorseNumber 記競走馬階段的馬番号（相同的不重複記）。不改父母、出生年、性別、能力、出生紀錄與牧場處置。
+ * 馬名、馬名來源或能力番号有變時寫事件 foal-name-imported；只記了馬番号時不寫事件，horseNumbers 本身就是歷程。
+ * 馬匹找不到、屬於其他局或不是自家產駒時丟出錯誤；馬番号沒有統一寫法時丟出 RangeError
+ */
+export async function importFoalName(
+  db: WPStudBookDatabase,
+  gameId: string,
+  item: FoalNameItem,
+  options: FoalImportOptions = {},
+): Promise<WriteResult<HorseRow, FoalImportBlock>> {
+  return runWrite(db, gameId, [db.horses, db.horseNumbers], options, async (context) => {
+    const current = await loadFoal(context, item.horseId)
+    const blocks: FoalImportBlock[] = []
+    if (current.birthYear !== item.birthYear) blocks.push({ kind: 'birth-year' })
+    if (current.abilityNumber !== undefined && current.abilityNumber !== item.abilityNumber) {
+      blocks.push({ kind: 'ability-number' })
+    }
+    const same = await findSameHorse(context, item.abilityNumber, item.birthYear, current.id)
+    if (same) blocks.push({ kind: 'same-horse', horseId: same.id })
+    const renamed = current.fullName !== item.fullName || current.baseName !== item.baseName
+    if (current.nameSource === 'import' && renamed && options.correction !== true) {
+      blocks.push({ kind: 'name-confirmed' })
+    }
+    if (splitHorseName(item.fullName) === null || item.baseName.trim() === '') {
+      blocks.push({ kind: 'horse-name' })
+    }
+    if (blocks.length > 0) return { status: 'blocked', blocks }
+    const confirms = renamed || current.nameSource !== 'import'
+    const fills = current.abilityNumber === undefined
+    const recorded = await recordHorseNumber(context, current.id, 'racehorse', item.horseNumber)
+    if (!confirms && !fills) {
+      return recorded === undefined
+        ? { status: 'blocked', blocks: [{ kind: 'unchanged' }] }
+        : context.done(current)
+    }
+    const manualName = current.nameSource === 'manual' ? current.fullName : undefined
+    const aliased = manualName !== undefined && manualName !== item.fullName
+    const foal: HorseRow = {
+      ...current,
+      fullName: item.fullName,
+      baseName: item.baseName,
+      nameSource: 'import',
+      ...(aliased ? { aliases: [...(current.aliases ?? []), manualName] } : {}),
+      abilityNumber: item.abilityNumber,
+    }
+    await db.horses.put(foal)
+    await context.addEvent({
+      kind: 'foal-name-imported',
+      horseId: current.id,
+      ...(current.fullName === undefined ? {} : { from: current.fullName }),
+      to: item.fullName,
+      ...(fills ? { abilityNumber: item.abilityNumber } : {}),
     })
     return context.done(foal)
   })
