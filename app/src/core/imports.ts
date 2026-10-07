@@ -70,11 +70,17 @@ export function compareGamePoints(a: GamePoint, b: GamePoint): number {
 /** 套用方式（需求規格 11.1）：一般、資料更正、直接補匯 */
 export type ImportMode = 'normal' | 'correction' | 'catch-up'
 
-/** 結果摘要（需求規格 11.1）：檔案的筆數、套用與略過的筆數；之後各類型的計畫再加自己的欄位 */
+/**
+ * 結果摘要（需求規格 11.1）：檔案的筆數、套用與略過的筆數。一月另填待核對（還沒處理的產駒匹數）、
+ * 警告與錯誤的筆數（技術設計 4.4「一月」）；其他類型沒用到時不存
+ */
 export interface ImportSummary {
   total: number
   applied: number
   skipped: number
+  pending?: number
+  warnings?: number
+  errors?: number
 }
 
 /** 匯入層級的警告：檔案年份比目前遊戲年晚兩年以上（需求規格 11.1、IMP-15）；from 是推進前的目前遊戲年 */
