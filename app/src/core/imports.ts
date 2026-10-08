@@ -70,11 +70,17 @@ export function compareGamePoints(a: GamePoint, b: GamePoint): number {
 /** 套用方式（需求規格 11.1）：一般、資料更正、直接補匯 */
 export type ImportMode = 'normal' | 'correction' | 'catch-up'
 
-/** 結果摘要（需求規格 11.1）：檔案的筆數、套用與略過的筆數；之後各類型的計畫再加自己的欄位 */
+/**
+ * 結果摘要（需求規格 11.1）：檔案的筆數、套用與略過的筆數。一月另填待核對（還沒處理的產駒匹數）、
+ * 警告與錯誤的筆數（技術設計 4.4「一月」）；其他類型沒用到時不存
+ */
 export interface ImportSummary {
   total: number
   applied: number
   skipped: number
+  pending?: number
+  warnings?: number
+  errors?: number
 }
 
 /** 匯入層級的警告：檔案年份比目前遊戲年晚兩年以上（需求規格 11.1、IMP-15）；from 是推進前的目前遊戲年 */
@@ -126,8 +132,42 @@ export interface ImportCheckpoint {
 }
 
 /**
- * 匯入比對快照（技術設計 4.4「資料流」第 4 步）的通用部分：遊戲局、這一局的匯入紀錄與檢查點的摘要。
- * 各類型比對要用的資料由之後的計畫加入
+ * 自家產駒父母的基本馬名（技術設計 4.4「一月」），不知道時留空：
+ * - confirmed：經匯入確認的名稱，保存的匯入名稱優先，沒有時用連結馬匹經匯入確認的基本馬名；判斷父母明顯不符用
+ * - known：任何已知的名稱，保存的名稱優先，沒有時用連結馬匹的基本馬名，手動輸入的也算；以父母退回配對用
+ */
+export interface ImportParentNames {
+  confirmed?: string
+  known?: string
+}
+
+/** 一月比對用的自家產駒（技術設計 4.4「一月」）：有出生紀錄的馬 */
+export interface ImportFoal {
+  id: string
+  birthYear: number
+  /** 能力番号；還沒有時留空 */
+  abilityNumber?: string
+  /** 完整馬名；還沒有正式馬名時留空 */
+  fullName?: string
+  /** 基本馬名；還沒有正式馬名時留空 */
+  baseName?: string
+  /** 馬名的來源：import 為經匯入確認，manual 為手動輸入；沒有馬名時留空 */
+  nameSource?: 'import' | 'manual'
+  sire: ImportParentNames
+  dam: ImportParentNames
+  /** 已記的競走馬馬番号 */
+  racehorseNumbers: string[]
+}
+
+/** 一月二歲馬總表的快照（技術設計 4.4「一月」）：birthYear 是年份減 2，foals 是那一年出生的自家產駒 */
+export interface JanuarySnapshot {
+  birthYear: number
+  foals: ImportFoal[]
+}
+
+/**
+ * 匯入比對快照（技術設計 4.4「資料流」第 4 步）：遊戲局、這一局的匯入紀錄與檢查點的摘要；
+ * 各類型比對要用的資料依類型另外帶（4-3 起）
  */
 export interface ImportSnapshot {
   gameId: string
@@ -136,10 +176,29 @@ export interface ImportSnapshot {
   updatedAt: string
   imports: ImportRecord[]
   checkpoints: ImportCheckpoint[]
+  /** 一月二歲馬總表的資料；其他類型沒有 */
+  january?: JanuarySnapshot
 }
 
-/** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作；這一塊還沒有項目，從 4-3 一月起加入 */
-export type ImportPlanItem = never
+/**
+ * 一月二歲馬總表的一項（技術設計 4.4「一月」）：替自家產駒填入總表的正式馬名、補能力番号、記競走馬馬番号。
+ * 帶這一列的值，要改什麼由寫入操作在交易內與目前的資料比對
+ */
+export interface FoalNameItem {
+  kind: 'foal-name'
+  horseId: string
+  birthYear: number
+  /** 第 1 欄的完整馬名 */
+  fullName: string
+  /** 第 77 欄的基本馬名 */
+  baseName: string
+  abilityNumber: string
+  /** 競走馬馬番号 */
+  horseNumber: string
+}
+
+/** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作，各類型的項目加進這個聯合型別 */
+export type ImportPlanItem = FoalNameItem
 
 /** 套用計畫（技術設計 4.4「流程」）：storage 的 applyImport 依它在一個交易內套用 */
 export interface ImportPlan {

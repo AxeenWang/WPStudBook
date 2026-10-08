@@ -3,10 +3,11 @@ import { addTestGame, testDatabase } from '../../tests/support/database'
 import { stubDownloads } from '../../tests/support/download'
 import { fakeFolder, storeFakeFolder } from '../../tests/support/folder'
 import { importRecord } from '../../tests/support/imports'
-import { GAME, checkpointRow } from '../../tests/support/rows'
-import type { ImportPlan } from '../core/imports'
+import { GAME, checkpointRow, horseRow } from '../../tests/support/rows'
+import type { FoalNameItem, ImportPlan } from '../core/imports'
 import { listCheckpoints } from './checkpoints'
 import { loadGame } from './games'
+import type { GameRow, HorseNumberRow, HorseStage } from './records'
 import { applyImport, loadImportSnapshot } from './imports'
 import { APP_VERSION } from './version'
 
@@ -30,7 +31,8 @@ describe('loadImportSnapshot', () => {
       checkpointRow('C2', { year: 1971, createdAt: '2026-10-01T00:00:02.000Z' }),
       checkpointRow('C3', { gameId: 'G2' }),
     ])
-    expect(await loadImportSnapshot(db, GAME)).toStrictEqual({
+    const scope = { type: 'may-herd', year: 1971 } as const
+    expect(await loadImportSnapshot(db, GAME, scope)).toStrictEqual({
       gameId: GAME,
       currentYear: 1971,
       updatedAt: '2026-10-01T01:00:00.000Z',
@@ -47,12 +49,136 @@ describe('loadImportSnapshot', () => {
     })
   })
 
+  it('一月二歲馬總表：另讀出生年為年份減 2 的自家產駒，帶父母名的兩種值與已記的競走馬馬番号（技術設計 4.4「一月」）', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('S1', { fullName: 'チチイチ', baseName: 'チチイチ', nameSource: 'import' }),
+      horseRow('S2', { fullName: 'チチニ', baseName: 'チチニ', nameSource: 'manual' }),
+      horseRow('M1', { fullName: '(外)ハハイチ', baseName: 'ハハイチ', nameSource: 'import' }),
+      horseRow('M2', { fullName: 'ハハニ', baseName: 'ハハニ', nameSource: 'manual' }),
+      // 父母連結的馬：經匯入確認的名稱只取匯入的
+      horseRow('F1', {
+        birthYear: 1988,
+        sex: 'male',
+        sireId: 'S1',
+        damId: 'M1',
+        birth: {},
+        abilityNumber: '0x0101',
+        fullName: 'テイオー',
+        baseName: 'テイオー',
+        nameSource: 'import',
+      }),
+      horseRow('F2', {
+        birthYear: 1988,
+        sex: 'female',
+        sireId: 'S2',
+        damId: 'M2',
+        birth: {},
+        fullName: 'カリナ',
+        baseName: 'カリナ',
+        nameSource: 'manual',
+      }),
+      // 保存的名稱優先於連結的馬；手動輸入的保存名稱不算經匯入確認
+      horseRow('F3', {
+        birthYear: 1988,
+        sex: 'male',
+        sireId: 'S2',
+        sireName: 'ガイブチチ',
+        damId: 'M1',
+        pedigreeSource: 'import',
+        birth: {},
+      }),
+      horseRow('F4', {
+        birthYear: 1988,
+        sex: 'female',
+        sireName: 'テウチチチ',
+        damId: 'M2',
+        pedigreeSource: 'manual',
+        birth: {},
+      }),
+      // 不讀：其他出生年、市場馬（沒有出生紀錄）、其他局
+      horseRow('F5', { birthYear: 1989, sex: 'male', damId: 'M1', birth: {} }),
+      horseRow('X1', {
+        birthYear: 1988,
+        sex: 'female',
+        fullName: 'シジョウ',
+        baseName: 'シジョウ',
+      }),
+      horseRow('F6', { gameId: 'G2', birthYear: 1988, birth: {} }),
+    ])
+    await db.horseNumbers.bulkAdd([
+      numberRow('N1', 'F1', 'racehorse', '0x0201'),
+      numberRow('N2', 'F1', 'foal', '0x0301'),
+      numberRow('N3', 'F2', 'racehorse', '0x0202'),
+      numberRow('N4', 'F5', 'racehorse', '0x0203'),
+    ])
+    const scope = { type: 'january-two-year-olds', year: 1990 } as const
+    const snapshot = await loadImportSnapshot(db, GAME, scope)
+    expect(snapshot.january).toStrictEqual({
+      birthYear: 1988,
+      foals: [
+        {
+          id: 'F1',
+          birthYear: 1988,
+          abilityNumber: '0x0101',
+          fullName: 'テイオー',
+          baseName: 'テイオー',
+          nameSource: 'import',
+          sire: { confirmed: 'チチイチ', known: 'チチイチ' },
+          dam: { confirmed: 'ハハイチ', known: 'ハハイチ' },
+          racehorseNumbers: ['0x0201'],
+        },
+        {
+          id: 'F2',
+          birthYear: 1988,
+          fullName: 'カリナ',
+          baseName: 'カリナ',
+          nameSource: 'manual',
+          sire: { known: 'チチニ' },
+          dam: { known: 'ハハニ' },
+          racehorseNumbers: ['0x0202'],
+        },
+        {
+          id: 'F3',
+          birthYear: 1988,
+          sire: { confirmed: 'ガイブチチ', known: 'ガイブチチ' },
+          dam: { confirmed: 'ハハイチ', known: 'ハハイチ' },
+          racehorseNumbers: [],
+        },
+        {
+          id: 'F4',
+          birthYear: 1988,
+          sire: { known: 'テウチチチ' },
+          dam: { known: 'ハハニ' },
+          racehorseNumbers: [],
+        },
+      ],
+    })
+    expect(snapshot.imports).toStrictEqual([])
+  })
+
+  it('產駒連結的父母不在 horses 中時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.add(horseRow('F1', { birthYear: 1988, damId: 'M9', birth: {} }))
+    const scope = { type: 'january-two-year-olds', year: 1990 } as const
+    await expect(loadImportSnapshot(db, GAME, scope)).rejects.toThrow('找不到馬匹：M9')
+  })
+
   it('遊戲局不存在時丟出錯誤', async () => {
-    await expect(loadImportSnapshot(testDatabase(), 'missing')).rejects.toThrow(
+    const scope = { type: 'may-herd', year: 1990 } as const
+    await expect(loadImportSnapshot(testDatabase(), 'missing', scope)).rejects.toThrow(
       '找不到遊戲局：missing',
     )
   })
 })
+
+/** 階段馬番号：1988 年手動記的 */
+function numberRow(id: string, horseId: string, stage: HorseStage, number: string): HorseNumberRow {
+  return { id, gameId: GAME, horseId, stage, number, year: 1988, source: { kind: 'manual' } }
+}
 
 describe('applyImport', () => {
   afterEach(() => {
@@ -256,6 +382,115 @@ describe('applyImport', () => {
     })
     expect(await offline.imports.count()).toBe(1)
     expect((await loadGame(offline, GAME)).lastBackupAt).toBeUndefined()
+  })
+
+  /** 一月二歲馬總表的計畫：1990 年 1 月 1 週 */
+  function januaryPlan(items: FoalNameItem[], fields: Partial<ImportPlan> = {}): ImportPlan {
+    return plan({
+      type: 'january-two-year-olds',
+      timing: { month: 1, week: 1 },
+      fileName: '1990年 1月1週._二歲新馬.txt',
+      items,
+      ...fields,
+    })
+  }
+
+  /** 1988 年生的自家產駒：F1 是手動名タロ，F2 已由總表填入ハナコ */
+  async function januaryGame(fields: Partial<GameRow> = {}) {
+    const db = testDatabase()
+    await addTestGame(db, fields)
+    await db.horses.bulkAdd([
+      horseRow('F1', {
+        birthYear: 1988,
+        birth: {},
+        fullName: 'タロ',
+        baseName: 'タロ',
+        nameSource: 'manual',
+      }),
+      horseRow('F2', {
+        birthYear: 1988,
+        birth: {},
+        fullName: 'ハナコ',
+        baseName: 'ハナコ',
+        nameSource: 'import',
+        abilityNumber: '0x0002',
+      }),
+    ])
+    return db
+  }
+
+  /** 總表的一列：1988 年生，基本馬名與完整馬名相同 */
+  function foalItem(horseId: string, name: string, abilityNumber: string, horseNumber: string) {
+    const item: FoalNameItem = {
+      kind: 'foal-name',
+      horseId,
+      birthYear: 1988,
+      fullName: name,
+      baseName: name,
+      abilityNumber,
+      horseNumber,
+    }
+    return item
+  }
+
+  const ITEMS = [
+    foalItem('F1', 'タロウ', '0x0001', '0x1001'),
+    foalItem('F2', 'ハナヨ', '0x0002', '0x1002'),
+  ]
+
+  it('逐項套用計畫的項目：事件與馬番号帶這次的匯入紀錄與時點；資料更正時經匯入確認的馬名也改', async () => {
+    const db = await januaryGame()
+    stubDownloads()
+    const correction = januaryPlan(ITEMS, { mode: 'correction', corrects: 'J0' })
+    const result = await applyImport(db, correction, { now: NOW })
+    if (result.status !== 'done') throw new Error(result.status)
+    const source = {
+      kind: 'import',
+      importType: 'january-two-year-olds',
+      importId: result.value.record.id,
+    }
+    const timing = { month: 1, week: 1 }
+    expect(await db.horses.get('F1')).toMatchObject({
+      fullName: 'タロウ',
+      nameSource: 'import',
+      aliases: ['タロ'],
+      abilityNumber: '0x0001',
+    })
+    expect(await db.horses.get('F2')).toMatchObject({ fullName: 'ハナヨ', nameSource: 'import' })
+    const events = await db.events.toArray()
+    expect(events).toHaveLength(2)
+    for (const event of events) {
+      expect(event).toMatchObject({
+        kind: 'foal-name-imported',
+        source,
+        timing,
+        recordedAt: NOW.toISOString(),
+      })
+    }
+    const numbers = await db.horseNumbers.toArray()
+    expect(numbers).toHaveLength(2)
+    for (const row of numbers) expect(row).toMatchObject({ stage: 'racehorse', source, timing })
+  })
+
+  it('某一項被阻止時整筆回復：推進年份、前面的項目與匯入紀錄都不留，回傳 item-blocked 指出第幾項與原因；不建檢查點、不備份', async () => {
+    const db = await januaryGame({ currentYear: 1989 })
+    const game = await loadGame(db, GAME)
+    const horses = await db.horses.toArray()
+    const downloads = stubDownloads()
+    const result = await applyImport(db, januaryPlan(ITEMS, { advanceYear: 1990 }), { now: NOW })
+    expect(result).toStrictEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'item-blocked', index: 1, item: ITEMS[1], blocks: [{ kind: 'name-confirmed' }] },
+      ],
+    })
+    expect(await loadGame(db, GAME)).toStrictEqual(game)
+    expect(await db.horses.toArray()).toStrictEqual(horses)
+    expect(await db.imports.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+    expect(await db.horseNumbers.count()).toBe(0)
+    expect(await listCheckpoints(db, GAME)).toEqual([])
+    expect(downloads).toHaveLength(0)
   })
 
   it('遊戲局不存在時丟出錯誤', async () => {

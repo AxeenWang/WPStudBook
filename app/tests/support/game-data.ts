@@ -17,6 +17,10 @@ export function sampleRows(gameId: string): Omit<GameData, 'games' | 'settings'>
     horses: [
       horseRow(id('F'), {
         gameId,
+        fullName: 'テストフォール',
+        baseName: 'テストフォール',
+        nameSource: 'import',
+        aliases: ['テストフォ'],
         birthYear: 1990,
         sex: 'male',
         sireId: id('S'),

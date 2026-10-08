@@ -136,8 +136,7 @@ describe('資料保存（DATA）', () => {
     expect((await loadGame(db, GAME)).currentYear).toBe(1991)
   })
 
-  it('DATA-02 備份為 JSON.GZ 並還原為新遊戲局 → 集合筆數、識別、父母關聯、狀態與年度紀錄一致', async () => {
-    // 別名由 CE 匯入計畫加入後補進這條測試（技術設計第 10 節）
+  it('DATA-02 備份為 JSON.GZ 並還原為新遊戲局 → 集合筆數、識別、父母關聯、別名、狀態與年度紀錄一致', async () => {
     const db = testDatabase()
     const original = await addSampleGame(db, { name: '第一局' })
     const exported = await exportBackup(db, GAME)
@@ -175,6 +174,9 @@ describe('資料保存（DATA）', () => {
     })
     expect(countRows(restored)).toEqual(countRows(original))
     expect(await readGameData(db, GAME)).toStrictEqual(original)
+    // 一月總表取代手動名時留下的別名（BRD-09）
+    const foal = restored.horses.find((horse) => horse.baseName === 'テストフォール')
+    expect(foal?.aliases).toEqual(['テストフォ'])
   })
 
   it('DATA-03 日文馬名、中文備註、特殊字元、0、空白、未知值往返 → 語意不變', async () => {
