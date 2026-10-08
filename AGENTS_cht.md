@@ -10,7 +10,7 @@ CodeLab-Governance: optional
 
 本專案支援 CodeLab-managed 與 standalone 兩種運作模式。
 
-當 `../../AGENTS.md` 含有完全相符的獨立行 `CodeLab-Workspace-Root: v1`，且必要錨點可用時，使用 CodeLab-managed mode。進行專案工作前，先讀 `../../AGENTS.md` 與 `../../governance_eng.md`。Claude Code / Cowork 另須讀 `../../CLAUDE.md`。只有在中文請求、雙語維護或檢查不一致時，才讀 `../../governance_cht.md`。
+當 `../../AGENTS.md` 含有完全相符的獨立行 `CodeLab-Workspace-Root: v1`，且必要錨點可用時，使用 CodeLab-managed mode。進行專案工作前，先讀 `../../AGENTS.md` 與 `../../governance_eng.md`。Claude Code / Cowork 另須讀 `../../CLAUDE.md`。只有在要求中文條文、雙語維護或檢查不一致時，才讀 `../../governance_cht.md`。
 
 其他情況下，不得到別處搜尋替代品。使用 standalone mode 與專案本地規則。未經使用者授權，不得讀寫專案目錄以外的內容。互動式工作與非互動式輸出都要回報模式及原因。
 

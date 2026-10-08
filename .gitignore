@@ -1,6 +1,6 @@
 # Agent temp areas
-.codex-tmp/
-.claude-tmp/
+.camp_codex/
+.camp_claude/
 
 # Local reference materials (user spreadsheets, game export samples)
 .references/
