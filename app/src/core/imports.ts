@@ -1,6 +1,6 @@
 import type { Base } from './horse'
 import type { LinePosition } from './lines'
-import type { HerdStatus, MareAssignment, MareUsage } from './mares'
+import type { AbsenceReason, HerdStatus, MareAssignment, MareUsage } from './mares'
 
 // ce-import 與 storage 共用的匯入型別與規則（技術設計 4.2、4.4）
 
@@ -299,8 +299,86 @@ export interface MareCreateItem {
   confirmed?: true
 }
 
+/** 五月缺席：在圈的母馬離圈，原因是售出或定年引退（技術設計 4.3「五月缺席的離圈」） */
+export interface MareDepartItem {
+  kind: 'mare-depart'
+  horseId: string
+  reason: AbsenceReason
+}
+
+/** 撤銷離圈、回到生產中：已登記賣出選撤銷，或資料更正的特例（技術設計 4.4「五月對帳」） */
+export interface MareRevokeItem {
+  kind: 'mare-revoke'
+  horseId: string
+}
+
+/** 補齊身分：補上空白的能力番号與出生年（技術設計 4.3「補齊身分」），帶名單的值 */
+export interface HorseIdentityItem {
+  kind: 'horse-identity'
+  horseId: string
+  abilityNumber: string
+  birthYear: number
+}
+
+/** 回歸或視為買回：據點取名單；市場母馬在用途把關改了用途時帶用途 */
+export interface MareReturnItem {
+  kind: 'mare-return'
+  horseId: string
+  location: Base
+  assignment?: MareAssignment
+  /** 例外補入的原因（需求規格 7.3）；不是例外補入時不保存 */
+  exceptionReason?: string
+  /** 使用者已確認這一項的警告（套用回傳 item-unconfirmed 之後標記） */
+  confirmed?: true
+}
+
+/** 還沒進過繁殖圈的自家牝駒轉入，據點取名單 */
+export interface FillyTransferItem {
+  kind: 'filly-transfer'
+  horseId: string
+  location: Base
+}
+
+/** 繼續在圈的母馬轉場，或補上原本不知道的據點 */
+export interface MareMoveItem {
+  kind: 'mare-move'
+  horseId: string
+  location: Base
+}
+
+/** 記一筆階段馬番号（技術設計 4.3「繁殖牝馬馬番号」）；五月是繁殖牝馬階段 */
+export interface HorseNumberItem {
+  kind: 'horse-number'
+  horseId: string
+  stage: 'broodmare'
+  number: string
+}
+
+/** 用途把關改了繼續在圈的市場母馬的用途 */
+export interface MareUsageItem {
+  kind: 'mare-usage'
+  horseId: string
+  assignment: MareAssignment
+  /** 例外補入的原因（需求規格 7.3）；不是例外補入時不保存 */
+  exceptionReason?: string
+  /** 使用者已確認這一項的警告（套用回傳 item-unconfirmed 之後標記） */
+  confirmed?: true
+}
+
+/** 五月繁殖圈名單的項目（技術設計 4.4「五月對帳」） */
+export type MayItem =
+  | MareDepartItem
+  | MareRevokeItem
+  | HorseIdentityItem
+  | MareReturnItem
+  | FillyTransferItem
+  | MareCreateItem
+  | MareMoveItem
+  | HorseNumberItem
+  | MareUsageItem
+
 /** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作，各類型的項目加進這個聯合型別 */
-export type ImportPlanItem = FoalNameItem
+export type ImportPlanItem = FoalNameItem | MayItem
 
 /** 套用計畫（技術設計 4.4「流程」）：storage 的 applyImport 依它在一個交易內套用 */
 export interface ImportPlan {

@@ -25,9 +25,19 @@ import type { WPStudBookDatabase } from './database'
 import { importFoalName, type FoalImportBlock } from './foal-writes'
 import { gameTables } from './game-data'
 import { loadGame, loadSettings, setCurrentYear } from './games'
-import type { EventRow, EventSource, HorseRow, MareRow } from './records'
+import { correctDeparture, departMare, moveMare, returnMare } from './herd-writes'
+import { importHorseNumber } from './horse-numbers'
+import { fillHorseIdentity, type IdentityBlock } from './horse-writes'
+import {
+  changeMareUsage,
+  importMare,
+  type ImportMareBlock,
+  type MareUsageBlock,
+} from './mare-writes'
+import { transferFilly } from './own-mare-writes'
+import type { EventRow, EventSource, HorseRow, MareRow, WriteWarning } from './records'
 import { saveBackup, type SavedBackup } from './save-backup'
-import { runWrite, type WriteOptions, type WriteResult } from './writes'
+import { runWrite, type SuccessorCheckBlock, type WriteOptions, type WriteResult } from './writes'
 
 // CE 匯入的快照與套用（技術設計 4.4「資料流」「流程」）
 
@@ -310,16 +320,20 @@ function parentNames(
 }
 
 /** 計畫的項目被寫入操作阻止的原因（技術設計 4.4「流程」）：各類型寫入操作的阻止原因 */
-export type ImportItemBlock = FoalImportBlock
+export type ImportItemBlock =
+  FoalImportBlock | IdentityBlock | ImportMareBlock | MareUsageBlock | SuccessorCheckBlock
 
 /**
  * 套用的阻止原因（技術設計 4.4「資料流」第 7 步、「流程」），什麼都不寫：
  * - changed-since-preview：預覽之後遊戲局有變更，由畫面重新預覽
  * - item-blocked：計畫的第 index 項（從 0 起算）被寫入操作阻止，整筆回復；blocks 是寫入操作的阻止原因
+ * - item-unconfirmed：計畫的第 index 項有要確認的警告，整筆回復；使用者確認後把那一項標為已確認，
+ *   重新產生計畫再套用（CE 匯入子計畫 4-4）
  */
 export type ImportApplyBlock =
   | { kind: 'changed-since-preview' }
   | { kind: 'item-blocked'; index: number; item: ImportPlanItem; blocks: ImportItemBlock[] }
+  | { kind: 'item-unconfirmed'; index: number; item: ImportPlanItem; warnings: WriteWarning[] }
 
 /** 交易提交後的一步：完成時附結果，失敗時附錯誤訊息；失敗不撤銷匯入 */
 export type AfterImport<T> = { status: 'done'; value: T } | { status: 'failed'; error: string }
@@ -341,8 +355,8 @@ export interface ApplyImportOptions {
  * 年度匯入的第一個 await 是 prepareBackupTarget：瀏覽器只在使用者剛操作後的短時間內允許申請權限
  * （技術設計第 7 節）；累加與選用匯入不備份，不呼叫。接著在一個 rw 交易內（GAME_TABLES）：遊戲局的
  * 更新時間不等於計畫的 expectedUpdatedAt 時阻止（changed-since-preview），什麼都不寫；有 advanceYear 時
- * 先推進年份；逐項套用計畫的項目，某一項被阻止時整筆回復並回傳 item-blocked；最後寫入匯入紀錄，
- * 遊戲局的更新時間跟著更新。
+ * 先推進年份；逐項套用計畫的項目，某一項被阻止時整筆回復並回傳 item-blocked，要確認時整筆回復並回傳
+ * item-unconfirmed；最後寫入匯入紀錄，遊戲局的更新時間跟著更新。
  * 交易提交後，年度匯入先建立檢查點（auto，時點是套用後的目前進度，直接補匯另記補匯的年與時點），
  * 再以取得的目標儲存備份；兩步各自失敗時不撤銷匯入，結果附上錯誤訊息。遊戲局不存在時丟出錯誤
  */
@@ -396,8 +410,8 @@ class ItemStopped extends Error {
 /**
  * 套用的交易：更新時間不等於計畫的 expectedUpdatedAt 時回傳 changed-since-preview，什麼都不寫；
  * 否則推進年份、逐項套用計畫的項目、寫入匯入紀錄，回傳匯入紀錄與套用後的目前進度。
- * 某一項被阻止時丟出 ItemStopped 讓整筆回復，由 applyImport 接住；寫入操作回傳待確認時丟出錯誤
- * （一月沒有要確認的警告，項目的確認由之後的計畫加入）
+ * 某一項被阻止時丟出 ItemStopped 讓整筆回復，由 applyImport 接住；寫入操作回傳待確認時，
+ * 可以確認的項目（CONFIRMABLE）同樣丟出 ItemStopped，回傳 item-unconfirmed，其他項目丟出錯誤（預期外的失敗）
  */
 async function commitImport(
   db: WPStudBookDatabase,
@@ -423,7 +437,10 @@ async function commitImport(
       if (result.status === 'blocked') {
         throw new ItemStopped({ kind: 'item-blocked', index, item, blocks: result.blocks })
       }
-      if (result.status === 'unconfirmed') throw new Error(`計畫的第 ${index} 項有待確認的警告`)
+      if (result.status === 'unconfirmed') {
+        if (!CONFIRMABLE.has(item.kind)) throw new Error(`計畫的第 ${index} 項有待確認的警告`)
+        throw new ItemStopped({ kind: 'item-unconfirmed', index, item, warnings: result.warnings })
+      }
     }
     const record: ImportRecord = {
       id,
@@ -450,6 +467,15 @@ async function commitImport(
   })
 }
 
+/**
+ * 可以確認的項目：寫入操作可能回傳待確認的五月項目（用途把關的 8.3 與 7.3 警告），帶 confirmed（技術設計 4.4「流程」）
+ */
+const CONFIRMABLE: ReadonlySet<ImportPlanItem['kind']> = new Set([
+  'mare-return',
+  'mare-create',
+  'mare-usage',
+])
+
 /** 依項目的種類呼叫對應的寫入操作（技術設計 4.4「流程」）；資料更正時讓寫入操作改經匯入確認的馬名 */
 async function applyItem(
   db: WPStudBookDatabase,
@@ -463,7 +489,35 @@ async function applyItem(
         ...write,
         correction: plan.mode === 'correction',
       })
+    case 'mare-depart':
+      return departMare(db, plan.gameId, item.horseId, item.reason, write)
+    case 'mare-revoke':
+      return correctDeparture(db, plan.gameId, item.horseId, 'in-herd', write)
+    case 'horse-identity':
+      return fillHorseIdentity(db, plan.gameId, item.horseId, item, write)
+    case 'mare-return': {
+      const { location, assignment, exceptionReason } = item
+      const input = { location, assignment, exceptionReason }
+      return returnMare(db, plan.gameId, item.horseId, input, confirmedBy(item, write))
+    }
+    case 'filly-transfer':
+      return transferFilly(db, plan.gameId, item.horseId, { location: item.location }, write)
+    case 'mare-create':
+      return importMare(db, plan.gameId, item, confirmedBy(item, write))
+    case 'mare-move':
+      return moveMare(db, plan.gameId, item.horseId, item.location, write)
+    case 'horse-number':
+      return importHorseNumber(db, plan.gameId, item.horseId, item.stage, item.number, write)
+    case 'mare-usage': {
+      const input = { assignment: item.assignment, exceptionReason: item.exceptionReason }
+      return changeMareUsage(db, plan.gameId, item.horseId, input, confirmedBy(item, write))
+    }
   }
+}
+
+/** 項目標記了確認時，把確認傳給寫入操作 */
+function confirmedBy(item: { confirmed?: true }, write: WriteOptions): WriteOptions {
+  return item.confirmed === true ? { ...write, confirmed: true } : write
 }
 
 /** 交易提交後的一步：丟出例外時記下錯誤訊息，不撤銷匯入 */

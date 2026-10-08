@@ -7,11 +7,21 @@ import {
   GAME,
   checkpointRow,
   horseRow,
+  lineRow,
   ownMareRow,
+  stallionRow,
   substituteMareRow,
   ungroupedMareRow,
 } from '../../tests/support/rows'
-import type { FoalNameItem, ImportPlan } from '../core/imports'
+import type {
+  FoalNameItem,
+  ImportPlan,
+  ImportPlanItem,
+  MareCreateItem,
+  MareDepartItem,
+  MareReturnItem,
+  MareUsageItem,
+} from '../core/imports'
 import { listCheckpoints } from './checkpoints'
 import { loadGame } from './games'
 import type {
@@ -836,6 +846,162 @@ describe('applyImport', () => {
     expect(await db.horseNumbers.count()).toBe(0)
     expect(await listCheckpoints(db, GAME)).toEqual([])
     expect(downloads).toHaveLength(0)
+  })
+
+  /**
+   * 五月的測試局：第 1 系已開啟（マンノウォー，親系統 マッチェム），零代與 1 代種牡馬在崗，所以產出第 1 系 2 代的配對
+   * 在任務看板上（替代第 2 系 1 代）。母馬：在圈的 A、C（沒有能力番号）、E（據點 32）、U（父系 マンノウォー）與 V，
+   * 已售出的 B 與 R（父系 マンノウォー），都是待指定用途；還沒進過繁殖圈的自家牝駒 F（自由配種所生）
+   */
+  async function mayGame() {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.systems.add({ gameId: GAME, subsystem: 'マンノウォー', parentSystem: 'マッチェム' })
+    await db.stallions.bulkAdd([stallionRow('Z1', 1, 0), stallionRow('S11', 1, 1)])
+    await db.horses.bulkAdd([
+      horseRow('A', { sex: 'female' }),
+      horseRow('B', { sex: 'female' }),
+      horseRow('C', { sex: 'female', fullName: 'シー', baseName: 'シー', nameSource: 'manual' }),
+      horseRow('E', { sex: 'female' }),
+      horseRow('R', { sex: 'female', sireSystem: 'マンノウォー' }),
+      horseRow('U', { sex: 'female', sireSystem: 'マンノウォー' }),
+      horseRow('V', { sex: 'female' }),
+      horseRow('F', { sex: 'female', birthYear: 1986, birth: {}, disposition: 'for-sale' }),
+    ])
+    await db.mares.bulkAdd([
+      ungroupedMareRow('A', 'unassigned'),
+      ungroupedMareRow('B', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('C', 'unassigned'),
+      ungroupedMareRow('E', 'unassigned', { location: 32 }),
+      ungroupedMareRow('R', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('U', 'unassigned'),
+      ungroupedMareRow('V', 'unassigned'),
+    ])
+    return db
+  }
+
+  /** 產出第 1 系 2 代的配對：替代第 2 系 1 代 */
+  const PAIRING = { kind: 'pairing', line: 1, generation: 2 } as const
+
+  /** 五月名單上沒配到任何紀錄的一列：待指定用途、據點 35 */
+  const CREATE: MareCreateItem = {
+    kind: 'mare-create',
+    fullName: 'ニューカマー',
+    baseName: 'ニューカマー',
+    abilityNumber: '0x0E01',
+    birthYear: 1985,
+    sireName: '',
+    damName: '',
+    femaleLine: '',
+    location: 35,
+    horseNumber: '0x1E02',
+    assignment: { kind: 'unassigned' },
+  }
+
+  it('五月的九種項目依序交給對應的寫入操作：事件與馬番号帶這次的匯入紀錄與時點（技術設計 4.4「五月對帳」）', async () => {
+    const db = await mayGame()
+    stubDownloads()
+    const items: ImportPlanItem[] = [
+      { kind: 'mare-depart', horseId: 'A', reason: 'retired' },
+      { kind: 'mare-revoke', horseId: 'B' },
+      { kind: 'horse-identity', horseId: 'C', abilityNumber: '0x0C01', birthYear: 1984 },
+      { kind: 'mare-return', horseId: 'R', location: 33 },
+      { kind: 'filly-transfer', horseId: 'F', location: 34 },
+      CREATE,
+      { kind: 'mare-move', horseId: 'E', location: 34 },
+      { kind: 'horse-number', horseId: 'E', stage: 'broodmare', number: '0x1E01' },
+      { kind: 'mare-usage', horseId: 'V', assignment: PAIRING },
+    ]
+    const result = await applyImport(db, plan({ items }), { now: NOW })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(await db.mares.get('A')).toMatchObject({ herd: 'retired' })
+    expect(await db.mares.get('B')).toMatchObject({ herd: 'in-herd' })
+    expect(await db.horses.get('C')).toMatchObject({ abilityNumber: '0x0C01', birthYear: 1984 })
+    expect(await db.mares.get('R')).toMatchObject({ herd: 'in-herd', location: 33 })
+    expect(await db.mares.get('F')).toMatchObject({ usage: 'free', herd: 'in-herd', location: 34 })
+    const created = await db.horses
+      .where('[gameId+baseName]')
+      .equals([GAME, 'ニューカマー'])
+      .first()
+    expect(await db.mares.get(created?.id ?? '')).toMatchObject({
+      usage: 'unassigned',
+      location: 35,
+    })
+    expect(await db.mares.get('E')).toMatchObject({ location: 34 })
+    expect(await db.mares.get('V')).toMatchObject({
+      usage: 'substitute',
+      groupLine: 2,
+      groupGeneration: 1,
+    })
+    const source = { kind: 'import', importType: 'may-herd', importId: result.value.record.id }
+    const timing = { month: 5, week: 1 }
+    const events = await db.events.toArray()
+    expect(events.map((event) => event.kind).sort()).toStrictEqual([
+      'horse-identity-filled',
+      'mare-added',
+      'mare-departed',
+      'mare-departure-corrected',
+      'mare-moved',
+      'mare-returned',
+      'mare-transferred',
+      'mare-usage-changed',
+    ])
+    for (const event of events) expect(event).toMatchObject({ source, timing })
+    const numbers = await db.horseNumbers.toArray()
+    expect(numbers.map((row) => row.number).sort()).toStrictEqual(['0x1E01', '0x1E02'])
+    for (const row of numbers) expect(row).toMatchObject({ stage: 'broodmare', source, timing })
+  })
+
+  it('某一項要確認時整筆回復，回傳 item-unconfirmed 指出第幾項與警告；標記確認後重新套用，確認傳給寫入操作', async () => {
+    const db = await mayGame()
+    const downloads = stubDownloads()
+    const depart: MareDepartItem = { kind: 'mare-depart', horseId: 'A', reason: 'sold' }
+    const returning: MareReturnItem = {
+      kind: 'mare-return',
+      horseId: 'R',
+      location: 33,
+      assignment: PAIRING,
+    }
+    const creating: MareCreateItem = { ...CREATE, sireSystem: 'マンノウォー', assignment: PAIRING }
+    const changing: MareUsageItem = { kind: 'mare-usage', horseId: 'U', assignment: PAIRING }
+    const warning = {
+      kind: 'substitute-parent-system',
+      line: 2,
+      generation: 1,
+      conflicts: [{ kind: 'line', parentSystem: 'マッチェム', lines: [1] }],
+    }
+    const apply = (items: ImportPlanItem[]) => applyImport(db, plan({ items }), { now: NOW })
+    const unconfirmed = (index: number, item: ImportPlanItem) => ({
+      status: 'blocked',
+      blocks: [{ kind: 'item-unconfirmed', index, item, warnings: [warning] }],
+    })
+    expect(await apply([depart, returning, creating, changing])).toStrictEqual(
+      unconfirmed(1, returning),
+    )
+    expect(await db.mares.get('A')).toMatchObject({ herd: 'in-herd' })
+    expect(await db.mares.get('R')).toMatchObject({ herd: 'sold' })
+    expect(await db.imports.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+    expect(await listCheckpoints(db, GAME)).toEqual([])
+    expect(downloads).toHaveLength(0)
+
+    const returned = { ...returning, confirmed: true as const }
+    expect(await apply([depart, returned, creating, changing])).toStrictEqual(
+      unconfirmed(2, creating),
+    )
+    const created = { ...creating, confirmed: true as const }
+    expect(await apply([depart, returned, created, changing])).toStrictEqual(
+      unconfirmed(3, changing),
+    )
+    const changed = { ...changing, confirmed: true as const }
+    const result = await apply([depart, returned, created, changed])
+    expect(result.status).toBe('done')
+    const confirmedKinds = (await db.events.toArray())
+      .filter((event) => event.confirmedWarnings !== undefined)
+      .map((event) => event.kind)
+      .sort()
+    expect(confirmedKinds).toStrictEqual(['mare-added', 'mare-returned', 'mare-usage-changed'])
   })
 
   it('遊戲局不存在時丟出錯誤', async () => {
