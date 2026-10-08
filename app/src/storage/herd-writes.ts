@@ -13,7 +13,7 @@ import {
   type AssignmentBlock,
   type MareAssignment,
 } from './mare-assignment'
-import type { Base, HerdStatus, MareRow } from './records'
+import type { Base, DepartedStatus, HerdStatus, MareRow } from './records'
 import { ownSisterStatus } from './snapshot'
 import {
   confirmation,
@@ -61,6 +61,29 @@ export async function sellMare(
     const mare: MareRow = { ...current, herd: 'sold' }
     await db.mares.put(mare)
     await context.addEvent({ kind: 'mare-departed', horseId, reason: 'sold' })
+    return context.done(mare)
+  })
+}
+
+/**
+ * 五月缺席的離圈（需求規格 8.5、11.5、MARE-09、MAY-12；技術設計 4.3「五月缺席的離圈」）：
+ * 五月繁殖圈名單的計畫項目，由 applyImport 在匯入的交易內呼叫。在圈狀態改為售出或定年引退，
+ * 自家母駒的接替狀態保留離圈前的值（技術設計 4.2）。不檢查定年：缺席時的馬齡可能已達定年，
+ * 「無法再生產的母馬不能賣出」只限制手動賣出（sellMare）。事件 mare-departed，不會阻止。
+ * 母馬找不到、屬於其他局或不在圈內時丟出錯誤
+ */
+export async function departMare(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  reason: DepartedStatus,
+  options: WriteOptions = {},
+): Promise<WriteResult<MareRow, never>> {
+  return runWrite(db, gameId, [db.mares], options, async (context) => {
+    const current = await loadMareInHerd(context, horseId, '不能判定缺席')
+    const mare: MareRow = { ...current, herd: reason }
+    await db.mares.put(mare)
+    await context.addEvent({ kind: 'mare-departed', horseId, reason })
     return context.done(mare)
   })
 }

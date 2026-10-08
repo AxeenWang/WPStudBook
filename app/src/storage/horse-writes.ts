@@ -1,3 +1,4 @@
+import { normalizeAbilityNumber } from '../core/identity'
 import type { WPStudBookDatabase } from './database'
 import { buildRuleSnapshot, readRuleRows, ruleTables } from './loaders'
 import { substituteWarnings, type SubstituteWarnings } from './mare-assignment'
@@ -6,6 +7,7 @@ import { damRoleOf } from './snapshot'
 import {
   checkHorseInput,
   confirmation,
+  findSameHorse,
   gate,
   manualHorseRow,
   runWrite,
@@ -18,7 +20,7 @@ import {
   type WriteResult,
 } from './writes'
 
-// 手動資料的更正（需求規格 6.4、ID-08、ID-13；技術設計 4.3「寫入操作」）
+// 手動資料的更正與匯入補齊身分（需求規格 6.2、6.4、ID-07、ID-08、ID-13；技術設計 4.3「寫入操作」）
 
 /** 手動資料更正的輸入：省略的欄位不變，null 表示清除；完整馬名不能清除 */
 export interface HorseCorrectionInput {
@@ -138,5 +140,62 @@ async function recheckSubstitute(
   return substituteWarnings(rows, buildRuleSnapshot(rows), role.forLine, role.forGeneration, {
     horseId: horse.id,
     sireSystem: horse.sireSystem,
+  })
+}
+
+/** 補齊身分的輸入：名單的能力番号（已統一寫法）與出生年 */
+export interface HorseIdentity {
+  abilityNumber: string
+  birthYear: number
+}
+
+/**
+ * 補齊身分的阻止原因：
+ * - same-horse：這一局另一匹馬已有相同的能力番号與出生年（需求規格 6.2），horseId 是那一匹
+ * - unchanged：能力番号與出生年都已有相同的值，什麼都不用改
+ */
+export type IdentityBlock = { kind: 'same-horse'; horseId: string } | UnchangedBlock
+
+/**
+ * 補齊身分（需求規格 6.2、ID-07、MAY-14；技術設計 4.3「補齊身分」）：五月以馬名輔助或使用者指定配到、
+ * 缺能力番号或出生年的馬，由 applyImport 在匯入的交易內呼叫。只補空白，不改既有值與其他欄位
+ * （馬名、父母與父系由 4-5 五月資料補齊處理）。事件 horse-identity-filled 只記補上的值。
+ * 馬匹找不到、屬於其他局，或已有不同的能力番号或出生年時丟出錯誤（配對時已排除）；
+ * 能力番号沒有統一寫法或出生年不是整數時丟出 RangeError
+ */
+export async function fillHorseIdentity(
+  db: WPStudBookDatabase,
+  gameId: string,
+  horseId: string,
+  identity: HorseIdentity,
+  options: WriteOptions = {},
+): Promise<WriteResult<HorseRow, IdentityBlock>> {
+  const { abilityNumber, birthYear } = identity
+  if (normalizeAbilityNumber(abilityNumber) !== abilityNumber) {
+    throw new RangeError(`能力番号沒有統一寫法：${abilityNumber}`)
+  }
+  if (!Number.isInteger(birthYear)) throw new RangeError(`出生年不是整數：${birthYear}`)
+  return runWrite(db, gameId, [db.horses], options, async (context) => {
+    const current = await db.horses.get(horseId)
+    if (!current || current.gameId !== gameId) throw new Error(`找不到馬匹：${horseId}`)
+    if (current.abilityNumber !== undefined && current.abilityNumber !== abilityNumber) {
+      throw new Error(`能力番号與名單不同：${horseId}`)
+    }
+    if (current.birthYear !== undefined && current.birthYear !== birthYear) {
+      throw new Error(`出生年與名單不同：${horseId}`)
+    }
+    const filled = {
+      ...(current.abilityNumber === undefined ? { abilityNumber } : {}),
+      ...(current.birthYear === undefined ? { birthYear } : {}),
+    }
+    const blocks: IdentityBlock[] = []
+    const same = await findSameHorse(context, abilityNumber, birthYear, horseId)
+    if (same) blocks.push({ kind: 'same-horse', horseId: same.id })
+    if (Object.keys(filled).length === 0) blocks.push({ kind: 'unchanged' })
+    if (blocks.length > 0) return { status: 'blocked', blocks }
+    const horse: HorseRow = { ...current, ...filled }
+    await db.horses.put(horse)
+    await context.addEvent({ kind: 'horse-identity-filled', horseId, ...filled })
+    return context.done(horse)
   })
 }

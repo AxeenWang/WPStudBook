@@ -12,7 +12,7 @@ import {
 } from '../../tests/support/rows'
 import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
-import { correctHorse } from './horse-writes'
+import { correctHorse, fillHorseIdentity } from './horse-writes'
 import type { HorseRow } from './records'
 
 const now = new Date('2026-09-26T01:02:03.000Z')
@@ -223,5 +223,96 @@ describe('correctHorse', () => {
     await expect(correctHorse(db, GAME, 'I', { fullName: 'J' })).rejects.toThrow(
       '只有手動輸入、尚未經匯入確認的市場馬可以更正：I',
     )
+  })
+})
+
+describe('fillHorseIdentity', () => {
+  const source = { kind: 'import', importType: 'may-herd', importId: 'I1' } as const
+
+  it('只補空白的能力番号與出生年，其他欄位不變；事件只記補上的值', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const blank = horseRow('B', {
+      fullName: 'ブランク',
+      baseName: 'ブランク',
+      nameSource: 'manual',
+    })
+    const known = horseRow('K', { birthYear: 1984, sireName: '手動の父', pedigreeSource: 'manual' })
+    await db.horses.bulkAdd([blank, known])
+    const identity = { abilityNumber: '0x0B00', birthYear: 1984 }
+    const result = await fillHorseIdentity(db, GAME, 'B', identity, { now, source })
+    const filled = { ...blank, abilityNumber: '0x0B00', birthYear: 1984 }
+    expect(result).toStrictEqual({ status: 'done', value: filled, warnings: [] })
+    expect(await db.horses.get('B')).toStrictEqual(filled)
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        year: 1990,
+        recordedAt: '2026-09-26T01:02:03.000Z',
+        source,
+        kind: 'horse-identity-filled',
+        horseId: 'B',
+        abilityNumber: '0x0B00',
+        birthYear: 1984,
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-26T01:02:03.000Z')
+
+    await fillHorseIdentity(db, GAME, 'K', { abilityNumber: '0x0C00', birthYear: 1984 }, { source })
+    expect(await db.horses.get('K')).toStrictEqual({ ...known, abilityNumber: '0x0C00' })
+    const [event] = await db.events.where('[gameId+horseId]').equals([GAME, 'K']).toArray()
+    expect(event).toMatchObject({ kind: 'horse-identity-filled', abilityNumber: '0x0C00' })
+    expect(event).not.toHaveProperty('birthYear')
+  })
+
+  it('另一匹馬已有相同的能力番号與出生年時阻止並附那一匹；兩者都已有相同的值時阻止；什麼都不寫', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([
+      horseRow('B', { birthYear: 1984 }),
+      horseRow('S', { abilityNumber: '0x0B00', birthYear: 1984 }),
+      horseRow('F', { abilityNumber: '0x0F00', birthYear: 1985 }),
+    ])
+    expect(
+      await fillHorseIdentity(db, GAME, 'B', { abilityNumber: '0x0B00', birthYear: 1984 }),
+    ).toStrictEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'same-horse', horseId: 'S' }],
+    })
+    expect(
+      await fillHorseIdentity(db, GAME, 'F', { abilityNumber: '0x0F00', birthYear: 1985 }),
+    ).toStrictEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'unchanged' }],
+    })
+    expect(await db.horses.get('B')).toStrictEqual(horseRow('B', { birthYear: 1984 }))
+    expect(await db.events.count()).toBe(0)
+    expect((await loadGame(db, GAME)).updatedAt).toBe(CREATED_AT)
+  })
+
+  it('馬匹找不到、屬於其他局，或已有不同的能力番号或出生年時丟出錯誤；能力番号沒有統一寫法或出生年不是整數時丟出 RangeError', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([
+      horseRow('X', { gameId: 'G2' }),
+      horseRow('A', { abilityNumber: '0x0A00' }),
+      horseRow('Y', { birthYear: 1980 }),
+    ])
+    const identity = { abilityNumber: '0x0B00', birthYear: 1984 }
+    await expect(fillHorseIdentity(db, GAME, 'Q', identity)).rejects.toThrow('找不到馬匹：Q')
+    await expect(fillHorseIdentity(db, GAME, 'X', identity)).rejects.toThrow('找不到馬匹：X')
+    await expect(fillHorseIdentity(db, GAME, 'A', identity)).rejects.toThrow(
+      '能力番号與名單不同：A',
+    )
+    await expect(fillHorseIdentity(db, GAME, 'Y', identity)).rejects.toThrow('出生年與名單不同：Y')
+    await expect(
+      fillHorseIdentity(db, GAME, 'A', { abilityNumber: '0x0a00', birthYear: 1984 }),
+    ).rejects.toThrow(RangeError)
+    await expect(
+      fillHorseIdentity(db, GAME, 'A', { abilityNumber: '0x0A00', birthYear: 1984.5 }),
+    ).rejects.toThrow('出生年不是整數：1984.5')
+    expect(await db.events.count()).toBe(0)
   })
 })

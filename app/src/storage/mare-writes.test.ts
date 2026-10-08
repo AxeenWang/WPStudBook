@@ -9,10 +9,11 @@ import {
   substituteMareRow,
   ungroupedMareRow,
 } from '../../tests/support/rows'
+import type { MareCreateItem } from '../core/imports'
 import type { LinePosition } from '../core/lines'
 import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
-import { addMarketMare, changeMareUsage } from './mare-writes'
+import { addMarketMare, changeMareUsage, importMare } from './mare-writes'
 import type { Base } from './records'
 import type { NewHorseInput } from './writes'
 
@@ -256,6 +257,207 @@ describe('addMarketMare', () => {
         location: 36 as Base,
       }),
     ).rejects.toThrow('據點不符：36')
+  })
+})
+
+describe('importMare', () => {
+  const source = { kind: 'import', importType: 'may-herd', importId: 'I1' } as const
+  const timing = { month: 5, week: 1 }
+
+  /** 五月名單一列建立的項目：待指定用途，其他欄位依需要覆寫 */
+  function createItem(fields: Partial<MareCreateItem> = {}): MareCreateItem {
+    return {
+      kind: 'mare-create',
+      fullName: '[地]テストハハ',
+      baseName: 'テストハハ',
+      abilityNumber: '0x0B01',
+      birthYear: 1982,
+      sireName: '(外)テストソフ',
+      damName: ' テストソボ ',
+      sireSystem: 'エクリプス',
+      femaleLine: 'テストヒンケイ',
+      location: 32,
+      horseNumber: '0x1C01',
+      assignment: { kind: 'unassigned' },
+      ...fields,
+    }
+  }
+
+  it('待指定用途：馬匹的欄位照名單、經匯入確認；母馬在圈、來源其他、記據點；記繁殖牝馬馬番号；事件 mare-added', async () => {
+    const db = await lineOneAtOne()
+    const result = await importMare(db, GAME, createItem(), { now, source, timing })
+    if (result.status !== 'done') throw new Error(result.status)
+    const { horse, mare } = result.value
+    expect(result).toStrictEqual({
+      status: 'done',
+      value: { horse, mare, parentSystemUnknown: false },
+      warnings: [],
+    })
+    expect(horse).toStrictEqual({
+      id: expect.any(String),
+      gameId: GAME,
+      fullName: '[地]テストハハ',
+      baseName: 'テストハハ',
+      nameSource: 'import',
+      abilityNumber: '0x0B01',
+      birthYear: 1982,
+      sex: 'female',
+      sireName: 'テストソフ',
+      damName: 'テストソボ',
+      sireSystem: 'エクリプス',
+      pedigreeSource: 'import',
+      femaleLine: 'テストヒンケイ',
+    })
+    expect(mare).toStrictEqual({
+      horseId: horse.id,
+      gameId: GAME,
+      usage: 'unassigned',
+      herd: 'in-herd',
+      establishedGeneration: false,
+      source: { kind: 'other' },
+      location: 32,
+    })
+    expect(await db.horses.get(horse.id)).toStrictEqual(horse)
+    expect(await db.mares.get(horse.id)).toStrictEqual(mare)
+    expect(await db.horseNumbers.toArray()).toStrictEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        horseId: horse.id,
+        stage: 'broodmare',
+        number: '0x1C01',
+        year: 1990,
+        source,
+        timing,
+      },
+    ])
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        year: 1990,
+        recordedAt: '2026-09-26T01:02:03.000Z',
+        source,
+        timing,
+        kind: 'mare-added',
+        horseId: horse.id,
+        placement: { usage: 'unassigned' },
+        mareSource: { kind: 'other' },
+        location: 32,
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-26T01:02:03.000Z')
+  })
+
+  it('空白或只有前綴的父母名、空白的父系與牝系都不存，也沒有父母名的來源', async () => {
+    const db = await lineOneAtOne()
+    const item = createItem({
+      sireName: '',
+      damName: '(外)',
+      sireSystem: undefined,
+      femaleLine: ' ',
+    })
+    const result = await importMare(db, GAME, item)
+    if (result.status !== 'done') throw new Error(result.status)
+    const { horse } = result.value
+    expect(horse).toStrictEqual({
+      id: horse.id,
+      gameId: GAME,
+      fullName: '[地]テストハハ',
+      baseName: 'テストハハ',
+      nameSource: 'import',
+      abilityNumber: '0x0B01',
+      birthYear: 1982,
+      sex: 'female',
+    })
+  })
+
+  it('改掛到配對：用途與來源由配對推出；8.3 撞到時要確認，確認前什麼都不寫，確認後警告存在事件上', async () => {
+    const db = await lineOneAtOne()
+    const item = createItem({ sireSystem: 'マンノウォー', assignment: pairing(1, 2) })
+    const warning = {
+      kind: 'substitute-parent-system',
+      line: 2,
+      generation: 1,
+      conflicts: [{ kind: 'line', parentSystem: 'マッチェム', lines: [1] }],
+    }
+    expect(await importMare(db, GAME, item, { source })).toStrictEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    expect(await db.horses.count()).toBe(0)
+    expect(await db.horseNumbers.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+    const result = await importMare(db, GAME, item, { source, confirmed: true })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.mare).toMatchObject({
+      usage: 'substitute',
+      groupLine: 2,
+      groupGeneration: 1,
+      source: { kind: 'market-founding' },
+    })
+    expect(await db.events.toArray()).toStrictEqual([
+      expect.objectContaining({ kind: 'mare-added', confirmedWarnings: [warning] }),
+    ])
+  })
+
+  it('例外補入：原因必填並要確認；確認後原因存在母馬與事件', async () => {
+    const db = await lineOneAtOne()
+    const item = createItem({ assignment: pairing(2, 2) })
+    expect(await importMare(db, GAME, item)).toStrictEqual({
+      status: 'blocked',
+      blocks: [{ kind: 'reason-required' }],
+    })
+    const withReason = { ...item, exceptionReason: ' 自家母駒不足 ' }
+    const warning = { kind: 'exception-entry', line: 2, generation: 2 }
+    expect(await importMare(db, GAME, withReason)).toStrictEqual({
+      status: 'unconfirmed',
+      warnings: [warning],
+    })
+    const result = await importMare(db, GAME, withReason, { confirmed: true })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.mare.exceptionReason).toBe('自家母駒不足')
+    expect(await db.events.toArray()).toStrictEqual([
+      expect.objectContaining({ kind: 'mare-added', exceptionReason: '自家母駒不足' }),
+    ])
+  })
+
+  it('馬名只有前綴或基本馬名空白、這一局已有相同能力番号與出生年的馬、配對不在看板上時阻止，原因一起列出，什麼都不寫', async () => {
+    const db = await lineOneAtOne()
+    await db.horses.add(horseRow('S', { abilityNumber: '0x0B01', birthYear: 1982 }))
+    expect(
+      await importMare(db, GAME, createItem({ fullName: '(外)', assignment: pairing(3, 3) })),
+    ).toStrictEqual({
+      status: 'blocked',
+      blocks: [
+        { kind: 'horse-name' },
+        { kind: 'same-horse', horseId: 'S' },
+        { kind: 'no-pairing' },
+      ],
+    })
+    expect(
+      await importMare(db, GAME, createItem({ baseName: ' ', abilityNumber: '0x0B02' })),
+    ).toStrictEqual({ status: 'blocked', blocks: [{ kind: 'horse-name' }] })
+    expect(await db.horses.count()).toBe(1)
+    expect(await db.mares.count()).toBe(0)
+    expect(await db.horseNumbers.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+    expect((await loadGame(db, GAME)).updatedAt).toBe(CREATED_AT)
+  })
+
+  it('已售出的同名母馬不提示可能是買回：買回由匯入的配對找到，配不到才新建', async () => {
+    const db = await lineOneAtOne()
+    await db.horses.add(horseRow('A', { fullName: 'テストハハ', baseName: 'テストハハ' }))
+    await db.mares.add(ungroupedMareRow('A', 'unassigned', { herd: 'sold' }))
+    const result = await importMare(db, GAME, createItem())
+    expect(result.status === 'done' && result.warnings).toStrictEqual([])
+  })
+
+  it('據點不是 32～35 時丟出錯誤', async () => {
+    const db = await lineOneAtOne()
+    await expect(importMare(db, GAME, createItem({ location: 36 as Base }))).rejects.toThrow(
+      '據點不符：36',
+    )
   })
 })
 

@@ -37,8 +37,8 @@ type EntryGroup = Pick<
  * 八系指定配種所生以 9.6 再核對（目標是出生紀錄的系與代數），不符時阻止；通過時用途為自家，
  * 母馬群依出生紀錄，接替狀態以 entrySisterStatus 判定（姊妹不在圈內 → 暫定保留；已有姊妹在圈 → 候選），
  * 暫定保留時該代成立（establishedGeneration 為 true）。自由配種所生或比照自由配種（沒有連結配種紀錄）：
- * 生產中，用途為自由配種所生，不分群、沒有接替狀態（11.5）。來源為所屬競走馬引退轉入；
- * 不設年齡門檻，不改牧場處置。事件 mare-transferred 記用途與母馬群、接替狀態與據點。
+ * 生產中，用途為自由配種所生，不分群、沒有接替狀態（11.5）。來源為所屬競走馬引退轉入，
+ * 牧場處置已售出的產駒（售出後再買回）為其他（8.4）；不設年齡門檻，不改牧場處置。事件 mare-transferred 記用途與母馬群、接替狀態與據點。
  * 馬匹找不到、屬於其他局、不是自家產駒或不是牝駒，已經進過繁殖圈（改用買回），或據點不是 32～35 時丟出錯誤。
  */
 export async function transferFilly(
@@ -79,7 +79,10 @@ export async function transferFilly(
       gameId,
       ...group,
       herd: 'in-herd',
-      source: { kind: 'retired-racehorse', ...(note === '' ? {} : { note }) },
+      source: {
+        kind: horse.disposition === 'sold' ? 'other' : 'retired-racehorse',
+        ...(note === '' ? {} : { note }),
+      },
       ...(input.location === undefined ? {} : { location: input.location }),
     }
     await db.mares.add(mare)

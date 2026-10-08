@@ -9,6 +9,7 @@ import {
   type ReadyImport,
 } from '../../src/ce-import/flow'
 import { januaryContent, previewJanuary, type JanuaryPreview } from '../../src/ce-import/january'
+import { mayContent, previewMay, type MayDecisions, type MayPreview } from '../../src/ce-import/may'
 import { parseImportFile, readImportFile } from '../../src/ce-import/parse'
 import { splitHorseName } from '../../src/core/identity'
 import type { ImportMode, ImportType } from '../../src/core/imports'
@@ -169,6 +170,103 @@ export async function applyJanuaryFile(
 ): Promise<{ preview: JanuaryPreview; applied: AppliedImport }> {
   const { judgment, mode, preview } = await previewJanuaryFile(db, rows, options)
   const plan = buildImportPlan(judgment, { mode, advanceConfirmed: true }, januaryContent(preview))
+  const result = await applyImport(db, plan)
+  if (result.status !== 'done') throw new Error(JSON.stringify(result))
+  return { preview, applied: result.value }
+}
+
+/**
+ * 五月繁殖圈名單一列要換掉的值：馬齡、能力番号與馬番号必填；基本馬名省略時取完整馬名去掉前綴，
+ * 父馬、父系、母馬與牧場省略時照 SAMPLES
+ */
+export interface MayRowValues {
+  fullName: string
+  baseName?: string
+  /** `年`：馬齡 */
+  age: number
+  sire?: string
+  /** `父系`：帶結尾「系」的原文 */
+  sireSystem?: string
+  dam?: string
+  /** `牧場`：繋養牧場番号 */
+  farm?: string
+  abilityNumber: string
+  horseNumber: string
+}
+
+/** 五月繁殖圈名單的一列：照 SAMPLES 的虛構值，換掉第 1、3、43～45、48、57～59 欄（附錄 A.3） */
+export function mayRow(values: MayRowValues): ExportValues {
+  return {
+    ...SAMPLES.broodmare,
+    1: values.fullName,
+    3: String(values.age),
+    ...(values.sire === undefined ? {} : { 43: values.sire }),
+    ...(values.sireSystem === undefined ? {} : { 44: values.sireSystem }),
+    ...(values.dam === undefined ? {} : { 45: values.dam }),
+    ...(values.farm === undefined ? {} : { 48: values.farm }),
+    57: values.abilityNumber,
+    58: values.horseNumber,
+    59: values.baseName ?? splitHorseName(values.fullName)?.baseName ?? '',
+  }
+}
+
+/**
+ * 五月的預覽選項：年份預設 1990；mode 省略時取判斷提供的第一個不是回溯的做法；decisions 是使用者的決定
+ */
+export interface MayOptions {
+  year?: number
+  mode?: ImportMode
+  decisions?: MayDecisions
+}
+
+/** 五月的預覽：判斷結果、選的套用方式與預覽 */
+export interface MayFlow {
+  judgment: ReadyImport
+  mode: ImportMode
+  preview: MayPreview
+}
+
+/**
+ * 照畫面的串接預覽五月繁殖圈名單（技術設計 4.4「流程」「五月對帳」）：組出 CP932 的檔案、讀檔、解析、算雜湊、
+ * 組快照、判斷，再以 previewMay 預覽。讀不出來、解析失敗或判斷是重複時讓測試失敗
+ */
+export async function previewMayFile(
+  db: WPStudBookDatabase,
+  rows: readonly ExportValues[],
+  options: MayOptions = {},
+): Promise<MayFlow> {
+  const year = options.year ?? 1990
+  const fileName = `${year}年 5月1週_繁殖牝馬.txt`
+  const bytes = cp932(exportText('broodmare', rows))
+  const read = readImportFile(bytes, fileName)
+  if (read.status !== 'ok') throw new Error(read.reason)
+  const parsed = parseImportFile(read.text, 'may-herd', year)
+  if (parsed.status !== 'ok' || parsed.format !== 'broodmare') throw new Error('解析失敗')
+  const file: ImportFile = {
+    fileName,
+    sha256: await hashImportFile(bytes),
+    type: 'may-herd',
+    year,
+    fileTiming: { month: 5, week: 1 },
+  }
+  const snapshot = await loadImportSnapshot(db, GAME, file)
+  const judgment = judgeImport(file, snapshot)
+  if (judgment.kind !== 'ready') throw new Error(judgment.kind)
+  const mode =
+    options.mode ?? judgment.options.find((option): option is ImportMode => option !== 'rollback')
+  if (mode === undefined) throw new Error('只能回溯')
+  const preview = previewMay(parsed.entries, snapshot, mode, options.decisions)
+  return { judgment, mode, preview }
+}
+
+/** 接著以 mayContent 產生計畫（確認推進年份）並套用；套用被阻止時讓測試失敗 */
+export async function applyMayFile(
+  db: WPStudBookDatabase,
+  rows: readonly ExportValues[],
+  options: MayOptions = {},
+): Promise<{ preview: MayPreview; applied: AppliedImport }> {
+  const { judgment, mode, preview } = await previewMayFile(db, rows, options)
+  const plan = buildImportPlan(judgment, { mode, advanceConfirmed: true }, mayContent(preview))
   const result = await applyImport(db, plan)
   if (result.status !== 'done') throw new Error(JSON.stringify(result))
   return { preview, applied: result.value }

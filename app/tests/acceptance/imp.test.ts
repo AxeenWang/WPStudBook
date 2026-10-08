@@ -21,14 +21,16 @@ import {
   EMPTY_CONTENT,
   applyFile,
   applyJanuaryFile,
+  applyMayFile,
   importFile,
   januaryGame,
   januaryRow,
   judgeFile,
+  mayRow,
   ownFoal,
   previewJanuaryFile,
 } from '../support/import-flow'
-import { GAME, startMareRow } from '../support/rows'
+import { GAME, horseRow, lineRow, startMareRow, ungroupedMareRow } from '../support/rows'
 
 // 需求規格第 15 章「匯入共通（IMP）」：解析的部分（CE 匯入子計畫 4-1），判斷、套用、重複與進度
 // （4-2，計畫沒有項目），以及一月的預覽、資料更正與匯入分權（4-3）；選檔、拖放與多檔拒絕由畫面計畫補上
@@ -468,6 +470,57 @@ describe('匯入共通（IMP）：判斷與套用', () => {
     expect(others(after.horses)).toStrictEqual(others(before.horses))
     // 變動的只有遊戲局的更新時間、這匹產駒、事件、階段馬番号與匯入紀錄
     const changed = new Set(['games', 'horses', 'events', 'horseNumbers', 'imports'])
+    for (const name of GAME_TABLES) {
+      if (!changed.has(name)) expect(after[name]).toStrictEqual(before[name])
+    }
+  })
+
+  it('IMP-10 五月繁殖圈名單 → 只更新自己負責的資料：據點、補上的能力番号與出生年、繁殖牝馬馬番号；馬名與血統（4-5 補齊）、已離圈的母馬與其他資料不變', async () => {
+    const mare = horseRow('M', {
+      fullName: 'テガキ',
+      baseName: 'テガキ',
+      nameSource: 'manual',
+      sex: 'female',
+      sireName: '手動の父',
+      pedigreeSource: 'manual',
+      femaleLine: 'ヒンケイ',
+      note: '手動新增',
+    })
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd([mare, horseRow('O', { abilityNumber: '0x0F00', birthYear: 1975 })])
+    await db.mares.bulkAdd([
+      ungroupedMareRow('M', 'unassigned', { location: 32 }),
+      startMareRow('O', { herd: 'sold' }),
+    ])
+    await db.lines.add(lineRow(1, '系1子'))
+    const before = await readGameData(db, GAME)
+    const row = mayRow({
+      fullName: 'テガキ',
+      age: 10,
+      sire: 'チチ',
+      farm: '33',
+      abilityNumber: '0x0701',
+      horseNumber: '0x1701',
+    })
+    await applyMayFile(db, [row])
+    const after = await readGameData(db, GAME)
+    expect(after.horses.find((horse) => horse.id === 'M')).toStrictEqual({
+      ...mare,
+      abilityNumber: '0x0701',
+      birthYear: 1980,
+    })
+    expect(after.mares.find((row) => row.horseId === 'M')).toStrictEqual(
+      ungroupedMareRow('M', 'unassigned', { location: 33 }),
+    )
+    expect(after.horses.filter((horse) => horse.id !== 'M')).toStrictEqual(
+      before.horses.filter((horse) => horse.id !== 'M'),
+    )
+    expect(after.mares.filter((row) => row.horseId !== 'M')).toStrictEqual(
+      before.mares.filter((row) => row.horseId !== 'M'),
+    )
+    // 變動的只有遊戲局的更新時間、這匹母馬、事件、階段馬番号與匯入紀錄
+    const changed = new Set(['games', 'horses', 'mares', 'events', 'horseNumbers', 'imports'])
     for (const name of GAME_TABLES) {
       if (!changed.has(name)) expect(after[name]).toStrictEqual(before[name])
     }

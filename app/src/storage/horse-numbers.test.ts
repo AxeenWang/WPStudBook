@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { addTestGame, testDatabase } from '../../tests/support/database'
-import { GAME } from '../../tests/support/rows'
+import { GAME, horseRow } from '../../tests/support/rows'
 import type { WPStudBookDatabase } from './database'
-import { recordHorseNumber } from './horse-numbers'
+import { loadGame } from './games'
+import { importHorseNumber, recordHorseNumber } from './horse-numbers'
 import type { HorseStage } from './records'
 import { runWrite, type WriteOptions } from './writes'
 
@@ -80,6 +81,58 @@ describe('recordHorseNumber', () => {
     await addTestGame(db)
     await expect(record(db, 'S', 'stallion', '0x1a2')).rejects.toThrow('馬番号沒有統一寫法：0x1a2')
     await expect(record(db, 'S', 'stallion', 'ABC')).rejects.toThrow(RangeError)
+    expect(await db.horseNumbers.count()).toBe(0)
+  })
+})
+
+describe('importHorseNumber', () => {
+  const source = { kind: 'import', importType: 'may-herd', importId: 'I1' } as const
+  const timing = { month: 5, week: 1 }
+  const now = new Date('2026-10-08T01:02:03.000Z')
+
+  it('記一筆階段馬番号，來源與時點照 WriteOptions，遊戲局的更新時間跟著更新；已記過相同的時阻止，什麼都不寫', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.add(horseRow('M'))
+    const result = await importHorseNumber(db, GAME, 'M', 'broodmare', '0x1C01', {
+      now,
+      source,
+      timing,
+    })
+    const row = {
+      id: expect.any(String),
+      gameId: GAME,
+      horseId: 'M',
+      stage: 'broodmare',
+      number: '0x1C01',
+      year: 1990,
+      source,
+      timing,
+    }
+    expect(result).toStrictEqual({ status: 'done', value: row, warnings: [] })
+    expect(await db.horseNumbers.toArray()).toStrictEqual([row])
+    expect(await db.events.count()).toBe(0)
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-10-08T01:02:03.000Z')
+
+    const later = new Date('2026-10-09T00:00:00.000Z')
+    expect(
+      await importHorseNumber(db, GAME, 'M', 'broodmare', '0x1C01', { now: later, source }),
+    ).toStrictEqual({ status: 'blocked', blocks: [{ kind: 'unchanged' }] })
+    expect(await db.horseNumbers.count()).toBe(1)
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-10-08T01:02:03.000Z')
+  })
+
+  it('馬匹找不到或屬於其他局時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.add(horseRow('X', { gameId: 'G2' }))
+    await expect(importHorseNumber(db, GAME, 'Q', 'broodmare', '0x0001')).rejects.toThrow(
+      '找不到馬匹：Q',
+    )
+    await expect(importHorseNumber(db, GAME, 'X', 'broodmare', '0x0001')).rejects.toThrow(
+      '找不到馬匹：X',
+    )
     expect(await db.horseNumbers.count()).toBe(0)
   })
 })

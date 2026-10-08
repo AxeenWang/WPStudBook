@@ -3,11 +3,35 @@ import { addTestGame, testDatabase } from '../../tests/support/database'
 import { stubDownloads } from '../../tests/support/download'
 import { fakeFolder, storeFakeFolder } from '../../tests/support/folder'
 import { importRecord } from '../../tests/support/imports'
-import { GAME, checkpointRow, horseRow } from '../../tests/support/rows'
-import type { FoalNameItem, ImportPlan } from '../core/imports'
+import {
+  GAME,
+  checkpointRow,
+  horseRow,
+  lineRow,
+  ownMareRow,
+  stallionRow,
+  substituteMareRow,
+  ungroupedMareRow,
+} from '../../tests/support/rows'
+import type {
+  FoalNameItem,
+  ImportPlan,
+  ImportPlanItem,
+  MareCreateItem,
+  MareDepartItem,
+  MareReturnItem,
+  MareUsageItem,
+} from '../core/imports'
 import { listCheckpoints } from './checkpoints'
 import { loadGame } from './games'
-import type { GameRow, HorseNumberRow, HorseStage } from './records'
+import type {
+  EventContent,
+  EventRow,
+  EventSource,
+  GameRow,
+  HorseNumberRow,
+  HorseStage,
+} from './records'
 import { applyImport, loadImportSnapshot } from './imports'
 import { APP_VERSION } from './version'
 
@@ -31,7 +55,7 @@ describe('loadImportSnapshot', () => {
       checkpointRow('C2', { year: 1971, createdAt: '2026-10-01T00:00:02.000Z' }),
       checkpointRow('C3', { gameId: 'G2' }),
     ])
-    const scope = { type: 'may-herd', year: 1971 } as const
+    const scope = { type: 'candidates', year: 1971 } as const
     expect(await loadImportSnapshot(db, GAME, scope)).toStrictEqual({
       gameId: GAME,
       currentYear: 1971,
@@ -157,6 +181,345 @@ describe('loadImportSnapshot', () => {
       ],
     })
     expect(snapshot.imports).toStrictEqual([])
+    expect(snapshot.may).toBeUndefined()
+  })
+
+  it('五月繁殖圈名單：另讀上次五月匯入、定年、這一局的母馬與還沒進過繁殖圈的自家牝駒（技術設計 4.4「五月對帳」）', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.settings.update(GAME, { retirementAge: 24 })
+    await db.imports.bulkAdd([
+      importRecord('I1', 'may-herd', 1988, { appliedAt: '2026-10-02T00:00:00.000Z' }),
+      // 同年有資料更正時，套用時間較晚的是上次
+      importRecord('I2', 'may-herd', 1989, { appliedAt: '2026-10-03T00:00:00.000Z' }),
+      importRecord('I3', 'may-herd', 1989, {
+        appliedAt: '2026-10-04T00:00:00.000Z',
+        mode: 'correction',
+        corrects: 'I2',
+      }),
+      // 不算：年份不早於這份名單、其他類型、後來才補匯的較早年份、其他局
+      importRecord('I4', 'may-herd', 1990, { appliedAt: '2026-10-05T00:00:00.000Z' }),
+      importRecord('I5', 'july-conception', 1989, { appliedAt: '2026-10-06T00:00:00.000Z' }),
+      importRecord('I6', 'may-herd', 1987, {
+        appliedAt: '2026-10-07T00:00:00.000Z',
+        mode: 'catch-up',
+      }),
+      importRecord('I7', 'may-herd', 1989, {
+        gameId: 'G2',
+        appliedAt: '2026-10-08T00:00:00.000Z',
+      }),
+    ])
+    await db.horses.bulkAdd([
+      horseRow('S1', { fullName: 'チチイチ', baseName: 'チチイチ', nameSource: 'import' }),
+      horseRow('D1', { fullName: 'ハハイチ', baseName: 'ハハイチ', nameSource: 'manual' }),
+      // 母馬：在圈的自家母駒、已售出的替代母馬（父母名手動輸入）、沒有能力番号的待指定用途
+      horseRow('A', {
+        fullName: '(外)エーコ',
+        baseName: 'エーコ',
+        nameSource: 'import',
+        abilityNumber: '0x0A00',
+        birthYear: 1980,
+        sex: 'female',
+        sireId: 'S1',
+        damId: 'D1',
+        birth: { placement: { line: 1, generation: 2 } },
+      }),
+      horseRow('B', {
+        fullName: 'ビーコ',
+        baseName: 'ビーコ',
+        nameSource: 'manual',
+        abilityNumber: '0x0B00',
+        birthYear: 1982,
+        sex: 'female',
+        sireName: 'テウチチチ',
+        damName: 'テウチハハ',
+        pedigreeSource: 'manual',
+      }),
+      horseRow('C', {
+        fullName: 'シーコ',
+        baseName: 'シーコ',
+        nameSource: 'manual',
+        sex: 'female',
+      }),
+      // 自家牝駒：指定配種所生、自由配種所生而且已售出
+      horseRow('F1', {
+        birthYear: 1988,
+        sex: 'female',
+        sireId: 'S1',
+        damId: 'A',
+        abilityNumber: '0x0F01',
+        fullName: 'エフイチ',
+        baseName: 'エフイチ',
+        nameSource: 'import',
+        birth: { breedingId: 'BR1', placement: { line: 1, generation: 3 } },
+        disposition: 'keep',
+      }),
+      horseRow('F2', {
+        birthYear: 1985,
+        sex: 'female',
+        damId: 'A',
+        birth: {},
+        disposition: 'sold',
+      }),
+      // 不讀：出生年晚於年份減 2、牡駒、市場馬、已進過繁殖圈（A）、其他局
+      horseRow('F3', { birthYear: 1989, sex: 'female', damId: 'A', birth: {} }),
+      horseRow('F4', { birthYear: 1985, sex: 'male', damId: 'A', birth: {} }),
+      horseRow('F5', { birthYear: 1985, sex: 'female' }),
+      horseRow('F6', { gameId: 'G2', birthYear: 1985, sex: 'female', birth: {} }),
+      horseRow('X', { gameId: 'G2', sex: 'female' }),
+    ])
+    await db.mares.bulkAdd([
+      ownMareRow('A', 1, 2, { location: 32 }),
+      substituteMareRow('B', 3, 4, { herd: 'sold', location: 33 }),
+      ungroupedMareRow('C', 'unassigned'),
+      ungroupedMareRow('X', 'unassigned', { gameId: 'G2' }),
+    ])
+    await db.horseNumbers.bulkAdd([
+      numberRow('N1', 'A', 'broodmare', '0x0A01'),
+      numberRow('N2', 'A', 'foal', '0x0A02'),
+      numberRow('N3', 'B', 'broodmare', '0x0B01'),
+      numberRow('N4', 'B', 'broodmare', '0x0B02'),
+      numberRow('N5', 'F1', 'foal', '0x0F02'),
+    ])
+    const scope = { type: 'may-herd', year: 1990 } as const
+    const snapshot = await loadImportSnapshot(db, GAME, scope)
+    const flags = { entered: false, soldByUser: false, departedThisYear: false }
+    expect(snapshot.may).toStrictEqual({
+      year: 1990,
+      lastMay: { id: 'I3', year: 1989, appliedAt: '2026-10-04T00:00:00.000Z' },
+      retirementAge: 24,
+      mares: [
+        {
+          id: 'A',
+          abilityNumber: '0x0A00',
+          birthYear: 1980,
+          fullName: '(外)エーコ',
+          baseName: 'エーコ',
+          nameSource: 'import',
+          sire: { confirmed: 'チチイチ', known: 'チチイチ' },
+          dam: { known: 'ハハイチ' },
+          usage: 'own',
+          groupLine: 1,
+          groupGeneration: 2,
+          herd: 'in-herd',
+          location: 32,
+          broodmareNumbers: ['0x0A01'],
+          ...flags,
+        },
+        {
+          id: 'B',
+          abilityNumber: '0x0B00',
+          birthYear: 1982,
+          fullName: 'ビーコ',
+          baseName: 'ビーコ',
+          nameSource: 'manual',
+          sire: { known: 'テウチチチ' },
+          dam: { known: 'テウチハハ' },
+          usage: 'substitute',
+          groupLine: 3,
+          groupGeneration: 4,
+          herd: 'sold',
+          location: 33,
+          broodmareNumbers: ['0x0B01', '0x0B02'],
+          ...flags,
+        },
+        {
+          id: 'C',
+          fullName: 'シーコ',
+          baseName: 'シーコ',
+          nameSource: 'manual',
+          sire: {},
+          dam: {},
+          usage: 'unassigned',
+          herd: 'in-herd',
+          broodmareNumbers: [],
+          ...flags,
+        },
+      ],
+      fillies: [
+        {
+          id: 'F2',
+          birthYear: 1985,
+          sire: {},
+          dam: { confirmed: 'エーコ', known: 'エーコ' },
+          free: true,
+          sold: true,
+        },
+        {
+          id: 'F1',
+          abilityNumber: '0x0F01',
+          birthYear: 1988,
+          fullName: 'エフイチ',
+          baseName: 'エフイチ',
+          nameSource: 'import',
+          sire: { confirmed: 'チチイチ', known: 'チチイチ' },
+          dam: { confirmed: 'エーコ', known: 'エーコ' },
+          free: false,
+          sold: false,
+        },
+      ],
+    })
+    expect(snapshot.january).toBeUndefined()
+  })
+
+  it('五月的三個旗標：上次五月匯入之後寫入的事件依寫入時間排序，取最後一筆離圈事件（技術設計 4.4「五月對帳」）', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    const may1990 = { kind: 'import', importType: 'may-herd', importId: 'I2' } as const
+    const candidates = { kind: 'import', importType: 'candidates', importId: 'I3' } as const
+    await db.imports.bulkAdd([
+      importRecord('I1', 'may-herd', 1989, { appliedAt: at(10) }),
+      // 年份與這份名單相同的五月（資料更正時被更正的那一筆）
+      importRecord('I2', 'may-herd', 1990, { appliedAt: at(12) }),
+      importRecord('I3', 'candidates', 1989, { appliedAt: at(11) }),
+      // 上次五月之後才補匯的較早年份五月
+      importRecord('I4', 'may-herd', 1987, { appliedAt: at(13), mode: 'catch-up' }),
+    ])
+    const may1987 = { kind: 'import', importType: 'may-herd', importId: 'I4' } as const
+    const ids = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'MR']
+    await db.horses.bulkAdd(ids.map((id) => horseRow(id, { sex: 'female' })))
+    await db.mares.bulkAdd([
+      ungroupedMareRow('M1', 'unassigned'),
+      ungroupedMareRow('M2', 'unassigned'),
+      ungroupedMareRow('M3', 'unassigned'),
+      ungroupedMareRow('M4', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('M5', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('M6', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('M7', 'unassigned', { herd: 'retired' }),
+      ungroupedMareRow('M8', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('M9', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('MR', 'unassigned'),
+    ])
+    const placement = { usage: 'unassigned' } as const
+    const added = (horseId: string) =>
+      ({ kind: 'mare-added', horseId, placement, mareSource: { kind: 'other' } }) as const
+    const sold = (horseId: string) => ({ kind: 'mare-departed', horseId, reason: 'sold' }) as const
+    await db.events.bulkAdd([
+      // M1、M2：上次五月之後新增、回歸；M3：上次五月之前新增
+      eventRow('E1', 1989, at(13), added('M1')),
+      eventRow(
+        'E2',
+        1990,
+        at(14),
+        { kind: 'mare-returned', horseId: 'M2', from: 'sold' },
+        candidates,
+      ),
+      eventRow('E3', 1989, at(9), added('M3')),
+      // M4：上次五月之後手動登記賣出；M5：手動賣出的寫入時間不晚於上次五月的套用時間
+      eventRow('E4', 1989, at(15), sold('M4')),
+      eventRow('E5', 1989, at(10), sold('M5')),
+      // M6：年份與名單相同的五月判定缺席（寫入時間就是那次的套用時間）
+      eventRow('E6', 1990, at(12), sold('M6'), may1990),
+      // M7：手動改成定年引退，在圈狀態不是售出
+      eventRow('E7', 1990, at(16), {
+        kind: 'mare-departure-corrected',
+        horseId: 'M7',
+        from: 'sold',
+        to: 'retired',
+      }),
+      // M8：年份較晚的事件寫入時間較早；依寫入時間，最後一筆是今年五月判定的缺席
+      eventRow('E8', 1991, at(17), sold('M8')),
+      eventRow('E9', 1990, at(18), sold('M8'), may1990),
+      // M9：較早年份的五月判定缺席，不是今年的
+      eventRow('E11', 1990, at(13), sold('M9'), may1987),
+      // MR：今年五月判定缺席後撤銷，已回到生產中
+      eventRow('E12', 1990, at(12), sold('MR'), may1990),
+      eventRow('E13', 1990, at(19), {
+        kind: 'mare-departure-corrected',
+        horseId: 'MR',
+        from: 'sold',
+        to: 'in-herd',
+      }),
+      // 其他局
+      eventRow('E10', 1990, at(20), added('M3'), { kind: 'manual' }, 'G2'),
+    ])
+    const scope = { type: 'may-herd', year: 1990 } as const
+    const snapshot = await loadImportSnapshot(db, GAME, scope)
+    const flags = snapshot.may?.mares.map(({ id, entered, soldByUser, departedThisYear }) => ({
+      id,
+      entered,
+      soldByUser,
+      departedThisYear,
+    }))
+    expect(flags).toStrictEqual([
+      { id: 'M1', entered: true, soldByUser: false, departedThisYear: false },
+      { id: 'M2', entered: true, soldByUser: false, departedThisYear: false },
+      { id: 'M3', entered: false, soldByUser: false, departedThisYear: false },
+      { id: 'M4', entered: false, soldByUser: true, departedThisYear: false },
+      { id: 'M5', entered: false, soldByUser: false, departedThisYear: false },
+      { id: 'M6', entered: false, soldByUser: false, departedThisYear: true },
+      { id: 'M7', entered: false, soldByUser: false, departedThisYear: false },
+      { id: 'M8', entered: false, soldByUser: false, departedThisYear: true },
+      { id: 'M9', entered: false, soldByUser: false, departedThisYear: false },
+      { id: 'MR', entered: false, soldByUser: false, departedThisYear: false },
+    ])
+  })
+
+  it('五月：沒有上次五月匯入時，這一局的全部事件都算', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.horses.bulkAdd([horseRow('M1', { sex: 'female' }), horseRow('M2', { sex: 'female' })])
+    await db.mares.bulkAdd([
+      ungroupedMareRow('M1', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('M2', 'unassigned'),
+    ])
+    await db.events.bulkAdd([
+      eventRow('E1', 1970, at(1), { kind: 'mare-departed', horseId: 'M1', reason: 'sold' }),
+      eventRow(
+        'E2',
+        1970,
+        at(2),
+        { kind: 'mare-returned', horseId: 'M2', from: 'sold' },
+        { kind: 'manual' },
+        'G2',
+      ),
+    ])
+    const snapshot = await loadImportSnapshot(db, GAME, { type: 'may-herd', year: 1990 })
+    expect(snapshot.may?.lastMay).toBeUndefined()
+    expect(
+      snapshot.may?.mares.map((mare) => [mare.id, mare.entered, mare.soldByUser]),
+    ).toStrictEqual([
+      ['M1', false, true],
+      ['M2', false, false],
+    ])
+  })
+
+  it('五月：較晚的五月匯入是年份晚於名單的五月繁殖圈名單中，年份最早、同年時套用時間最早的一筆', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.imports.bulkAdd([
+      importRecord('I1', 'may-herd', 1991, { appliedAt: '2026-10-01T00:00:00.000Z' }),
+      // 同年有資料更正時，套用時間較早的是較晚的五月：回溯要回到它套用之前
+      importRecord('I2', 'may-herd', 1990, {
+        appliedAt: '2026-10-04T00:00:00.000Z',
+        mode: 'correction',
+        corrects: 'I3',
+      }),
+      importRecord('I3', 'may-herd', 1990, { appliedAt: '2026-10-03T00:00:00.000Z' }),
+      // 不算：年份不晚於這份名單、其他類型、其他局
+      importRecord('I4', 'may-herd', 1989, { appliedAt: '2026-10-02T00:00:00.000Z' }),
+      importRecord('I5', 'july-conception', 1990, { appliedAt: '2026-10-02T00:00:00.000Z' }),
+      importRecord('I6', 'may-herd', 1990, {
+        gameId: 'G2',
+        appliedAt: '2026-10-02T00:00:00.000Z',
+      }),
+    ])
+    const snapshot = await loadImportSnapshot(db, GAME, { type: 'may-herd', year: 1989 })
+    expect(snapshot.may?.laterMay).toStrictEqual({ id: 'I3', year: 1990 })
+  })
+
+  it('五月：母馬的馬匹或連結的父母不在 horses 中時丟出錯誤', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.mares.add(ungroupedMareRow('M1', 'unassigned'))
+    const scope = { type: 'may-herd', year: 1990 } as const
+    await expect(loadImportSnapshot(db, GAME, scope)).rejects.toThrow('找不到馬匹：M1')
+    await db.horses.add(horseRow('M1', { sex: 'female', damId: 'M9' }))
+    await expect(loadImportSnapshot(db, GAME, scope)).rejects.toThrow('找不到馬匹：M9')
   })
 
   it('產駒連結的父母不在 horses 中時丟出錯誤', async () => {
@@ -178,6 +541,23 @@ describe('loadImportSnapshot', () => {
 /** 階段馬番号：1988 年手動記的 */
 function numberRow(id: string, horseId: string, stage: HorseStage, number: string): HorseNumberRow {
   return { id, gameId: GAME, horseId, stage, number, year: 1988, source: { kind: 'manual' } }
+}
+
+/** 2026-10-01 的 hour 點整（ISO 8601），事件的寫入時間與匯入的套用時間用 */
+function at(hour: number): string {
+  return `2026-10-01T${String(hour).padStart(2, '0')}:00:00.000Z`
+}
+
+/** 一筆事件：來源預設手動，遊戲局預設 GAME */
+function eventRow(
+  id: string,
+  year: number,
+  recordedAt: string,
+  content: EventContent,
+  source: EventSource = { kind: 'manual' },
+  gameId = GAME,
+): EventRow {
+  return { ...content, id, gameId, year, recordedAt, source }
 }
 
 describe('applyImport', () => {
@@ -489,6 +869,189 @@ describe('applyImport', () => {
     expect(await db.imports.count()).toBe(0)
     expect(await db.events.count()).toBe(0)
     expect(await db.horseNumbers.count()).toBe(0)
+    expect(await listCheckpoints(db, GAME)).toEqual([])
+    expect(downloads).toHaveLength(0)
+  })
+
+  /**
+   * 五月的測試局：第 1 系已開啟（マンノウォー，親系統 マッチェム），零代與 1 代種牡馬在崗，所以產出第 1 系 2 代的配對
+   * 在任務看板上（替代第 2 系 1 代）。母馬：在圈的 A、C（沒有能力番号）、E（據點 32）、U（父系 マンノウォー）與 V，
+   * 已售出的 B 與 R（父系 マンノウォー），都是待指定用途；還沒進過繁殖圈的自家牝駒 F（自由配種所生）
+   */
+  async function mayGame() {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.lines.add(lineRow(1, 'マンノウォー'))
+    await db.systems.add({ gameId: GAME, subsystem: 'マンノウォー', parentSystem: 'マッチェム' })
+    await db.stallions.bulkAdd([stallionRow('Z1', 1, 0), stallionRow('S11', 1, 1)])
+    await db.horses.bulkAdd([
+      horseRow('A', { sex: 'female' }),
+      horseRow('B', { sex: 'female' }),
+      horseRow('C', { sex: 'female', fullName: 'シー', baseName: 'シー', nameSource: 'manual' }),
+      horseRow('E', { sex: 'female' }),
+      horseRow('R', { sex: 'female', sireSystem: 'マンノウォー' }),
+      horseRow('U', { sex: 'female', sireSystem: 'マンノウォー' }),
+      horseRow('V', { sex: 'female' }),
+      horseRow('F', { sex: 'female', birthYear: 1986, birth: {}, disposition: 'for-sale' }),
+    ])
+    await db.mares.bulkAdd([
+      ungroupedMareRow('A', 'unassigned'),
+      ungroupedMareRow('B', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('C', 'unassigned'),
+      ungroupedMareRow('E', 'unassigned', { location: 32 }),
+      ungroupedMareRow('R', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('U', 'unassigned'),
+      ungroupedMareRow('V', 'unassigned'),
+    ])
+    return db
+  }
+
+  /** 產出第 1 系 2 代的配對：替代第 2 系 1 代 */
+  const PAIRING = { kind: 'pairing', line: 1, generation: 2 } as const
+
+  /** 五月名單上沒配到任何紀錄的一列：待指定用途、據點 35 */
+  const CREATE: MareCreateItem = {
+    kind: 'mare-create',
+    fullName: 'ニューカマー',
+    baseName: 'ニューカマー',
+    abilityNumber: '0x0E01',
+    birthYear: 1985,
+    sireName: '',
+    damName: '',
+    femaleLine: '',
+    location: 35,
+    horseNumber: '0x1E02',
+    assignment: { kind: 'unassigned' },
+  }
+
+  it('五月的九種項目依序交給對應的寫入操作：事件與馬番号帶這次的匯入紀錄與時點（技術設計 4.4「五月對帳」）', async () => {
+    const db = await mayGame()
+    stubDownloads()
+    const items: ImportPlanItem[] = [
+      { kind: 'mare-depart', horseId: 'A', reason: 'retired' },
+      { kind: 'mare-revoke', horseId: 'B' },
+      { kind: 'horse-identity', horseId: 'C', abilityNumber: '0x0C01', birthYear: 1984 },
+      { kind: 'mare-return', horseId: 'R', location: 33 },
+      { kind: 'filly-transfer', horseId: 'F', location: 34 },
+      CREATE,
+      { kind: 'mare-move', horseId: 'E', location: 34 },
+      { kind: 'horse-number', horseId: 'E', stage: 'broodmare', number: '0x1E01' },
+      { kind: 'mare-usage', horseId: 'V', assignment: PAIRING },
+    ]
+    const result = await applyImport(db, plan({ items }), { now: NOW })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(await db.mares.get('A')).toMatchObject({ herd: 'retired' })
+    expect(await db.mares.get('B')).toMatchObject({ herd: 'in-herd' })
+    expect(await db.horses.get('C')).toMatchObject({ abilityNumber: '0x0C01', birthYear: 1984 })
+    expect(await db.mares.get('R')).toMatchObject({ herd: 'in-herd', location: 33 })
+    expect(await db.mares.get('F')).toMatchObject({ usage: 'free', herd: 'in-herd', location: 34 })
+    const created = await db.horses
+      .where('[gameId+baseName]')
+      .equals([GAME, 'ニューカマー'])
+      .first()
+    expect(await db.mares.get(created?.id ?? '')).toMatchObject({
+      usage: 'unassigned',
+      location: 35,
+    })
+    expect(await db.mares.get('E')).toMatchObject({ location: 34 })
+    expect(await db.mares.get('V')).toMatchObject({
+      usage: 'substitute',
+      groupLine: 2,
+      groupGeneration: 1,
+    })
+    const source = { kind: 'import', importType: 'may-herd', importId: result.value.record.id }
+    const timing = { month: 5, week: 1 }
+    const events = await db.events.toArray()
+    expect(events.map((event) => event.kind).sort()).toStrictEqual([
+      'horse-identity-filled',
+      'mare-added',
+      'mare-departed',
+      'mare-departure-corrected',
+      'mare-moved',
+      'mare-returned',
+      'mare-transferred',
+      'mare-usage-changed',
+    ])
+    for (const event of events) expect(event).toMatchObject({ source, timing })
+    const numbers = await db.horseNumbers.toArray()
+    expect(numbers.map((row) => row.number).sort()).toStrictEqual(['0x1E01', '0x1E02'])
+    for (const row of numbers) expect(row).toMatchObject({ stage: 'broodmare', source, timing })
+  })
+
+  it('某一項要確認時整筆回復，回傳 item-unconfirmed 指出第幾項與警告；標記確認後重新套用，確認傳給寫入操作', async () => {
+    const db = await mayGame()
+    const downloads = stubDownloads()
+    const depart: MareDepartItem = { kind: 'mare-depart', horseId: 'A', reason: 'sold' }
+    const returning: MareReturnItem = {
+      kind: 'mare-return',
+      horseId: 'R',
+      location: 33,
+      assignment: PAIRING,
+    }
+    const creating: MareCreateItem = { ...CREATE, sireSystem: 'マンノウォー', assignment: PAIRING }
+    const changing: MareUsageItem = { kind: 'mare-usage', horseId: 'U', assignment: PAIRING }
+    const warning = {
+      kind: 'substitute-parent-system',
+      line: 2,
+      generation: 1,
+      conflicts: [{ kind: 'line', parentSystem: 'マッチェム', lines: [1] }],
+    }
+    const apply = (items: ImportPlanItem[]) => applyImport(db, plan({ items }), { now: NOW })
+    const unconfirmed = (index: number, item: ImportPlanItem) => ({
+      status: 'blocked',
+      blocks: [{ kind: 'item-unconfirmed', index, item, warnings: [warning] }],
+    })
+    expect(await apply([depart, returning, creating, changing])).toStrictEqual(
+      unconfirmed(1, returning),
+    )
+    expect(await db.mares.get('A')).toMatchObject({ herd: 'in-herd' })
+    expect(await db.mares.get('R')).toMatchObject({ herd: 'sold' })
+    expect(await db.imports.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+    expect(await listCheckpoints(db, GAME)).toEqual([])
+    expect(downloads).toHaveLength(0)
+
+    const returned = { ...returning, confirmed: true as const }
+    expect(await apply([depart, returned, creating, changing])).toStrictEqual(
+      unconfirmed(2, creating),
+    )
+    const created = { ...creating, confirmed: true as const }
+    expect(await apply([depart, returned, created, changing])).toStrictEqual(
+      unconfirmed(3, changing),
+    )
+    const changed = { ...changing, confirmed: true as const }
+    const result = await apply([depart, returned, created, changed])
+    expect(result.status).toBe('done')
+    const confirmedKinds = (await db.events.toArray())
+      .filter((event) => event.confirmedWarnings !== undefined)
+      .map((event) => event.kind)
+      .sort()
+    expect(confirmedKinds).toStrictEqual(['mare-added', 'mare-returned', 'mare-usage-changed'])
+  })
+
+  it('五月的某一項被阻止時同樣整筆回復，回傳 item-blocked：新進的母馬與這一局另一匹馬的能力番号與出生年相同', async () => {
+    const db = await mayGame()
+    const downloads = stubDownloads()
+    await db.horses.update('V', {
+      abilityNumber: CREATE.abilityNumber,
+      birthYear: CREATE.birthYear,
+    })
+    const items: ImportPlanItem[] = [{ kind: 'mare-depart', horseId: 'A', reason: 'sold' }, CREATE]
+    expect(await applyImport(db, plan({ items }), { now: NOW })).toStrictEqual({
+      status: 'blocked',
+      blocks: [
+        {
+          kind: 'item-blocked',
+          index: 1,
+          item: CREATE,
+          blocks: [{ kind: 'same-horse', horseId: 'V' }],
+        },
+      ],
+    })
+    expect(await db.mares.get('A')).toMatchObject({ herd: 'in-herd' })
+    expect(await db.horses.count()).toBe(8)
+    expect(await db.imports.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
     expect(await listCheckpoints(db, GAME)).toEqual([])
     expect(downloads).toHaveLength(0)
   })

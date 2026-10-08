@@ -1,3 +1,7 @@
+import type { Base } from './horse'
+import type { LinePosition } from './lines'
+import type { AbsenceReason, HerdStatus, MareAssignment, MareUsage } from './mares'
+
 // ce-import 與 storage 共用的匯入型別與規則（技術設計 4.2、4.4）
 
 /** 遊戲內的時點（需求規格 4.1、11.1）：month 月 week 週，每月 4 週 */
@@ -71,8 +75,26 @@ export function compareGamePoints(a: GamePoint, b: GamePoint): number {
 export type ImportMode = 'normal' | 'correction' | 'catch-up'
 
 /**
- * 結果摘要（需求規格 11.1）：檔案的筆數、套用與略過的筆數。一月另填待核對（還沒處理的產駒匹數）、
- * 警告與錯誤的筆數（技術設計 4.4「一月」）；其他類型沒用到時不存
+ * 五月繁殖圈名單的筆數（需求規格 11.5、MAY-02）與據點分布（技術設計 4.4「五月對帳」）：
+ * 定年引退與售出只算這次判定的缺席；轉場是繼續在圈、據點改變的列（原本不知道據點的不算）；
+ * 未配對是還沒處理的未配對母馬；衝突是錯誤的列
+ */
+export interface HerdSummary {
+  continuing: number
+  newArrivals: number
+  returned: number
+  retired: number
+  sold: number
+  moved: number
+  unmatched: number
+  conflicts: number
+  /** 據點分布：32～35 各幾列 */
+  bases: Record<Base, number>
+}
+
+/**
+ * 結果摘要（需求規格 11.1）：檔案的筆數、套用與略過的筆數。一月與五月另填待核對、警告與錯誤的筆數
+ * （技術設計 4.4「一月」「五月對帳」），五月再加 MAY-02 的筆數與據點分布；其他類型沒用到時不存
  */
 export interface ImportSummary {
   total: number
@@ -81,6 +103,7 @@ export interface ImportSummary {
   pending?: number
   warnings?: number
   errors?: number
+  herd?: HerdSummary
 }
 
 /** 匯入層級的警告：檔案年份比目前遊戲年晚兩年以上（需求規格 11.1、IMP-15）；from 是推進前的目前遊戲年 */
@@ -165,6 +188,81 @@ export interface JanuarySnapshot {
   foals: ImportFoal[]
 }
 
+/** 比對用的馬名與父母名（技術設計 4.4「一月」「五月對帳」）；還沒有正式馬名時馬名留空 */
+export interface ImportHorseNames {
+  /** 完整馬名 */
+  fullName?: string
+  /** 基本馬名 */
+  baseName?: string
+  /** 馬名的來源：import 為經匯入確認，manual 為手動輸入；沒有馬名時留空 */
+  nameSource?: 'import' | 'manual'
+  sire: ImportParentNames
+  dam: ImportParentNames
+}
+
+/** 五月比對用的馬匹（技術設計 4.4「五月對帳」）：能力番号與出生年還沒有時留空 */
+export interface ImportHorse extends ImportHorseNames {
+  id: string
+  abilityNumber?: string
+  birthYear?: number
+}
+
+/** 五月比對用的母馬（技術設計 4.4「五月對帳」）：這一局 mares 的一列（在圈或已離圈）與她的馬匹 */
+export interface ImportMare extends ImportHorse {
+  usage: MareUsage
+  /** 所屬母馬群的系與代數；待指定用途與自由配種所生留空 */
+  groupLine?: LinePosition
+  groupGeneration?: number
+  herd: HerdStatus
+  /** 據點；還不知道時留空 */
+  location?: Base
+  /** 已記的繁殖牝馬馬番号 */
+  broodmareNumbers: string[]
+  /** 上次五月之後有她的新增或回歸事件（用途把關的「上次五月匯入後登記的」） */
+  entered: boolean
+  /** 在圈狀態是售出，而且上次五月之後她最後一筆離圈事件是手動的（MAY-13 的「已登記賣出」） */
+  soldByUser: boolean
+  /** 上次五月之後她最後一筆離圈事件來自年份與這份名單相同的五月匯入（資料更正的特例） */
+  departedThisYear: boolean
+}
+
+/** 五月比對用的自家牝駒（技術設計 4.4「五月對帳」）：有出生紀錄、還沒進過繁殖圈 */
+export interface ImportFilly extends ImportHorse {
+  /** 自由配種所生：出生紀錄沒有系與代數 */
+  free: boolean
+  /** 牧場處置是已售出 */
+  sold: boolean
+}
+
+/** 上次五月匯入：年份早於這份名單的五月繁殖圈名單中，年份最晚、同年時套用時間最晚的一筆 */
+export interface LastMayImport {
+  id: string
+  year: number
+  /** 套用時間（ISO 8601）；「上次五月之後」是寫入時間晚於它的事件 */
+  appliedAt: string
+}
+
+/** 較晚的五月匯入：年份晚於這份名單的五月繁殖圈名單中，年份最早、同年時套用時間最早的一筆 */
+export interface LaterMayImport {
+  id: string
+  year: number
+}
+
+/**
+ * 五月繁殖圈名單的快照（技術設計 4.4「五月對帳」）：名單的年份、上次與較晚的五月匯入（沒有時留空）、定年、
+ * 這一局的母馬與出生年不晚於年份減 2、還沒進過繁殖圈的自家牝駒
+ */
+export interface MaySnapshot {
+  /** 名單的年份（使用者確認的年份） */
+  year: number
+  lastMay?: LastMayImport
+  /** 有它時不能預覽：較早年份的名單只能回溯到它套用之前再重新匯入（需求規格 11.5「較晚的五月已套用」） */
+  laterMay?: LaterMayImport
+  retirementAge: number
+  mares: ImportMare[]
+  fillies: ImportFilly[]
+}
+
 /**
  * 匯入比對快照（技術設計 4.4「資料流」第 4 步）：遊戲局、這一局的匯入紀錄與檢查點的摘要；
  * 各類型比對要用的資料依類型另外帶（4-3 起）
@@ -178,6 +276,8 @@ export interface ImportSnapshot {
   checkpoints: ImportCheckpoint[]
   /** 一月二歲馬總表的資料；其他類型沒有 */
   january?: JanuarySnapshot
+  /** 五月繁殖圈名單的資料；其他類型沒有 */
+  may?: MaySnapshot
 }
 
 /**
@@ -197,8 +297,115 @@ export interface FoalNameItem {
   horseNumber: string
 }
 
+/**
+ * 五月名單上沒配到任何紀錄的列：建立市場母馬（技術設計 4.4「五月對帳」、4.3「五月新進的市場母馬」）。
+ * 帶這一列的值，用途是用途把關選的（預設待指定用途）
+ */
+export interface MareCreateItem {
+  kind: 'mare-create'
+  /** 第 1 欄的完整馬名 */
+  fullName: string
+  /** 第 59 欄的基本馬名 */
+  baseName: string
+  abilityNumber: string
+  birthYear: number
+  /** 父馬、母馬：名單的原文，寫入時去掉前綴存基本馬名 */
+  sireName: string
+  damName: string
+  /** 父系：已去掉結尾「系」；空白時留空 */
+  sireSystem?: string
+  /** 牝系：名單的原文 */
+  femaleLine: string
+  location: Base
+  /** 繁殖牝馬馬番号 */
+  horseNumber: string
+  assignment: MareAssignment
+  /** 例外補入的原因（需求規格 7.3）；不是例外補入時不保存 */
+  exceptionReason?: string
+  /** 使用者已確認這一項的警告（套用回傳 item-unconfirmed 之後標記） */
+  confirmed?: true
+}
+
+/** 五月缺席：在圈的母馬離圈，原因是售出或定年引退（技術設計 4.3「五月缺席的離圈」） */
+export interface MareDepartItem {
+  kind: 'mare-depart'
+  horseId: string
+  reason: AbsenceReason
+}
+
+/** 撤銷離圈、回到生產中：已登記賣出選撤銷，或資料更正的特例（技術設計 4.4「五月對帳」） */
+export interface MareRevokeItem {
+  kind: 'mare-revoke'
+  horseId: string
+}
+
+/** 補齊身分：補上空白的能力番号與出生年（技術設計 4.3「補齊身分」），帶名單的值 */
+export interface HorseIdentityItem {
+  kind: 'horse-identity'
+  horseId: string
+  abilityNumber: string
+  birthYear: number
+}
+
+/** 回歸或視為買回：據點取名單；市場母馬在用途把關改了用途時帶用途 */
+export interface MareReturnItem {
+  kind: 'mare-return'
+  horseId: string
+  location: Base
+  assignment?: MareAssignment
+  /** 例外補入的原因（需求規格 7.3）；不是例外補入時不保存 */
+  exceptionReason?: string
+  /** 使用者已確認這一項的警告（套用回傳 item-unconfirmed 之後標記） */
+  confirmed?: true
+}
+
+/** 還沒進過繁殖圈的自家牝駒轉入，據點取名單 */
+export interface FillyTransferItem {
+  kind: 'filly-transfer'
+  horseId: string
+  location: Base
+}
+
+/** 繼續在圈的母馬轉場，或補上原本不知道的據點 */
+export interface MareMoveItem {
+  kind: 'mare-move'
+  horseId: string
+  location: Base
+}
+
+/** 記一筆階段馬番号（技術設計 4.3「繁殖牝馬馬番号」）；五月是繁殖牝馬階段 */
+export interface HorseNumberItem {
+  kind: 'horse-number'
+  horseId: string
+  stage: 'broodmare'
+  number: string
+}
+
+/** 用途把關改了繼續在圈的市場母馬的用途 */
+export interface MareUsageItem {
+  kind: 'mare-usage'
+  horseId: string
+  assignment: MareAssignment
+  /** 例外補入的原因（需求規格 7.3）；不是例外補入時不保存 */
+  exceptionReason?: string
+  /** 使用者已確認這一項的警告（套用回傳 item-unconfirmed 之後標記） */
+  confirmed?: true
+}
+
+/** 五月繁殖圈名單的項目（技術設計 4.4「五月對帳」） */
+export type MayItem =
+  | MareDepartItem
+  | MareRevokeItem
+  | HorseIdentityItem
+  | MareReturnItem
+  | FillyTransferItem
+  | MareCreateItem
+  | MareMoveItem
+  | HorseNumberItem
+  | MareUsageItem
+
 /** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作，各類型的項目加進這個聯合型別 */
-export type ImportPlanItem = FoalNameItem
+export type ImportPlanItem = FoalNameItem | MayItem
 
 /** 套用計畫（技術設計 4.4「流程」）：storage 的 applyImport 依它在一個交易內套用 */
 export interface ImportPlan {
