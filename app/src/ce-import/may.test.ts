@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { GAME } from '../../tests/support/rows'
 import type { ImportFilly, ImportMare, ImportSnapshot, MaySnapshot } from '../core/imports'
 import type { BroodmareEntry } from './formats'
-import { mayContent, previewMay } from './may'
+import { mayContent, previewMay, type MayDecisions, type UsageDecision } from './may'
 
 /** 能力番号與馬番号的寫法：0x 加 4 位大寫十六進位 */
 const hex = (value: number) => `0x${value.toString(16).toUpperCase().padStart(4, '0')}`
@@ -517,6 +517,278 @@ describe('previewMay', () => {
       '快照沒有五月繁殖圈名單的資料',
     )
     expect(() => previewMay([entry(1, { farm: 31 })], snapshot([]), 'normal')).toThrow(RangeError)
+  })
+})
+
+describe('previewMay：使用者的決定', () => {
+  it('缺席的原因可以逐匹更正；不是缺席或未配對的母馬丟出 RangeError（MARE-09）', () => {
+    const mares = [
+      mare('M1', { abilityNumber: hex(1), broodmareNumbers: [hex(0x1001)] }),
+      mare('A24', { abilityNumber: hex(0x22), birthYear: 1965 }),
+    ]
+    const decisions: MayDecisions = { absences: new Map([['A24', 'retired']]) }
+    const preview = previewMay([entry(1)], snapshot(mares), 'normal', decisions)
+    expect(preview.absences).toStrictEqual([
+      { horseId: 'A24', age: 24, defaultReason: 'sold', reason: 'retired' },
+    ])
+    expect(preview.herd).toMatchObject({ retired: 1, sold: 0 })
+    expect(mayContent(preview).items).toStrictEqual([
+      { kind: 'mare-depart', horseId: 'A24', reason: 'retired' },
+    ])
+    const wrong: MayDecisions = { absences: new Map([['M1', 'sold']]) }
+    expect(() => previewMay([entry(1)], snapshot(mares), 'normal', wrong)).toThrow(
+      '這匹母馬不是缺席或未配對：M1',
+    )
+  })
+
+  it('未配對：指定新進其他的一列，照配到處理並補能力番号與出生年，那一列不另外新增；指定的列不再是候選；確認缺席的接在缺席之後離圈；全部處理完才能產生內容（MAY-14）', () => {
+    const mares = [
+      // 經匯入確認的母馬名前後有空白：忽略後與名單相同，不是錯誤
+      mare('U1', {
+        baseName: 'ミスタイプ',
+        nameSource: 'manual',
+        birthYear: 1982,
+        location: 33,
+        dam: { confirmed: ' ハハ ', known: ' ハハ ' },
+      }),
+      mare('U2', { baseName: 'ユーニ', nameSource: 'manual', birthYear: 1982 }),
+      mare('U3', { baseName: 'ユーサン', nameSource: 'manual', birthYear: undefined }),
+      mare('A1', { abilityNumber: hex(0x60), birthYear: 1970 }),
+    ]
+    const entries = [
+      entry(1, { fullName: 'ミスタイポ', baseName: 'ミスタイポ', birthYear: 1982 }),
+      entry(2, { fullName: 'ユーニイ', baseName: 'ユーニイ', birthYear: 1982 }),
+      entry(3, { birthYear: 1984 }),
+    ]
+    const decisions: MayDecisions = {
+      picks: new Map([['U1', 1]]),
+      absences: new Map([['U2', 'sold']]),
+    }
+    const preview = previewMay(entries, snapshot(mares), 'normal', decisions)
+    expect(preview.rows[0]).toStrictEqual({
+      line: 1,
+      kind: 'continuing',
+      horseId: 'U1',
+      match: 'picked',
+      changes: {
+        identity: { abilityNumber: hex(1) },
+        location: { from: 33, to: 32 },
+        horseNumber: hex(0x1001),
+      },
+      warnings: [],
+      items: [
+        { kind: 'horse-identity', horseId: 'U1', abilityNumber: hex(1), birthYear: 1982 },
+        { kind: 'mare-move', horseId: 'U1', location: 32 },
+        { kind: 'horse-number', horseId: 'U1', stage: 'broodmare', number: hex(0x1001) },
+      ],
+    })
+    expect(preview.rows.map((row) => [row.line, row.kind])).toStrictEqual([
+      [1, 'continuing'],
+      [2, 'new-other'],
+      [3, 'new-other'],
+    ])
+    expect(preview.unmatched).toStrictEqual([
+      { horseId: 'U1', candidates: [2], resolution: { line: 1 } },
+      { horseId: 'U2', candidates: [2], resolution: { reason: 'sold' } },
+      { horseId: 'U3', candidates: [2, 3] },
+    ])
+    expect(preview.herd).toMatchObject({
+      continuing: 1,
+      newArrivals: 2,
+      sold: 2,
+      moved: 1,
+      unmatched: 1,
+    })
+    expect(() => mayContent(preview)).toThrow('未配對的母馬還沒處理：U3')
+
+    const done = previewMay(entries, snapshot(mares), 'normal', {
+      ...decisions,
+      absences: new Map([
+        ['U2', 'sold'],
+        ['U3', 'retired'],
+      ]),
+    })
+    expect(done.herd).toMatchObject({ retired: 1, sold: 2, unmatched: 0 })
+    expect(mayContent(done).items.slice(0, 3)).toStrictEqual([
+      { kind: 'mare-depart', horseId: 'A1', reason: 'sold' },
+      { kind: 'mare-depart', horseId: 'U2', reason: 'sold' },
+      { kind: 'mare-depart', horseId: 'U3', reason: 'retired' },
+    ])
+  })
+
+  it('指定不合法時丟出 RangeError：不是未配對的母馬、那一列不是新進其他（配到別匹、錯誤、已被指定、檔案沒有）、能力番号或出生年矛盾、同一匹又確認缺席；指定的列與經匯入確認的父母名不符時是錯誤', () => {
+    const mares = [
+      mare('U1', {
+        baseName: 'ユーイチ',
+        nameSource: 'manual',
+        birthYear: 1982,
+        sire: { confirmed: 'ベツノチチ', known: 'ベツノチチ' },
+        dam: { confirmed: 'ベツノハハ', known: 'ベツノハハ' },
+      }),
+      mare('U2', { baseName: 'ユーニ', nameSource: 'manual', birthYear: 1982 }),
+      mare('M1', { abilityNumber: hex(5) }),
+    ]
+    const entries = [
+      entry(1, { birthYear: 1982 }),
+      entry(2, { birthYear: 1983 }),
+      entry(3, { fullName: '(外)', birthYear: 1982 }),
+      entry(5),
+    ]
+    const preview = (decisions: MayDecisions) =>
+      previewMay(entries, snapshot(mares), 'normal', decisions)
+    const picks = (...pairs: [string, number][]): MayDecisions => ({ picks: new Map(pairs) })
+    expect(() => preview(picks(['M1', 1]))).toThrow('這匹母馬不是未配對：M1')
+    expect(() => preview(picks(['U2', 5]))).toThrow('第 5 行不是新進（其他），或已指定給別的母馬')
+    expect(() => preview(picks(['U2', 3]))).toThrow('第 3 行不是新進（其他）')
+    expect(() => preview(picks(['U2', 9]))).toThrow('第 9 行不是新進（其他）')
+    expect(() => preview(picks(['U1', 1], ['U2', 1]))).toThrow('第 1 行不是新進（其他）')
+    expect(() => preview(picks(['U2', 2]))).toThrow('第 2 行的能力番号或出生年與母馬不同：U2')
+    expect(() =>
+      preview({ picks: new Map([['U2', 1]]), absences: new Map([['U2', 'sold']]) }),
+    ).toThrow('未配對的母馬不能同時指定列與確認缺席：U2')
+
+    const conflict = preview(picks(['U1', 1]))
+    expect(conflict.errors).toContainEqual({
+      line: 1,
+      horseIds: ['U1'],
+      reasons: ['sire', 'dam'],
+    })
+    expect(conflict.rows.map((row) => row.line)).not.toContain(1)
+    expect(conflict.unmatched[0]).toStrictEqual({
+      horseId: 'U1',
+      candidates: [],
+      resolution: { line: 1 },
+    })
+  })
+
+  it('已登記賣出卻仍在名單：選撤銷照撤銷離圈，選視為買回照回歸（市場母馬列入用途把關）；不處理時待核對；不是已登記賣出的母馬丟出 RangeError（MAY-13）', () => {
+    const mares = [
+      mare('S1', { abilityNumber: hex(1), herd: 'sold', soldByUser: true, location: 33 }),
+      mare('S2', {
+        abilityNumber: hex(2),
+        herd: 'sold',
+        soldByUser: true,
+        usage: 'substitute',
+        groupLine: 2,
+        groupGeneration: 3,
+      }),
+      mare('S3', { abilityNumber: hex(3), herd: 'sold', soldByUser: true }),
+      mare('M4', { abilityNumber: hex(4) }),
+    ]
+    const entries = [1, 2, 3, 4].map((line) => entry(line))
+    const decisions: MayDecisions = {
+      soldPresent: new Map([
+        ['S1', 'revoke'],
+        ['S2', 'buyback'],
+      ]),
+    }
+    const preview = previewMay(entries, snapshot(mares), 'normal', decisions)
+    const number = (horseId: string, value: number) =>
+      ({ kind: 'horse-number', horseId, stage: 'broodmare', number: hex(value) }) as const
+    expect(
+      preview.rows.map(({ line, kind, resolution, items }) => ({ line, kind, resolution, items })),
+    ).toStrictEqual([
+      {
+        line: 1,
+        kind: 'sold-present',
+        resolution: 'revoke',
+        items: [
+          { kind: 'mare-revoke', horseId: 'S1' },
+          { kind: 'mare-move', horseId: 'S1', location: 32 },
+          number('S1', 0x1001),
+        ],
+      },
+      {
+        line: 2,
+        kind: 'sold-present',
+        resolution: 'buyback',
+        items: [{ kind: 'mare-return', horseId: 'S2', location: 32 }, number('S2', 0x1002)],
+      },
+      { line: 3, kind: 'sold-present', resolution: undefined, items: [] },
+      { line: 4, kind: 'continuing', resolution: undefined, items: [number('M4', 0x1004)] },
+    ])
+    expect(preview.rows[2]).not.toHaveProperty('resolution')
+    expect(preview.usages).toStrictEqual([
+      { key: 'S2', current: { usage: 'substitute', groupLine: 2, groupGeneration: 3 } },
+    ])
+    expect(preview.herd).toMatchObject({ continuing: 2, returned: 1, moved: 1 })
+    expect(preview.counts).toStrictEqual({
+      applicable: 3,
+      skipped: 0,
+      pending: 1,
+      errors: 0,
+      warnings: 0,
+    })
+    const wrong: MayDecisions = { soldPresent: new Map([['M4', 'revoke']]) }
+    expect(() => previewMay(entries, snapshot(mares), 'normal', wrong)).toThrow(
+      '這匹母馬不是已登記賣出卻仍在名單：M4',
+    )
+  })
+
+  it('用途把關：選的用途記在清單上；新進其他照選的用途建立，回歸的帶給回歸，繼續在圈的另加修改用途，例外補入原因與確認照帶；不在清單上的對象丟出 RangeError（MAY-11）', () => {
+    const mares = [
+      mare('G1', { abilityNumber: hex(1), entered: true }),
+      mare('G2', { abilityNumber: hex(2) }),
+      mare('G3', { abilityNumber: hex(3), herd: 'sold' }),
+    ]
+    const entries = [1, 2, 3, 4].map((line) => entry(line))
+    const pairing = { kind: 'pairing', line: 1, generation: 2 } as const
+    const decisions: MayDecisions = {
+      usages: new Map<string | number, UsageDecision>([
+        ['G1', { assignment: pairing }],
+        ['G3', { assignment: pairing, exceptionReason: '自家母駒不足', confirmed: true }],
+        [4, { assignment: pairing, confirmed: true }],
+      ]),
+    }
+    const preview = previewMay(entries, snapshot(mares), 'normal', decisions)
+    expect(preview.usages).toStrictEqual([
+      { key: 'G1', current: { usage: 'unassigned' }, decision: { assignment: pairing } },
+      {
+        key: 'G3',
+        current: { usage: 'unassigned' },
+        decision: { assignment: pairing, exceptionReason: '自家母駒不足', confirmed: true },
+      },
+      {
+        key: 4,
+        current: { usage: 'unassigned' },
+        decision: { assignment: pairing, confirmed: true },
+      },
+    ])
+    expect(mayContent(preview).items).toStrictEqual([
+      {
+        kind: 'mare-return',
+        horseId: 'G3',
+        location: 32,
+        assignment: pairing,
+        exceptionReason: '自家母駒不足',
+        confirmed: true,
+      },
+      {
+        kind: 'mare-create',
+        fullName: 'ウマ4',
+        baseName: 'ウマ4',
+        abilityNumber: hex(4),
+        birthYear: 1980,
+        sireName: 'チチ',
+        damName: 'ハハ',
+        sireSystem: 'エクリプス',
+        femaleLine: 'ヒンケイ',
+        location: 32,
+        horseNumber: hex(0x1004),
+        assignment: pairing,
+        confirmed: true,
+      },
+      { kind: 'horse-number', horseId: 'G1', stage: 'broodmare', number: hex(0x1001) },
+      { kind: 'horse-number', horseId: 'G2', stage: 'broodmare', number: hex(0x1002) },
+      { kind: 'horse-number', horseId: 'G3', stage: 'broodmare', number: hex(0x1003) },
+      { kind: 'mare-usage', horseId: 'G1', assignment: pairing },
+    ])
+    for (const key of ['G2', 9]) {
+      const wrong: MayDecisions = { usages: new Map([[key, { assignment: pairing }]]) }
+      expect(() => previewMay(entries, snapshot(mares), 'normal', wrong)).toThrow(
+        `不在用途把關清單上：${key}`,
+      )
+    }
   })
 })
 
