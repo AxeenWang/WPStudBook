@@ -1,4 +1,7 @@
+import { splitHorseName } from '../core/identity'
+import type { MareCreateItem } from '../core/imports'
 import type { WPStudBookDatabase } from './database'
+import { recordHorseNumber } from './horse-numbers'
 import { readRuleRows, ruleTables, type RuleRows } from './loaders'
 import {
   assertBase,
@@ -12,6 +15,7 @@ import {
 import type { Base, HorseRow, MareRow, WriteWarning } from './records'
 import {
   confirmation,
+  findSameHorse,
   gate,
   prepareNewHorse,
   runWrite,
@@ -22,7 +26,7 @@ import {
   type WriteResult,
 } from './writes'
 
-// 市場母馬的寫入操作：新增與修改用途（需求規格 8.3、8.4；技術設計 4.3「寫入操作」）
+// 市場母馬的寫入操作：新增、五月新進與修改用途（需求規格 8.3、8.4、11.5；技術設計 4.3「寫入操作」）
 
 /** 新增市場母馬的輸入 */
 export interface MarketMareInput {
@@ -111,6 +115,100 @@ export async function addMarketMare(
     })
     return context.done({ horse, mare, parentSystemUnknown }, warnings)
   })
+}
+
+/**
+ * 五月新進市場母馬的阻止原因（技術設計 4.3「五月新進的市場母馬」）：
+ * - horse-name：完整馬名只有前綴、沒有馬名，或基本馬名空白（需求規格 6.4）
+ * - same-horse：這一局已有相同能力番号與出生年的馬（6.2），horseId 是那一匹
+ * - 用途的阻止（AssignmentBlock）
+ */
+export type ImportMareBlock =
+  { kind: 'horse-name' } | { kind: 'same-horse'; horseId: string } | AssignmentBlock
+
+/**
+ * 五月新進的市場母馬（需求規格 8.4、11.5、MAY-03、MAY-11；技術設計 4.3「五月新進的市場母馬」）：
+ * 五月名單上沒配到任何紀錄的列，由 applyImport 在匯入的交易內呼叫。馬匹是牝馬，完整馬名、基本馬名、
+ * 能力番号與出生年取項目的值，馬名來源與父母名、父系的來源都是經匯入確認；父母名去掉前綴存基本馬名，
+ * 空白（或只有前綴）的父母名、空白的父系與牝系不存。用途、例外補入與來源照新增市場母馬（resolveAssignment），
+ * 待指定用途的來源為其他；8.3 親系統與例外補入的警告要確認。不做「可能是買回」的警告：已售出的母馬由匯入的
+ * 配對找到，配不到才新建。母馬在圈、不使該代成立，記據點；以 recordHorseNumber 記繁殖牝馬階段的馬番号。
+ * 事件 mare-added 記初次據點。據點不是 32～35 時丟出錯誤
+ */
+export async function importMare(
+  db: WPStudBookDatabase,
+  gameId: string,
+  item: MareCreateItem,
+  options: WriteOptions = {},
+): Promise<WriteResult<AddedMare, ImportMareBlock>> {
+  assertBase(item.location)
+  return runWrite(db, gameId, [...ruleTables(db), db.horseNumbers], options, async (context) => {
+    const rows = await readRuleRows(db, gameId, context.game)
+    const blocks: ImportMareBlock[] = []
+    if (splitHorseName(item.fullName) === null || item.baseName.trim() === '') {
+      blocks.push({ kind: 'horse-name' })
+    }
+    const same = await findSameHorse(context, item.abilityNumber, item.birthYear)
+    if (same) blocks.push({ kind: 'same-horse', horseId: same.id })
+    const resolved = resolveAssignment(
+      rows,
+      item.assignment,
+      { sireSystem: item.sireSystem },
+      item.exceptionReason,
+    )
+    if (!resolved.ok) blocks.push(...resolved.blocks)
+    if (!resolved.ok || blocks.length > 0) return { status: 'blocked', blocks }
+    const { placement, sourceKind, exceptionReason, warnings, parentSystemUnknown } = resolved.value
+    const stop = gate([], warnings, context.confirmed)
+    if (stop) return stop
+
+    const horse = importedMare(gameId, item)
+    const mare: MareRow = {
+      horseId: horse.id,
+      gameId,
+      ...placement,
+      herd: 'in-herd',
+      establishedGeneration: false,
+      source: { kind: sourceKind ?? 'other' },
+      location: item.location,
+      ...(exceptionReason === undefined ? {} : { exceptionReason }),
+    }
+    await db.horses.add(horse)
+    await db.mares.add(mare)
+    await recordHorseNumber(context, horse.id, 'broodmare', item.horseNumber)
+    await context.addEvent({
+      kind: 'mare-added',
+      horseId: horse.id,
+      placement,
+      mareSource: mare.source,
+      ...(exceptionReason === undefined ? {} : { exceptionReason }),
+      location: item.location,
+      ...confirmation(warnings),
+    })
+    return context.done({ horse, mare, parentSystemUnknown }, warnings)
+  })
+}
+
+/** 五月新進的市場母馬的馬匹：名單的值，經匯入確認 */
+function importedMare(gameId: string, item: MareCreateItem): HorseRow {
+  const sireName = splitHorseName(item.sireName.trim())?.baseName
+  const damName = splitHorseName(item.damName.trim())?.baseName
+  const pedigree = sireName !== undefined || damName !== undefined || item.sireSystem !== undefined
+  return {
+    id: crypto.randomUUID(),
+    gameId,
+    fullName: item.fullName,
+    baseName: item.baseName,
+    nameSource: 'import',
+    abilityNumber: item.abilityNumber,
+    birthYear: item.birthYear,
+    sex: 'female',
+    ...(sireName === undefined ? {} : { sireName }),
+    ...(damName === undefined ? {} : { damName }),
+    ...(item.sireSystem === undefined ? {} : { sireSystem: item.sireSystem }),
+    ...(pedigree ? { pedigreeSource: 'import' as const } : {}),
+    ...(item.femaleLine.trim() === '' ? {} : { femaleLine: item.femaleLine }),
+  }
 }
 
 /**

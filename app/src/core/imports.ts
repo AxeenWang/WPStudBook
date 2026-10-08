@@ -1,6 +1,6 @@
 import type { Base } from './horse'
 import type { LinePosition } from './lines'
-import type { HerdStatus, MareUsage } from './mares'
+import type { HerdStatus, MareAssignment, MareUsage } from './mares'
 
 // ce-import 與 storage 共用的匯入型別與規則（技術設計 4.2、4.4）
 
@@ -268,6 +268,35 @@ export interface FoalNameItem {
   abilityNumber: string
   /** 競走馬馬番号 */
   horseNumber: string
+}
+
+/**
+ * 五月名單上沒配到任何紀錄的列：建立市場母馬（技術設計 4.4「五月對帳」、4.3「五月新進的市場母馬」）。
+ * 帶這一列的值，用途是用途把關選的（預設待指定用途）
+ */
+export interface MareCreateItem {
+  kind: 'mare-create'
+  /** 第 1 欄的完整馬名 */
+  fullName: string
+  /** 第 59 欄的基本馬名 */
+  baseName: string
+  abilityNumber: string
+  birthYear: number
+  /** 父馬、母馬：名單的原文，寫入時去掉前綴存基本馬名 */
+  sireName: string
+  damName: string
+  /** 父系：已去掉結尾「系」；空白時留空 */
+  sireSystem?: string
+  /** 牝系：名單的原文 */
+  femaleLine: string
+  location: Base
+  /** 繁殖牝馬馬番号 */
+  horseNumber: string
+  assignment: MareAssignment
+  /** 例外補入的原因（需求規格 7.3）；不是例外補入時不保存 */
+  exceptionReason?: string
+  /** 使用者已確認這一項的警告（套用回傳 item-unconfirmed 之後標記） */
+  confirmed?: true
 }
 
 /** 套用計畫的一項（技術設計 4.4「流程」）：每一項對應一個寫入操作，各類型的項目加進這個聯合型別 */
