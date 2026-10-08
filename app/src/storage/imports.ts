@@ -17,6 +17,7 @@ import {
   type ImportType,
   type JanuarySnapshot,
   type LastMayImport,
+  type LaterMayImport,
   type MaySnapshot,
 } from '../core/imports'
 import { prepareBackupTarget } from './backup-folder'
@@ -125,7 +126,7 @@ async function loadJanuary(
 }
 
 /**
- * 五月的快照（技術設計 4.4「五月對帳」）：上次五月匯入、定年、這一局 mares 的每一列（在圈或已離圈）與她的馬匹、
+ * 五月的快照（技術設計 4.4「五月對帳」）：上次與較晚的五月匯入、定年、這一局 mares 的每一列（在圈或已離圈）與她的馬匹、
  * 已記的繁殖牝馬馬番号與三個旗標，以及出生年不晚於年份減 2、還沒進過繁殖圈的自家牝駒。
  * 在 loadImportSnapshot 的交易內呼叫
  */
@@ -136,6 +137,7 @@ async function loadMay(
   imports: readonly ImportRecord[],
 ): Promise<MaySnapshot> {
   const lastMay = lastMayImport(imports, year)
+  const laterMay = laterMayImport(imports, year)
   const { retirementAge } = await loadSettings(db, gameId)
   const mareRows = await db.mares.where('gameId').equals(gameId).toArray()
   const mareIds = new Set(mareRows.map((mare) => mare.horseId))
@@ -178,7 +180,14 @@ async function loadMay(
     free: horse.birth?.placement === undefined,
     sold: horse.disposition === 'sold',
   }))
-  return { year, ...(lastMay === undefined ? {} : { lastMay }), retirementAge, mares, fillies }
+  return {
+    year,
+    ...(lastMay === undefined ? {} : { lastMay }),
+    ...(laterMay === undefined ? {} : { laterMay }),
+    retirementAge,
+    mares,
+    fillies,
+  }
 }
 
 /** 上次五月匯入：年份早於 year 的五月繁殖圈名單中，年份最晚、同年時套用時間最晚的一筆；沒有時為 undefined */
@@ -195,6 +204,26 @@ function lastMayImport(imports: readonly ImportRecord[], year: number): LastMayI
   return last === undefined
     ? undefined
     : { id: last.id, year: last.year, appliedAt: last.appliedAt }
+}
+
+/**
+ * 較晚的五月匯入：年份晚於 year 的五月繁殖圈名單中，年份最早、同年時套用時間最早的一筆；沒有時為 undefined。
+ * 有它時較早年份的名單不能預覽，回溯要回到它套用之前（需求規格 11.5「較晚的五月已套用」）
+ */
+function laterMayImport(
+  imports: readonly ImportRecord[],
+  year: number,
+): LaterMayImport | undefined {
+  let first: ImportRecord | undefined
+  for (const record of imports) {
+    if (record.type !== 'may-herd' || record.year <= year) continue
+    const earlier =
+      first === undefined ||
+      record.year < first.year ||
+      (record.year === first.year && record.appliedAt < first.appliedAt)
+    if (earlier) first = record
+  }
+  return first === undefined ? undefined : { id: first.id, year: first.year }
 }
 
 /**
@@ -438,7 +467,9 @@ async function commitImport(
         throw new ItemStopped({ kind: 'item-blocked', index, item, blocks: result.blocks })
       }
       if (result.status === 'unconfirmed') {
-        if (!CONFIRMABLE.has(item.kind)) throw new Error(`計畫的第 ${index} 項有待確認的警告`)
+        if (!Object.hasOwn(CONFIRMABLE, item.kind)) {
+          throw new Error(`計畫的第 ${index} 項有待確認的警告`)
+        }
         throw new ItemStopped({ kind: 'item-unconfirmed', index, item, warnings: result.warnings })
       }
     }
@@ -467,14 +498,18 @@ async function commitImport(
   })
 }
 
+/** 可以確認的項目的種類：帶 confirmed 的項目，由項目的型別推導 */
+type ConfirmableKind = Extract<ImportPlanItem, { confirmed?: true }>['kind']
+
 /**
- * 可以確認的項目：寫入操作可能回傳待確認的五月項目（用途把關的 8.3 與 7.3 警告），帶 confirmed（技術設計 4.4「流程」）
+ * 可以確認的項目：寫入操作可能回傳待確認的五月項目（用途把關的 8.3 與 7.3 警告），帶 confirmed（技術設計 4.4「流程」）；
+ * 項目加上或拿掉 confirmed 時，這裡少一種或多一種都是型別錯誤
  */
-const CONFIRMABLE: ReadonlySet<ImportPlanItem['kind']> = new Set([
-  'mare-return',
-  'mare-create',
-  'mare-usage',
-])
+const CONFIRMABLE: Readonly<Record<ConfirmableKind, true>> = {
+  'mare-return': true,
+  'mare-create': true,
+  'mare-usage': true,
+}
 
 /** 依項目的種類呼叫對應的寫入操作（技術設計 4.4「流程」）；資料更正時讓寫入操作改經匯入確認的馬名 */
 async function applyItem(

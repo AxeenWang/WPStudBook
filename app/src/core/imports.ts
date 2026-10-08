@@ -242,14 +242,22 @@ export interface LastMayImport {
   appliedAt: string
 }
 
+/** 較晚的五月匯入：年份晚於這份名單的五月繁殖圈名單中，年份最早、同年時套用時間最早的一筆 */
+export interface LaterMayImport {
+  id: string
+  year: number
+}
+
 /**
- * 五月繁殖圈名單的快照（技術設計 4.4「五月對帳」）：名單的年份、上次五月匯入（沒有時留空）、定年、
+ * 五月繁殖圈名單的快照（技術設計 4.4「五月對帳」）：名單的年份、上次與較晚的五月匯入（沒有時留空）、定年、
  * 這一局的母馬與出生年不晚於年份減 2、還沒進過繁殖圈的自家牝駒
  */
 export interface MaySnapshot {
   /** 名單的年份（使用者確認的年份） */
   year: number
   lastMay?: LastMayImport
+  /** 有它時不能預覽：較早年份的名單只能回溯到它套用之前再重新匯入（需求規格 11.5「較晚的五月已套用」） */
+  laterMay?: LaterMayImport
   retirementAge: number
   mares: ImportMare[]
   fillies: ImportFilly[]

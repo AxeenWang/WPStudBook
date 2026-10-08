@@ -518,6 +518,29 @@ describe('previewMay', () => {
     )
     expect(() => previewMay([entry(1, { farm: 31 })], snapshot([]), 'normal')).toThrow(RangeError)
   })
+
+  it('只有前綴或第 59 欄空白的列是錯誤，以能力番号配到的在圈母馬仍算見到，不判缺席（技術設計 4.4「列的分類」）', () => {
+    const mares = [mare('M1', { abilityNumber: hex(1) }), mare('M2', { abilityNumber: hex(2) })]
+    const entries = [entry(1, { fullName: '(外)' }), entry(2, { baseName: ' ' })]
+    const preview = previewMay(entries, snapshot(mares), 'normal')
+    expect(preview.rows).toStrictEqual([])
+    expect(preview.errors).toStrictEqual([
+      { line: 1, horseIds: ['M1'], reasons: ['horse-name'] },
+      { line: 2, horseIds: ['M2'], reasons: ['horse-name'] },
+    ])
+    expect(preview.absences).toStrictEqual([])
+  })
+
+  it('已套用較晚年份的五月時不能預覽：直接補匯與資料更正都丟出 RangeError，較早年份的名單只能回溯後重新匯入（需求規格 11.5「較晚的五月已套用」）', () => {
+    const later = snapshot([mare('M1', { abilityNumber: hex(1) })], [], {
+      laterMay: { id: 'I2', year: 1991 },
+    })
+    for (const mode of ['catch-up', 'correction'] as const) {
+      const preview = () => previewMay([entry(1)], later, mode)
+      expect(preview).toThrow(RangeError)
+      expect(preview).toThrow('已套用 1991 年的五月繁殖圈名單，較早年份的名單請改用回溯')
+    }
+  })
 })
 
 describe('previewMay：使用者的決定', () => {

@@ -177,7 +177,8 @@ export interface MayPreview {
 }
 
 /**
- * 五月繁殖圈名單的配對與預覽（需求規格 11.5，技術設計 4.4「五月對帳」）。快照要有五月的資料，否則丟出錯誤。
+ * 五月繁殖圈名單的配對與預覽（需求規格 11.5，技術設計 4.4「五月對帳」）。快照要有五月的資料，否則丟出錯誤；
+ * 快照有較晚的五月（laterMay）時丟出 RangeError：較早年份的名單只能回溯後重新匯入（需求規格 11.5「較晚的五月已套用」）。
  * 母馬與還沒進過繁殖圈的自家牝駒以 matchHorse 配對（能力番号＋出生年，配不到時以唯一馬名輔助）；同一筆紀錄
  * 被兩列以上配到時那幾列都是衝突。沒被任何列見到的在圈母馬：有能力番号與出生年的缺席，預設原因看名單年份減 1
  * 那年的馬齡；缺能力番号或出生年的是未配對。decisions 是使用者的決定，不合法時丟出 RangeError（畫面不會送出）：
@@ -192,6 +193,9 @@ export function previewMay(
 ): MayPreview {
   const { may } = snapshot
   if (may === undefined) throw new Error('快照沒有五月繁殖圈名單的資料')
+  if (may.laterMay !== undefined) {
+    throw new RangeError(`已套用 ${may.laterMay.year} 年的五月繁殖圈名單，較早年份的名單請改用回溯`)
+  }
   const mares = new Map(may.mares.map((mare) => [mare.id, mare]))
   const horses = new Map<string, ImportHorse>(
     [...may.mares, ...may.fillies].map((horse) => [horse.id, horse]),

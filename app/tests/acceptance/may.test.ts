@@ -474,4 +474,22 @@ describe('五月繁殖牝馬（MAY）：對帳與套用', () => {
     })
     expect((await db.horses.get('F88'))?.disposition).toBe('sold')
   })
+
+  it('MAY-17 已套用較晚年份的五月名單，再以直接補匯或資料更正匯入較早年份的名單 → 不能預覽，只能回溯檢查點後重新匯入', async () => {
+    const db = await herdGame(
+      [mareHorse('C', 'シー', '0x0101', 1980)],
+      [ungroupedMareRow('C', 'unassigned', { location: 32 })],
+    )
+    const row = (age: number, horseNumber: string) =>
+      mayRow({ fullName: 'シー', age, abilityNumber: '0x0101', horseNumber })
+    await applyMayFile(db, [row(10, '0x1101')])
+    await applyMayFile(db, [row(11, '0x1101')], { year: 1991 })
+    // 1989 年從未匯入：判斷提供直接補匯，較晚的五月取最早的 1990 年；1990 年已匯入、內容不同：判斷提供資料更正
+    await expect(previewMayFile(db, [row(9, '0x1101')], { year: 1989 })).rejects.toThrow(
+      '已套用 1990 年的五月繁殖圈名單，較早年份的名單請改用回溯',
+    )
+    await expect(previewMayFile(db, [row(10, '0x1102')])).rejects.toThrow(
+      '已套用 1991 年的五月繁殖圈名單，較早年份的名單請改用回溯',
+    )
+  })
 })

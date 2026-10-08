@@ -487,6 +487,31 @@ describe('loadImportSnapshot', () => {
     ])
   })
 
+  it('五月：較晚的五月匯入是年份晚於名單的五月繁殖圈名單中，年份最早、同年時套用時間最早的一筆', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await addTestGame(db, { id: 'G2' })
+    await db.imports.bulkAdd([
+      importRecord('I1', 'may-herd', 1991, { appliedAt: '2026-10-01T00:00:00.000Z' }),
+      // 同年有資料更正時，套用時間較早的是較晚的五月：回溯要回到它套用之前
+      importRecord('I2', 'may-herd', 1990, {
+        appliedAt: '2026-10-04T00:00:00.000Z',
+        mode: 'correction',
+        corrects: 'I3',
+      }),
+      importRecord('I3', 'may-herd', 1990, { appliedAt: '2026-10-03T00:00:00.000Z' }),
+      // 不算：年份不晚於這份名單、其他類型、其他局
+      importRecord('I4', 'may-herd', 1989, { appliedAt: '2026-10-02T00:00:00.000Z' }),
+      importRecord('I5', 'july-conception', 1990, { appliedAt: '2026-10-02T00:00:00.000Z' }),
+      importRecord('I6', 'may-herd', 1990, {
+        gameId: 'G2',
+        appliedAt: '2026-10-02T00:00:00.000Z',
+      }),
+    ])
+    const snapshot = await loadImportSnapshot(db, GAME, { type: 'may-herd', year: 1989 })
+    expect(snapshot.may?.laterMay).toStrictEqual({ id: 'I3', year: 1990 })
+  })
+
   it('五月：母馬的馬匹或連結的父母不在 horses 中時丟出錯誤', async () => {
     const db = testDatabase()
     await addTestGame(db)
@@ -1002,6 +1027,33 @@ describe('applyImport', () => {
       .map((event) => event.kind)
       .sort()
     expect(confirmedKinds).toStrictEqual(['mare-added', 'mare-returned', 'mare-usage-changed'])
+  })
+
+  it('五月的某一項被阻止時同樣整筆回復，回傳 item-blocked：新進的母馬與這一局另一匹馬的能力番号與出生年相同', async () => {
+    const db = await mayGame()
+    const downloads = stubDownloads()
+    await db.horses.update('V', {
+      abilityNumber: CREATE.abilityNumber,
+      birthYear: CREATE.birthYear,
+    })
+    const items: ImportPlanItem[] = [{ kind: 'mare-depart', horseId: 'A', reason: 'sold' }, CREATE]
+    expect(await applyImport(db, plan({ items }), { now: NOW })).toStrictEqual({
+      status: 'blocked',
+      blocks: [
+        {
+          kind: 'item-blocked',
+          index: 1,
+          item: CREATE,
+          blocks: [{ kind: 'same-horse', horseId: 'V' }],
+        },
+      ],
+    })
+    expect(await db.mares.get('A')).toMatchObject({ herd: 'in-herd' })
+    expect(await db.horses.count()).toBe(8)
+    expect(await db.imports.count()).toBe(0)
+    expect(await db.events.count()).toBe(0)
+    expect(await listCheckpoints(db, GAME)).toEqual([])
+    expect(downloads).toHaveLength(0)
   })
 
   it('遊戲局不存在時丟出錯誤', async () => {
