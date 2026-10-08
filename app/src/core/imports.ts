@@ -75,8 +75,26 @@ export function compareGamePoints(a: GamePoint, b: GamePoint): number {
 export type ImportMode = 'normal' | 'correction' | 'catch-up'
 
 /**
- * 結果摘要（需求規格 11.1）：檔案的筆數、套用與略過的筆數。一月另填待核對（還沒處理的產駒匹數）、
- * 警告與錯誤的筆數（技術設計 4.4「一月」）；其他類型沒用到時不存
+ * 五月繁殖圈名單的筆數（需求規格 11.5、MAY-02）與據點分布（技術設計 4.4「五月對帳」）：
+ * 定年引退與售出只算這次判定的缺席；轉場是繼續在圈、據點改變的列（原本不知道據點的不算）；
+ * 未配對是還沒處理的未配對母馬；衝突是錯誤的列
+ */
+export interface HerdSummary {
+  continuing: number
+  newArrivals: number
+  returned: number
+  retired: number
+  sold: number
+  moved: number
+  unmatched: number
+  conflicts: number
+  /** 據點分布：32～35 各幾列 */
+  bases: Record<Base, number>
+}
+
+/**
+ * 結果摘要（需求規格 11.1）：檔案的筆數、套用與略過的筆數。一月與五月另填待核對、警告與錯誤的筆數
+ * （技術設計 4.4「一月」「五月對帳」），五月再加 MAY-02 的筆數與據點分布；其他類型沒用到時不存
  */
 export interface ImportSummary {
   total: number
@@ -85,6 +103,7 @@ export interface ImportSummary {
   pending?: number
   warnings?: number
   errors?: number
+  herd?: HerdSummary
 }
 
 /** 匯入層級的警告：檔案年份比目前遊戲年晚兩年以上（需求規格 11.1、IMP-15）；from 是推進前的目前遊戲年 */
