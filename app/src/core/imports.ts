@@ -1,3 +1,7 @@
+import type { Base } from './horse'
+import type { LinePosition } from './lines'
+import type { HerdStatus, MareUsage } from './mares'
+
 // ce-import 與 storage 共用的匯入型別與規則（技術設計 4.2、4.4）
 
 /** 遊戲內的時點（需求規格 4.1、11.1）：month 月 week 週，每月 4 週 */
@@ -165,6 +169,73 @@ export interface JanuarySnapshot {
   foals: ImportFoal[]
 }
 
+/** 比對用的馬名與父母名（技術設計 4.4「一月」「五月對帳」）；還沒有正式馬名時馬名留空 */
+export interface ImportHorseNames {
+  /** 完整馬名 */
+  fullName?: string
+  /** 基本馬名 */
+  baseName?: string
+  /** 馬名的來源：import 為經匯入確認，manual 為手動輸入；沒有馬名時留空 */
+  nameSource?: 'import' | 'manual'
+  sire: ImportParentNames
+  dam: ImportParentNames
+}
+
+/** 五月比對用的馬匹（技術設計 4.4「五月對帳」）：能力番号與出生年還沒有時留空 */
+export interface ImportHorse extends ImportHorseNames {
+  id: string
+  abilityNumber?: string
+  birthYear?: number
+}
+
+/** 五月比對用的母馬（技術設計 4.4「五月對帳」）：這一局 mares 的一列（在圈或已離圈）與她的馬匹 */
+export interface ImportMare extends ImportHorse {
+  usage: MareUsage
+  /** 所屬母馬群的系與代數；待指定用途與自由配種所生留空 */
+  groupLine?: LinePosition
+  groupGeneration?: number
+  herd: HerdStatus
+  /** 據點；還不知道時留空 */
+  location?: Base
+  /** 已記的繁殖牝馬馬番号 */
+  broodmareNumbers: string[]
+  /** 上次五月之後有她的新增或回歸事件（用途把關的「上次五月匯入後登記的」） */
+  entered: boolean
+  /** 在圈狀態是售出，而且上次五月之後她最後一筆離圈事件是手動的（MAY-13 的「已登記賣出」） */
+  soldByUser: boolean
+  /** 上次五月之後她最後一筆離圈事件來自年份與這份名單相同的五月匯入（資料更正的特例） */
+  departedThisYear: boolean
+}
+
+/** 五月比對用的自家牝駒（技術設計 4.4「五月對帳」）：有出生紀錄、還沒進過繁殖圈 */
+export interface ImportFilly extends ImportHorse {
+  /** 自由配種所生：出生紀錄沒有系與代數 */
+  free: boolean
+  /** 牧場處置是已售出 */
+  sold: boolean
+}
+
+/** 上次五月匯入：年份早於這份名單的五月繁殖圈名單中，年份最晚、同年時套用時間最晚的一筆 */
+export interface LastMayImport {
+  id: string
+  year: number
+  /** 套用時間（ISO 8601）；「上次五月之後」是寫入時間晚於它的事件 */
+  appliedAt: string
+}
+
+/**
+ * 五月繁殖圈名單的快照（技術設計 4.4「五月對帳」）：名單的年份、上次五月匯入（沒有時留空）、定年、
+ * 這一局的母馬與出生年不晚於年份減 2、還沒進過繁殖圈的自家牝駒
+ */
+export interface MaySnapshot {
+  /** 名單的年份（使用者確認的年份） */
+  year: number
+  lastMay?: LastMayImport
+  retirementAge: number
+  mares: ImportMare[]
+  fillies: ImportFilly[]
+}
+
 /**
  * 匯入比對快照（技術設計 4.4「資料流」第 4 步）：遊戲局、這一局的匯入紀錄與檢查點的摘要；
  * 各類型比對要用的資料依類型另外帶（4-3 起）
@@ -178,6 +249,8 @@ export interface ImportSnapshot {
   checkpoints: ImportCheckpoint[]
   /** 一月二歲馬總表的資料；其他類型沒有 */
   january?: JanuarySnapshot
+  /** 五月繁殖圈名單的資料；其他類型沒有 */
+  may?: MaySnapshot
 }
 
 /**

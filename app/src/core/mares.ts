@@ -1,4 +1,19 @@
+import type { LinePosition } from './lines'
 import { sisterStatusListed, type SisterStatus } from './sisters'
+
+/**
+ * 母馬的用途（需求規格 8.3、8.4）：
+ * own 自家母駒、substitute 替代母馬、start 第 1 系起點用，
+ * unassigned 待指定用途的市場母馬、free 自由配種所生的自家母駒（11.5）；後兩種不屬於任何母馬群
+ */
+export type MareUsage = 'own' | 'substitute' | 'start' | 'unassigned' | 'free'
+
+/** 在圈狀態（8.1）：生產中、售出、定年引退 */
+export type HerdStatus = 'in-herd' | 'sold' | 'retired'
+
+/** 市場母馬的用途：任務看板上的一條配對（產出第 line 系第 generation 代），或待指定用途（8.4） */
+export type MareAssignment =
+  { kind: 'pairing'; line: LinePosition; generation: number } | { kind: 'unassigned' }
 
 /** 母馬的年齡設定（需求規格 8.5），使用者可以調整 */
 export interface MareAgeSettings {

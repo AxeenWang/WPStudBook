@@ -4,6 +4,7 @@ import type { DamRole } from '../core/generation'
 import type { Base, Conception, Sex, SurfaceAptitude, Vigor } from '../core/horse'
 import type { GameTiming, ImportRecord, ImportType } from '../core/imports'
 import type { LineGeneration, LinePosition, PairingDistance } from '../core/lines'
+import type { HerdStatus, MareUsage } from '../core/mares'
 import type { SisterStatus } from '../core/sisters'
 import type { MarketStallionSystemCheck, StallionStatus } from '../core/stallions'
 import type { SubstituteConflict } from '../core/substitute'
@@ -11,7 +12,18 @@ import type { PedigreeCheck, PedigreeWarningKind } from '../core/vitality'
 import type { RowCounts } from './game-data'
 
 // 匯入與儲存共用的型別定義在核心（技術設計 4.2）；儲存層的其他檔案照舊從這裡引用
-export type { Base, Conception, GameTiming, ImportRecord, ImportType, Sex, SurfaceAptitude, Vigor }
+export type {
+  Base,
+  Conception,
+  GameTiming,
+  HerdStatus,
+  ImportRecord,
+  ImportType,
+  MareUsage,
+  Sex,
+  SurfaceAptitude,
+  Vigor,
+}
 
 // 資料表的一列（技術設計 4.3）。除了全域的 MetaRow 與 ArchiveRow，每一列都以 gameId 歸屬某一局；
 // 識別一律是 crypto.randomUUID() 產生的字串（需求規格 12.2）。
@@ -254,16 +266,6 @@ export interface SystemRow {
   /** 分出來源；沒有登錄時留空 */
   origin?: string
 }
-
-/**
- * 母馬的用途（需求規格 8.3、8.4）：
- * own 自家母駒、substitute 替代母馬、start 第 1 系起點用，
- * unassigned 待指定用途的市場母馬、free 自由配種所生的自家母駒（11.5）；後兩種不屬於任何母馬群
- */
-export type MareUsage = 'own' | 'substitute' | 'start' | 'unassigned' | 'free'
-
-/** 在圈狀態（8.1）：生產中、售出、定年引退 */
-export type HerdStatus = 'in-herd' | 'sold' | 'retired'
 
 /**
  * 母馬的來源（8.1）：市場創系、市場補血、市場混血、市場補系、所屬競走馬引退轉入、其他

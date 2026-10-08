@@ -2,6 +2,7 @@ import { listBoard } from '../core/board'
 import type { DesignatedPairing } from '../core/designated'
 import { isBase } from '../core/horse'
 import type { LinePosition } from '../core/lines'
+import type { MareAssignment } from '../core/mares'
 import { checkSubstituteMare } from '../core/substitute'
 import { buildSubstituteMares } from './inputs'
 import { buildRuleSnapshot, type RuleRows, type RuleSnapshot } from './loaders'
@@ -11,9 +12,8 @@ import type { Prepared } from './writes'
 // 市場母馬的用途：由任務看板的配對推出用途、例外補入與來源，並做 8.3 親系統檢查
 // （需求規格 7.3、8.3、8.4；技術設計 4.3「母馬的用途」）。新增市場母馬、修改用途與買回共用
 
-/** 母馬的用途：任務看板上的一條配對（產出第 line 系第 generation 代），或待指定用途 */
-export type MareAssignment =
-  { kind: 'pairing'; line: LinePosition; generation: number } | { kind: 'unassigned' }
+// 用途的指定定義在核心（計畫的項目也用到）；儲存層的其他檔案照舊從這裡引用
+export type { MareAssignment }
 
 /**
  * 用途的阻止原因：

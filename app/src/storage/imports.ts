@@ -1,9 +1,14 @@
+import Dexie from 'dexie'
 import {
   ANNUAL_TIMINGS,
   importProgress,
   isAnnualImport,
   type GamePoint,
+  type ImportFilly,
   type ImportFoal,
+  type ImportHorse,
+  type ImportHorseNames,
+  type ImportMare,
   type ImportParentNames,
   type ImportPlan,
   type ImportPlanItem,
@@ -11,14 +16,16 @@ import {
   type ImportSnapshot,
   type ImportType,
   type JanuarySnapshot,
+  type LastMayImport,
+  type MaySnapshot,
 } from '../core/imports'
 import { prepareBackupTarget } from './backup-folder'
 import { createCheckpoint, type CreatedCheckpoint } from './checkpoints'
 import type { WPStudBookDatabase } from './database'
 import { importFoalName, type FoalImportBlock } from './foal-writes'
 import { gameTables } from './game-data'
-import { loadGame, setCurrentYear } from './games'
-import type { EventSource, HorseRow } from './records'
+import { loadGame, loadSettings, setCurrentYear } from './games'
+import type { EventRow, EventSource, HorseRow, MareRow } from './records'
 import { saveBackup, type SavedBackup } from './save-backup'
 import { runWrite, type WriteOptions, type WriteResult } from './writes'
 
@@ -32,15 +39,24 @@ export interface ImportScope {
 
 /**
  * 讀出匯入比對快照（技術設計 4.4「資料流」第 4 步）：在一個唯讀交易內讀遊戲局、這一局的匯入紀錄與檢查點的摘要；
- * 一月二歲馬總表另讀出生年為年份減 2 的自家產駒（4.4「一月」）。
- * 遊戲局不存在，或產駒連結的父母不在 horses 中時丟出錯誤
+ * 一月二歲馬總表另讀出生年為年份減 2 的自家產駒（4.4「一月」），五月繁殖圈名單另讀母馬與自家牝駒（4.4「五月對帳」）。
+ * 遊戲局或設定不存在、母馬的馬匹不在 horses 中，或產駒與母馬連結的父母不在 horses 中時丟出錯誤
  */
 export async function loadImportSnapshot(
   db: WPStudBookDatabase,
   gameId: string,
   scope: ImportScope,
 ): Promise<ImportSnapshot> {
-  const tables = [db.games, db.imports, db.checkpoints, db.horses, db.horseNumbers]
+  const tables = [
+    db.games,
+    db.settings,
+    db.imports,
+    db.checkpoints,
+    db.horses,
+    db.horseNumbers,
+    db.mares,
+    db.events,
+  ]
   return db.transaction('r', tables, async () => {
     const game = await loadGame(db, gameId)
     const imports = await db.imports.where('gameId').equals(gameId).toArray()
@@ -49,6 +65,8 @@ export async function loadImportSnapshot(
       scope.type === 'january-two-year-olds'
         ? await loadJanuary(db, gameId, scope.year - 2)
         : undefined
+    const may =
+      scope.type === 'may-herd' ? await loadMay(db, gameId, scope.year, imports) : undefined
     return {
       gameId,
       currentYear: game.currentYear,
@@ -61,6 +79,7 @@ export async function loadImportSnapshot(
         createdAt,
       })),
       ...(january === undefined ? {} : { january }),
+      ...(may === undefined ? {} : { may }),
     }
   })
 }
@@ -79,35 +98,193 @@ async function loadJanuary(
     .equals([gameId, birthYear])
     .filter((horse) => horse.birth !== undefined)
     .toArray()
-  const parentIds = new Set<string>()
-  for (const horse of rows) {
-    if (horse.sireId !== undefined) parentIds.add(horse.sireId)
-    if (horse.damId !== undefined) parentIds.add(horse.damId)
-  }
-  const parents = new Map<string, HorseRow>()
-  for (const parent of await db.horses.bulkGet([...parentIds])) {
-    if (parent) parents.set(parent.id, parent)
-  }
+  const parents = await loadParents(db, rows)
   const numbers = await db.horseNumbers
     .where('[gameId+horseId]')
     .anyOf(rows.map((horse) => [gameId, horse.id]))
     .filter((row) => row.stage === 'racehorse')
     .toArray()
-  const foals = rows.map((horse): ImportFoal => {
-    const manual = horse.pedigreeSource === 'manual'
+  const foals = rows.map((horse): ImportFoal => ({
+    id: horse.id,
+    birthYear,
+    ...(horse.abilityNumber === undefined ? {} : { abilityNumber: horse.abilityNumber }),
+    ...importNames(horse, parents),
+    racehorseNumbers: numbers.filter((row) => row.horseId === horse.id).map((row) => row.number),
+  }))
+  return { birthYear, foals }
+}
+
+/**
+ * 五月的快照（技術設計 4.4「五月對帳」）：上次五月匯入、定年、這一局 mares 的每一列（在圈或已離圈）與她的馬匹、
+ * 已記的繁殖牝馬馬番号與三個旗標，以及出生年不晚於年份減 2、還沒進過繁殖圈的自家牝駒。
+ * 在 loadImportSnapshot 的交易內呼叫
+ */
+async function loadMay(
+  db: WPStudBookDatabase,
+  gameId: string,
+  year: number,
+  imports: readonly ImportRecord[],
+): Promise<MaySnapshot> {
+  const lastMay = lastMayImport(imports, year)
+  const { retirementAge } = await loadSettings(db, gameId)
+  const mareRows = await db.mares.where('gameId').equals(gameId).toArray()
+  const mareIds = new Set(mareRows.map((mare) => mare.horseId))
+  const horses = new Map<string, HorseRow>()
+  for (const horse of await db.horses.bulkGet([...mareIds])) {
+    if (horse) horses.set(horse.id, horse)
+  }
+  const fillyRows = await db.horses
+    .where('[gameId+birthYear]')
+    .between([gameId, Dexie.minKey], [gameId, year - 2], true, true)
+    .filter(
+      (horse) => horse.birth !== undefined && horse.sex === 'female' && !mareIds.has(horse.id),
+    )
+    .toArray()
+  const parents = await loadParents(db, [...horses.values(), ...fillyRows])
+  const numbers = await db.horseNumbers
+    .where('[gameId+horseId]')
+    .anyOf([...mareIds].map((id) => [gameId, id]))
+    .filter((row) => row.stage === 'broodmare')
+    .toArray()
+  const flags = mareFlags(await eventsSince(db, gameId, lastMay), imports, year)
+  const mares = mareRows.map((mare): ImportMare => {
+    const horse = horses.get(mare.horseId)
+    if (!horse) throw new Error(`找不到馬匹：${mare.horseId}`)
     return {
-      id: horse.id,
-      birthYear,
-      ...(horse.abilityNumber === undefined ? {} : { abilityNumber: horse.abilityNumber }),
-      ...(horse.fullName === undefined ? {} : { fullName: horse.fullName }),
-      ...(horse.baseName === undefined ? {} : { baseName: horse.baseName }),
-      ...(horse.nameSource === undefined ? {} : { nameSource: horse.nameSource }),
-      sire: parentNames(parents, horse.sireName, horse.sireId, manual),
-      dam: parentNames(parents, horse.damName, horse.damId, manual),
-      racehorseNumbers: numbers.filter((row) => row.horseId === horse.id).map((row) => row.number),
+      ...importHorse(horse, parents),
+      usage: mare.usage,
+      ...(mare.groupLine === undefined ? {} : { groupLine: mare.groupLine }),
+      ...(mare.groupGeneration === undefined ? {} : { groupGeneration: mare.groupGeneration }),
+      herd: mare.herd,
+      ...(mare.location === undefined ? {} : { location: mare.location }),
+      broodmareNumbers: numbers
+        .filter((row) => row.horseId === mare.horseId)
+        .map((row) => row.number),
+      ...flags(mare),
     }
   })
-  return { birthYear, foals }
+  const fillies = fillyRows.map((horse): ImportFilly => ({
+    ...importHorse(horse, parents),
+    free: horse.birth?.placement === undefined,
+    sold: horse.disposition === 'sold',
+  }))
+  return { year, ...(lastMay === undefined ? {} : { lastMay }), retirementAge, mares, fillies }
+}
+
+/** 上次五月匯入：年份早於 year 的五月繁殖圈名單中，年份最晚、同年時套用時間最晚的一筆；沒有時為 undefined */
+function lastMayImport(imports: readonly ImportRecord[], year: number): LastMayImport | undefined {
+  let last: ImportRecord | undefined
+  for (const record of imports) {
+    if (record.type !== 'may-herd' || record.year >= year) continue
+    const later =
+      last === undefined ||
+      record.year > last.year ||
+      (record.year === last.year && record.appliedAt > last.appliedAt)
+    if (later) last = record
+  }
+  return last === undefined
+    ? undefined
+    : { id: last.id, year: last.year, appliedAt: last.appliedAt }
+}
+
+/**
+ * 上次五月之後的事件，依寫入時間排序：寫入時間晚於上次五月匯入的套用時間；沒有上次時是這一局的全部事件。
+ * 目前遊戲年不能改到最後紀錄年之前，之後寫入的事件年份一定不早於上次五月的年份，所以先以 [gameId+year] 縮小範圍
+ */
+async function eventsSince(
+  db: WPStudBookDatabase,
+  gameId: string,
+  lastMay: LastMayImport | undefined,
+): Promise<EventRow[]> {
+  const events =
+    lastMay === undefined
+      ? await db.events.where('gameId').equals(gameId).toArray()
+      : await db.events
+          .where('[gameId+year]')
+          .between([gameId, lastMay.year], [gameId, Dexie.maxKey], true, true)
+          .filter((event) => event.recordedAt > lastMay.appliedAt)
+          .toArray()
+  return events.sort((a, b) =>
+    a.recordedAt < b.recordedAt ? -1 : a.recordedAt > b.recordedAt ? 1 : 0,
+  )
+}
+
+/**
+ * 由上次五月之後的事件（依寫入時間排序）推出母馬的三個旗標（技術設計 4.4「五月對帳」）：
+ * entered 是有新增或回歸的事件；離圈事件是 mare-departed，或改成售出、定年引退的 mare-departure-corrected，
+ * 取最後一筆：在圈狀態是售出而且它是手動的為 soldByUser，它來自年份為 year 的五月匯入為 departedThisYear
+ */
+function mareFlags(
+  events: readonly EventRow[],
+  imports: readonly ImportRecord[],
+  year: number,
+): (mare: MareRow) => Pick<ImportMare, 'entered' | 'soldByUser' | 'departedThisYear'> {
+  const entered = new Set<string>()
+  const departures = new Map<string, EventSource>()
+  for (const event of events) {
+    switch (event.kind) {
+      case 'mare-added':
+      case 'mare-returned':
+        entered.add(event.horseId)
+        break
+      case 'mare-departed':
+        departures.set(event.horseId, event.source)
+        break
+      case 'mare-departure-corrected':
+        if (event.to !== 'in-herd') departures.set(event.horseId, event.source)
+        break
+    }
+  }
+  const records = new Map(imports.map((record) => [record.id, record]))
+  return (mare) => {
+    const source = departures.get(mare.horseId)
+    const record = source?.kind === 'import' ? records.get(source.importId) : undefined
+    return {
+      entered: entered.has(mare.horseId),
+      soldByUser: mare.herd === 'sold' && source?.kind === 'manual',
+      departedThisYear:
+        mare.herd !== 'in-herd' && record?.type === 'may-herd' && record.year === year,
+    }
+  }
+}
+
+/** 這些馬連結的父母；找不到的不放進來，由 parentNames 丟出錯誤。在 loadImportSnapshot 的交易內呼叫 */
+async function loadParents(
+  db: WPStudBookDatabase,
+  horses: readonly HorseRow[],
+): Promise<Map<string, HorseRow>> {
+  const ids = new Set<string>()
+  for (const horse of horses) {
+    if (horse.sireId !== undefined) ids.add(horse.sireId)
+    if (horse.damId !== undefined) ids.add(horse.damId)
+  }
+  const parents = new Map<string, HorseRow>()
+  for (const parent of await db.horses.bulkGet([...ids])) {
+    if (parent) parents.set(parent.id, parent)
+  }
+  return parents
+}
+
+/** 五月比對用的馬匹：識別、能力番号、出生年、馬名與父母名 */
+function importHorse(horse: HorseRow, parents: ReadonlyMap<string, HorseRow>): ImportHorse {
+  return {
+    id: horse.id,
+    ...(horse.abilityNumber === undefined ? {} : { abilityNumber: horse.abilityNumber }),
+    ...(horse.birthYear === undefined ? {} : { birthYear: horse.birthYear }),
+    ...importNames(horse, parents),
+  }
+}
+
+/** 比對用的馬名與父母名；連結的父母不在 parents 中時丟出錯誤 */
+function importNames(horse: HorseRow, parents: ReadonlyMap<string, HorseRow>): ImportHorseNames {
+  const manual = horse.pedigreeSource === 'manual'
+  return {
+    ...(horse.fullName === undefined ? {} : { fullName: horse.fullName }),
+    ...(horse.baseName === undefined ? {} : { baseName: horse.baseName }),
+    ...(horse.nameSource === undefined ? {} : { nameSource: horse.nameSource }),
+    sire: parentNames(parents, horse.sireName, horse.sireId, manual),
+    dam: parentNames(parents, horse.damName, horse.damId, manual),
+  }
 }
 
 /**
