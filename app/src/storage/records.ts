@@ -586,6 +586,7 @@ interface EventBase {
  * - mare-returned：已離圈的母馬買回或回歸（8.5、8.9），記接替狀態、用途與據點的變化
  * - mare-moved：轉場（8.6）；原本不知道據點時沒有 from
  * - horse-corrected：手動資料的更正（6.4），只記有改的欄位
+ * - horse-identity-filled：匯入補齊空白的能力番号與出生年（6.2、ID-07），只記補上的值
  * - mare-plan-changed：今年計畫（8.7）；年份是事件的年份
  * - vigor-corrected：活力快照的人工更正（8.7），snapshotYear 是快照的年份
  * - breeding-registered：登記一年的配種（9.1）
@@ -688,6 +689,7 @@ export type EventRow = EventBase &
       }
     | { kind: 'mare-moved'; horseId: string; from?: Base; to: Base }
     | { kind: 'horse-corrected'; horseId: string; from: HorseFieldValues; to: HorseFieldValues }
+    | { kind: 'horse-identity-filled'; horseId: string; abilityNumber?: string; birthYear?: number }
     | { kind: 'mare-plan-changed'; horseId: string; from?: MarePlan; to: MarePlan }
     | {
         kind: 'vigor-corrected'

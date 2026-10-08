@@ -12,7 +12,14 @@ import {
 import type { WPStudBookDatabase } from './database'
 import { loadGame } from './games'
 import type { Base } from './records'
-import { correctDeparture, locationChange, moveMare, returnMare, sellMare } from './herd-writes'
+import {
+  correctDeparture,
+  departMare,
+  locationChange,
+  moveMare,
+  returnMare,
+  sellMare,
+} from './herd-writes'
 
 const now = new Date('2026-09-26T01:02:03.000Z')
 
@@ -97,6 +104,57 @@ describe('sellMare', () => {
     await expect(sellMare(db, GAME, 'X')).rejects.toThrow('找不到母馬：X')
     await expect(sellMare(db, GAME, 'M')).rejects.toThrow('不在繁殖圈內的母馬不能賣出：M')
     await expect(sellMare(db, GAME, 'H')).rejects.toThrow('找不到馬匹：H')
+  })
+})
+
+describe('departMare', () => {
+  const source = { kind: 'import', importType: 'may-herd', importId: 'I1' } as const
+  const timing = { month: 5, week: 1 }
+
+  it('五月缺席：在圈狀態改為售出或定年引退，事件記原因、匯入的來源與時點；自家母駒的接替狀態不變', async () => {
+    const db = await herd()
+    const result = await departMare(db, GAME, 'A', 'retired', { now, source, timing })
+    const retired = ownMareRow('A', 1, 3, { sisterStatus: 'kept', herd: 'retired' })
+    expect(result).toStrictEqual({ status: 'done', value: retired, warnings: [] })
+    expect(await db.mares.get('A')).toStrictEqual(retired)
+    expect(await db.events.toArray()).toStrictEqual([
+      {
+        id: expect.any(String),
+        gameId: GAME,
+        year: 1990,
+        recordedAt: '2026-09-26T01:02:03.000Z',
+        source,
+        timing,
+        kind: 'mare-departed',
+        horseId: 'A',
+        reason: 'retired',
+      },
+    ])
+    expect((await loadGame(db, GAME)).updatedAt).toBe('2026-09-26T01:02:03.000Z')
+
+    expect((await departMare(db, GAME, 'M', 'sold', { source, timing })).status).toBe('done')
+    expect(await db.mares.get('M')).toStrictEqual(substituteMareRow('M', 2, 3, { herd: 'sold' }))
+  })
+
+  it('已達定年也不阻止：缺席時的馬齡可能已達定年', async () => {
+    const db = await herd()
+    await db.horses.add(horseRow('O', { birthYear: 1960 }))
+    await db.mares.add(substituteMareRow('O', 2, 3))
+    expect((await departMare(db, GAME, 'O', 'sold', { source })).status).toBe('done')
+    expect(await db.mares.get('O')).toMatchObject({ herd: 'sold' })
+  })
+
+  it('母馬找不到、屬於其他局或不在圈內時丟出錯誤', async () => {
+    const db = await herd()
+    await addTestGame(db, { id: 'G2' })
+    await db.mares.add(substituteMareRow('X', 2, 3, { gameId: 'G2' }))
+    await db.mares.update('M', { herd: 'sold' })
+    await expect(departMare(db, GAME, 'Q', 'sold')).rejects.toThrow('找不到母馬：Q')
+    await expect(departMare(db, GAME, 'X', 'sold')).rejects.toThrow('找不到母馬：X')
+    await expect(departMare(db, GAME, 'M', 'retired')).rejects.toThrow(
+      '不在繁殖圈內的母馬不能判定缺席：M',
+    )
+    expect(await db.events.count()).toBe(0)
   })
 })
 

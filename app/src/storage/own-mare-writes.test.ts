@@ -126,6 +126,19 @@ describe('transferFilly', () => {
     expect((await loadGame(db, GAME)).updatedAt).toBe(CREATED_AT)
   })
 
+  it('牧場處置已售出的產駒（售出後再買回）來源為其他，備註照記（需求規格 8.4、MAY-16）', async () => {
+    const db = await successorHerd()
+    await db.horses.update('F88', { disposition: 'sold' })
+    const result = await transferFilly(db, GAME, 'F88', { note: ' 買回 ' })
+    if (result.status !== 'done') throw new Error(result.status)
+    expect(result.value.source).toStrictEqual({ kind: 'other', note: '買回' })
+    expect((await db.horses.get('F88'))?.disposition).toBe('sold')
+    await db.horses.update('F90', { disposition: 'for-sale' })
+    const forSale = await transferFilly(db, GAME, 'F90')
+    if (forSale.status !== 'done') throw new Error(forSale.status)
+    expect(forSale.value.source).toStrictEqual({ kind: 'retired-racehorse' })
+  })
+
   it('據點與備註：備註去掉前後空白，只有空白時不寫；據點記在事件上', async () => {
     const db = await successorHerd()
     const result = await transferFilly(db, GAME, 'F88', { location: 33, note: ' 引退後轉入 ' })
