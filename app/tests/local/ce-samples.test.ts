@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { previewJanuary } from '../../src/ce-import/january'
+import { previewMay } from '../../src/ce-import/may'
 import { parseImportFile, readImportFile, type ParsedEntries } from '../../src/ce-import/parse'
 import type { ImportSnapshot } from '../../src/core/imports'
 
@@ -135,6 +136,38 @@ describe('實檔：一月的配對', () => {
         pending: 0,
         warnings: 0,
       })
+    },
+  )
+})
+
+describe('實檔：五月的對帳', () => {
+  it.skipIf(missing(MAY))(
+    '1968 年的五月繁殖圈名單對空局預覽 → 10 列全部是新進（其他），據點都是 32',
+    () => {
+      const parsed = parseSample(MAY)
+      if (parsed.format !== 'broodmare') throw new Error('格式不符')
+      const snapshot: ImportSnapshot = {
+        gameId: 'G',
+        currentYear: 1968,
+        updatedAt: '2026-10-08T00:00:00.000Z',
+        imports: [],
+        checkpoints: [],
+        may: { year: 1968, retirementAge: 25, mares: [], fillies: [] },
+      }
+      const preview = previewMay(parsed.entries, snapshot, 'normal')
+      expect(preview.rows.map((row) => row.kind)).toStrictEqual(Array(10).fill('new-other'))
+      expect(preview.herd).toStrictEqual({
+        continuing: 0,
+        newArrivals: 10,
+        returned: 0,
+        retired: 0,
+        sold: 0,
+        moved: 0,
+        unmatched: 0,
+        conflicts: 0,
+        bases: { 32: 10, 33: 0, 34: 0, 35: 0 },
+      })
+      expect(preview.counts).toMatchObject({ applicable: 10, skipped: 0, pending: 0, errors: 0 })
     },
   )
 })

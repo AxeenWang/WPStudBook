@@ -8,6 +8,7 @@ import { loadKnownHorses } from '../../src/storage/loaders'
 import { addMarketMare } from '../../src/storage/mare-writes'
 import { SAMPLES, exportText } from '../support/ce-files'
 import { addTestGame, testDatabase } from '../support/database'
+import { applyMayFile, mayRow } from '../support/import-flow'
 import { GAME, horseRow, ungroupedMareRow } from '../support/rows'
 
 // 需求規格第 15 章「馬匹身分（ID）」中由 core 與儲存層寫入負責的部分；歷程、遊戲局隔離與備份由後續計畫補上
@@ -193,5 +194,85 @@ describe('馬匹身分（ID）：解析', () => {
         { reason: 'duplicate', line: 4, header: '能力番号', value: '0x0B01' },
       ],
     })
+  })
+})
+
+describe('馬匹身分（ID）：五月匯入', () => {
+  it('ID-04 已售出或定年引退的母馬以相同能力番号與出生年出現在五月繁殖圈名單 → 沿用原識別並建立回歸事件', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const named = (name: string) => ({
+      fullName: name,
+      baseName: name,
+      nameSource: 'import' as const,
+    })
+    await db.horses.bulkAdd([
+      horseRow('SOLD', {
+        ...named('ウリ'),
+        abilityNumber: '0x0100',
+        birthYear: 1980,
+        sex: 'female',
+      }),
+      horseRow('RETIRED', {
+        ...named('インタイ'),
+        abilityNumber: '0x0200',
+        birthYear: 1966,
+        sex: 'female',
+      }),
+    ])
+    await db.mares.bulkAdd([
+      ungroupedMareRow('SOLD', 'unassigned', { herd: 'sold' }),
+      ungroupedMareRow('RETIRED', 'unassigned', { herd: 'retired' }),
+    ])
+    const { applied } = await applyMayFile(db, [
+      mayRow({ fullName: 'ウリ', age: 10, abilityNumber: '0x0100', horseNumber: '0x1100' }),
+      mayRow({ fullName: 'インタイ', age: 24, abilityNumber: '0x0200', horseNumber: '0x1200' }),
+    ])
+    expect(await db.horses.count()).toBe(2)
+    for (const id of ['SOLD', 'RETIRED']) {
+      expect(await db.mares.get(id)).toMatchObject({ herd: 'in-herd', location: 32 })
+    }
+    const source = { kind: 'import', importType: 'may-herd', importId: applied.record.id }
+    const returned = (await db.events.toArray()).flatMap((event) =>
+      event.kind === 'mare-returned' ? [{ horse: `${event.horseId}:${event.from}`, ...event }] : [],
+    )
+    expect(returned.map((event) => event.horse).sort()).toStrictEqual([
+      'RETIRED:retired',
+      'SOLD:sold',
+    ])
+    for (const event of returned) expect(event.source).toStrictEqual(source)
+  })
+
+  it('ID-07 手動新增、未填能力番号的母馬，五月以唯一馬名配對 → 補入能力番号、出生年與馬番号；既有能力番号不同 → 衝突', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    const manual = (name: string) => ({
+      fullName: name,
+      baseName: name,
+      nameSource: 'manual' as const,
+    })
+    await db.horses.bulkAdd([
+      horseRow('M1', { ...manual('スターロツチ'), sex: 'female' }),
+      horseRow('M2', { ...manual('ハードロツチ'), abilityNumber: '0x0200', sex: 'female' }),
+    ])
+    await db.mares.bulkAdd([
+      ungroupedMareRow('M1', 'unassigned'),
+      ungroupedMareRow('M2', 'unassigned'),
+    ])
+    const { preview } = await applyMayFile(db, [
+      mayRow({ fullName: 'スターロツチ', age: 26, abilityNumber: '0x0100', horseNumber: '0x1100' }),
+      mayRow({ fullName: 'ハードロツチ', age: 20, abilityNumber: '0x0300', horseNumber: '0x1300' }),
+    ])
+    expect(preview.errors).toStrictEqual([
+      { line: 3, horseIds: ['M2'], reasons: ['ability-number'] },
+    ])
+    expect(await db.horses.get('M1')).toMatchObject({ abilityNumber: '0x0100', birthYear: 1964 })
+    expect(await db.horses.get('M2')).toStrictEqual(
+      horseRow('M2', { ...manual('ハードロツチ'), abilityNumber: '0x0200', sex: 'female' }),
+    )
+    const numbers = await db.horseNumbers.toArray()
+    expect(numbers.map((row) => [row.horseId, row.stage, row.number])).toStrictEqual([
+      ['M1', 'broodmare', '0x1100'],
+    ])
   })
 })

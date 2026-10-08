@@ -23,6 +23,7 @@ import { correctVigor, setMarePlan } from '../../src/storage/mare-year-writes'
 import { keepSister, transferFilly } from '../../src/storage/own-mare-writes'
 import type { BreedingRow, MareRow } from '../../src/storage/records'
 import { addTestGame, testDatabase } from '../support/database'
+import { applyMayFile, mayRow, previewMayFile } from '../support/import-flow'
 import { successorHerd } from '../support/successor'
 import {
   GAME,
@@ -512,5 +513,80 @@ describe('繁殖牝馬（MARE）：儲存層寫入', () => {
     expect(await group()).toEqual({ generation: 5, established: true, activeMares: 2, ownMares: 2 })
     await keepSister(db, GAME, 'F90')
     expect(await group()).toEqual({ generation: 5, established: true, activeMares: 1, ownMares: 1 })
+  })
+})
+
+describe('繁殖牝馬（MARE）：五月匯入', () => {
+  /** 1990 年的測試局加上這些在圈的待指定用途母馬：能力番号與出生年 */
+  async function absentMares(mares: [string, string, number][]) {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.bulkAdd(
+      mares.map(([id, abilityNumber, birthYear]) =>
+        horseRow(id, { abilityNumber, birthYear, sex: 'female' }),
+      ),
+    )
+    await db.mares.bulkAdd(mares.map(([id]) => ungroupedMareRow(id, 'unassigned')))
+    return db
+  }
+
+  it('MARE-09 上年在圈、五月缺席 → 上次五月的馬齡（名單年份減 1 那年）達定年預設「定年引退」，否則「售出」，預覽可逐匹更正', async () => {
+    const db = await absentMares([
+      ['A19', '0x0119', 1971],
+      ['A20', '0x0120', 1970],
+      ['A25', '0x0125', 1964],
+    ])
+    const { preview } = await previewMayFile(db, [])
+    expect(
+      preview.absences.map(({ horseId, age, reason }) => [horseId, age, reason]),
+    ).toStrictEqual([
+      ['A19', 18, 'sold'],
+      ['A20', 19, 'sold'],
+      ['A25', 25, 'retired'],
+    ])
+    await applyMayFile(db, [], { decisions: { absences: new Map([['A20', 'retired']]) } })
+    expect(await db.mares.get('A19')).toMatchObject({ herd: 'sold' })
+    expect(await db.mares.get('A20')).toMatchObject({ herd: 'retired' })
+    expect(await db.mares.get('A25')).toMatchObject({ herd: 'retired' })
+  })
+
+  it('MARE-10 修改定年設定 → 下一次五月匯入依新設定判斷', async () => {
+    const db = await absentMares([['A24', '0x0124', 1965]])
+    const before = await previewMayFile(db, [])
+    expect(before.preview.absences).toStrictEqual([
+      { horseId: 'A24', age: 24, defaultReason: 'sold', reason: 'sold' },
+    ])
+    expect((await updateSettings(db, GAME, { retirementAge: 24 })).status).toBe('done')
+    const after = await previewMayFile(db, [])
+    expect(after.preview.absences).toStrictEqual([
+      { horseId: 'A24', age: 24, defaultReason: 'retired', reason: 'retired' },
+    ])
+  })
+
+  it('MARE-19 五月匯入的據點變更 → 保存原據點、新據點、年、時點與來源', async () => {
+    const db = testDatabase()
+    await addTestGame(db)
+    await db.horses.add(horseRow('M', { abilityNumber: '0x0119', birthYear: 1980, sex: 'female' }))
+    await db.mares.add(ungroupedMareRow('M', 'unassigned', { location: 32 }))
+    const row = mayRow({
+      fullName: 'エム',
+      age: 10,
+      farm: '33',
+      abilityNumber: '0x0119',
+      horseNumber: '0x1119',
+    })
+    const { applied } = await applyMayFile(db, [row])
+    expect(await db.events.toArray()).toStrictEqual([
+      expect.objectContaining({
+        kind: 'mare-moved',
+        horseId: 'M',
+        from: 32,
+        to: 33,
+        year: 1990,
+        timing: { month: 5, week: 1 },
+        source: { kind: 'import', importType: 'may-herd', importId: applied.record.id },
+      }),
+    ])
+    expect(await db.mares.get('M')).toMatchObject({ location: 33 })
   })
 })
