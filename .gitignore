@@ -3,7 +3,7 @@
 .camp_claude/
 
 # Local reference materials (user spreadsheets, game export samples)
-.references/
+.camp_references/
 
 # Personal agent settings
 CLAUDE.local.md

@@ -1,15 +1,17 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { isAbsolute, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { previewJanuary } from '../../src/ce-import/january'
 import { previewMay } from '../../src/ce-import/may'
 import { parseImportFile, readImportFile, type ParsedEntries } from '../../src/ce-import/parse'
 import type { ImportSnapshot } from '../../src/core/imports'
 
-// 讀 .references/ 的實際匯出檔（不進版控）驗證解析；檔案不在時略過（AGENTS.md「tests/local」）
+// 只讀明確指定的本機樣本，未設定目錄或缺少檔案時略過（AGENTS.md「tests/local」）
 
-const DIR = fileURLToPath(new URL('../../../.references/', import.meta.url))
+const DIR = process.env.WPSTUDBOOK_CE_SAMPLES_DIR?.trim()
+if (DIR && !isAbsolute(DIR)) {
+  throw new Error('WPSTUDBOOK_CE_SAMPLES_DIR 必須是絕對路徑')
+}
 
 const JANUARY = '1968年 1月1週._二歲新馬.txt'
 const APRIL = '1968年 4月1週_幼駒誕生.txt'
@@ -18,10 +20,11 @@ const JULY = '1968年 7月1週_繁殖牝馬.txt'
 const OCTOBER = '1968年10月1週_繁殖牝馬.txt'
 const STALLIONS = '1968年5月1週_種牡馬.txt'
 
-const missing = (name: string) => !existsSync(join(DIR, name))
+const missing = (name: string) => !DIR || !existsSync(join(DIR, name))
 
 /** 依檔名預選的類型與年份解析實檔 */
 function parseSample(name: string): ParsedEntries {
+  if (!DIR) throw new Error('未設定本機樣本目錄')
   const read = readImportFile(new Uint8Array(readFileSync(join(DIR, name))), name)
   if (read.status !== 'ok') throw new Error(`${name} 解碼失敗`)
   if (read.nameInfo?.type == null) throw new Error(`${name} 的檔名認不出類型`)

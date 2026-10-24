@@ -48,7 +48,7 @@ app/               npm project root
   tests/acceptance/  acceptance tests grouped by requirement scenario prefix
   tests/e2e/       Playwright tests against the built file
   tests/fixtures/  synthetic CE sample files
-  tests/local/     tests that read .references/ and skip when it is absent
+  tests/local/     opt-in local sample tests, skipped when unconfigured or files are absent
 ```
 
 ### Module Boundaries
@@ -74,7 +74,7 @@ Run from `app/`:
 
 - Put unit tests next to the source file as `*.test.ts`.
 - Name each acceptance test starting with its scenario code from requirements chapter 15, for example `LINE-14`.
-- Never commit real CE exports or user spreadsheets. Keep them in `.references/` and use synthetic fixtures in tests.
+- Never commit real CE exports or user spreadsheets. Treat them as user-owned reference material. Formal code, documentation, tests, configuration, and builds must not depend on reference-area paths. Use synthetic fixtures in committed tests. Optional local sample tests read only the absolute directory explicitly set through `WPSTUDBOOK_CE_SAMPLES_DIR`, within the task's authorized project scope, and skip when it is unset or required files are absent. Do not infer a default directory.
 - Do not commit build or test output: `app/dist/`, `app/node_modules/`, Playwright reports.
 - UI text is Traditional Chinese. Keep game field names, system names, and horse names in Japanese.
 - When a rule changes, update `docs/specs/需求規格.md` in the same change. If pairing or pedigree rules change, also update `docs/specs/八系巡迴圖.html`.
